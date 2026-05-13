@@ -1,0 +1,137 @@
+.resource-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.resource-card {
+  background: #ffffff;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 12px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+  transition: box-shadow 0.2s ease;
+}
+
+.resource-card:hover {
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: bold;
+}
+
+.favicon {
+  height: 16px;
+  width: 16px;
+}
+
+.category-tag {
+  background: #007bff;
+  color: white;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.75em;
+}
+
+.note {
+  margin: 8px 0;
+  font-size: 0.9em;
+  color: #333;
+}
+
+.meta {
+  font-size: 0.8em;
+  color: #666;
+}
+
+.card-actions {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+}
+
+.flash-success {
+  background-color: #d1e7dd;
+  color: #0f5132;
+  padding: 0.5em;
+  border-radius: 5px;
+  margin-bottom: 1em;
+}
+
+.flash-error {
+  background-color: #f8d7da;
+  color: #842029;
+  padding: 0.5em;
+  border-radius: 5px;
+  margin-bottom: 1em;
+}
+.resource-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 16px;
+}
+
+.resource-table th,
+.resource-table td {
+  border: 1px solid #ccc;
+  padding: 8px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.resource-table th {
+  background-color: #f0f0f0;
+}
+
+.favicon {
+  height: 16px;
+  width: 16px;
+  margin-right: 6px;
+}
+
+.flash-success {
+  background-color: #d1e7dd;
+  color: #0f5132;
+  padding: 0.5em;
+  border-radius: 5px;
+  margin-bottom: 1em;
+}
+
+.flash-error {
+  background-color: #f8d7da;
+  color: #842029;
+  padding: 0.5em;
+  border-radius: 5px;
+  margin-bottom: 1em;
+}
+
+.modal {
+  display: none;
+  position: fixed;
+  top: 10%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: white;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 0 10px rgba(0,0,0,0.2);
+  z-index: 9999;
+  width: 90%;
+  max-width: 500px;
+}
+
+.modal-actions {
+  margin-top: 12px;
+  display: flex;
+  gap: 10px;
+}

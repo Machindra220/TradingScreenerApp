@@ -1,0 +1,282 @@
+{% extends "base_authenticated.html" %}
+{% block title %}Trading Stats{% endblock %}
+{% block content %}
+
+<!-- 🧭 Page Heading -->
+<h2 class="text-2xl font-semibold text-gray-800 mb-6">📊 Trading Performance Overview</h2>
+
+<!-- 🔄 Loading Spinner -->
+<div id="loading-spinner" class="fixed inset-0 flex items-center justify-center bg-white bg-opacity-80 z-50 hidden">
+  <div class="text-center">
+    <div class="animate-spin rounded-full h-10 w-10 border-4 border-gray-300 border-t-indigo-500 mx-auto"></div>
+    <p class="mt-2 text-sm text-gray-700">Loading…</p>
+  </div>
+</div>
+
+<!-- 📅 Time Filter -->
+<form method="GET" action="{{ url_for('stats.stats_dashboard') }}" class="mb-4">
+  <label for="range" class="block text-sm font-medium text-gray-700 mb-1">📅 Time Filter</label>
+  <select name="range" id="range" onchange="this.form.submit()"
+          class="w-full max-w-xs px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500">
+    <option value="all_time" {% if request.args.get('range') == 'all_time' %}selected{% endif %}>All Time</option>
+    <option value="last_7_days" {% if request.args.get('range') == 'last_7_days' %}selected{% endif %}>Last 7 Days</option>
+    <option value="last_30_days" {% if request.args.get('range') == 'last_30_days' %}selected{% endif %}>Last 30 Days</option>
+    <option value="last_90_days" {% if request.args.get('range') == 'last_90_days' %}selected{% endif %}>Last 90 Days</option>
+    <option value="ytd" {% if request.args.get('range') == 'ytd' %}selected{% endif %}>Year to Date</option>
+    <option value="last_year" {% if request.args.get('range') == 'last_year' %}selected{% endif %}>Last Year</option>
+  </select>
+</form>
+
+<!-- 🏷️ Active Filter Label -->
+<p class="text-sm text-gray-600 mb-4">
+  Showing stats for: <strong>{{ request.args.get('range', 'All Time')|replace('_', ' ')|title }}</strong>
+</p>
+
+<!-- 📤 Export + Refresh Buttons -->
+<div class="flex flex-wrap gap-2 mb-6">
+  <a href="{{ url_for('stats.refresh_stats', range=request.args.get('range', 'all_time')) }}"
+     class="px-4 py-2 bg-yellow-400 text-black rounded hover:bg-yellow-500 transition">🔄 Refresh Stats</a>
+  <a href="{{ url_for('export.export_history', range=request.args.get('range', 'all_time'), format='excel') }}"
+     class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition">📤 Excel Export</a>
+  <a href="{{ url_for('export.export_history', range=request.args.get('range', 'all_time'), format='pdf') }}"
+     class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition">🧾 PDF Export</a>
+  <a href="{{ url_for('export.export_stats_only', range=request.args.get('range', 'all_time'), format='excel') }}"
+     class="px-4 py-2 bg-green-600 text-white rounded hover:bg-cyan-700 transition">📊 Metrics (Excel)</a>
+  <a href="{{ url_for('export.export_stats_only', range=request.args.get('range', 'all_time'), format='pdf') }}"
+     class="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 transition">📊 Metrics (PDF)</a>
+  <button onclick="window.print()" class="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 transition">
+    🖨️ Print / Save as PDF
+  </button>
+</div>
+
+<!-- 📅 Last Computed -->
+<p class="text-sm text-gray-500 mb-6">📅 Stats last computed: {{ last_computed }}</p>
+
+<!-- 📊 Stats Grid -->
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+  {% for label, value, color, tooltip in [
+    
+    ('Realized P&L', '₹%.2f'|format(realized_pnl), 'bg-green-100', 'Total profit/loss from closed trades'),
+    ('Open Trades', open_trades, 'bg-blue-100', 'Trades still open'),
+    ('Closed Trades', closed_trades, 'bg-gray-100', 'Trades that are closed'),
+
+    
+    ('Win Rate', win_rate ~ '%', 'bg-orange-100', 'Percentage of winning trades'),
+    ('Expectancy', '₹' ~ expectancy, 'bg-orange-100', 'Average profit per trade'),
+    ('Profit Factor', profit_factor, 'bg-orange-100', 'Ratio of gross profit to gross loss'),
+
+    
+    ('Avg Win Hold', avg_win_hold ~ ' Days', 'bg-blue-100', 'Average duration of winning trades'),
+    ('Avg Loss Hold', avg_loss_hold ~ ' Days', 'bg-blue-100', 'Average duration of losing trades'),
+
+    
+    ('Avg Win', '₹' ~ avg_win, 'bg-green-100', 'Average profit from winning trades'),
+    ('Avg Loss', '₹' ~ avg_loss, 'bg-red-100', 'Average loss from losing trades'),
+
+    
+    ('Win Streak', win_streak, 'bg-green-50', 'Longest consecutive wins'),
+    ('Loss Streak', loss_streak, 'bg-red-50', 'Longest consecutive losses'),
+
+    
+    ('Avg Daily Vol', avg_daily_vol, 'bg-gray-100', 'Average daily trading volume'),
+    ('Avg Size', avg_size, 'bg-gray-100', 'Average trade size'),
+
+    
+    ('Max Drawdown', max_drawdown ~ '%', 'bg-red-200', 'Maximum drop from peak equity'),
+    ('Avg Trade Drawdown', avg_drawdown ~ '%', 'bg-red-100', 'Average drawdown per trade'),
+    ('Avg R Multiple', avg_r_multiple, 'bg-purple-100', 'Average return relative to risk (R multiple)')
+  ] %}
+  <div class="p-4 rounded shadow {{ color }} hover:shadow-lg transition" title="{{ tooltip }}">
+    <h4 class="text-sm font-medium text-gray-700 mb-1">{{ label }}</h4>
+    <p class="text-lg font-bold text-gray-900">{{ value }}</p>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- 📊 Most Traded & Profitable Stocks -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+
+  <!-- 📈 Most Traded Stocks -->
+  <div class="p-4 rounded shadow bg-gray-100" title="Stocks traded most frequently and their total P&L">
+    <h4 class="text-sm font-medium text-gray-700 mb-2">📈 Most Traded Stocks</h4>
+    <ul class="list-disc list-inside text-sm text-gray-800">
+      {% for stock, data in stock_stats.items() %}
+        <li>{{ stock }} ({{ data.count }} trades): ₹{{ "%.2f"|format(data.pnl) }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+
+  <!-- 💰 Most Profitable Stocks -->
+  <div class="p-4 rounded shadow bg-green-100" title="Stocks with highest total P&L">
+    <h4 class="text-sm font-medium text-gray-700 mb-2">💰 Most Profitable Stocks</h4>
+    <ul class="list-disc list-inside text-sm text-gray-800">
+      {% for stock, data in most_profitable_stats.items() %}
+        <li>{{ stock }} (₹{{ "%.2f"|format(data.pnl) }}): {{ data.count }} trades</li>
+      {% endfor %}
+    </ul>
+  </div>
+
+</div>
+
+<!-- 📉 Charts -->
+<div class="space-y-10">
+  <div>
+    <h3 class="text-lg font-semibold text-gray-800 mb-2">📉 Equity Curve</h3>
+    <canvas id="equityCurveChart" class="w-full h-64"></canvas>
+  </div>
+  <div>
+    <h3 class="text-lg font-semibold text-gray-800 mb-2">📊 Profit/Loss by Date</h3>
+    <canvas id="pnlBarChart" class="w-full h-64"></canvas>
+  </div>
+  <div>
+    <h3 class="text-lg font-semibold text-gray-800 mb-2">📊 Profit/Loss by Week</h3>
+    <canvas id="weeklyBarChart" class="w-full h-64"></canvas>
+  </div>
+  <div>
+    <h4 class="text-lg font-semibold text-gray-800 mb-2">Monthly Profit/Loss (Last 12 Months)</h4>
+    <canvas id="monthlyPnlChart" class="w-full h-64"></canvas>
+  </div>
+</div>
+
+<!-- 📊 Chart.js Setup -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+  // 📉 Equity Curve Line Chart
+  const equityData = {{ equity_curve | tojson }};
+  const labels = equityData.map(point => point.date);
+  const values = equityData.map(point => point.value);
+
+  new Chart(document.getElementById('equityCurveChart'), {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'Account Value',
+        data: values,
+        borderColor: '#007bff',
+        backgroundColor: 'rgba(0, 123, 255, 0.1)',
+        fill: true,
+        tension: 0.3,
+        pointRadius: 3,
+        pointHoverRadius: 6
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        tooltip: {
+          callbacks: {
+            label: context => `₹${context.parsed.y.toFixed(2)}`
+          }
+        },
+        legend: { display: false }
+      },
+      scales: {
+        x: { title: { display: true, text: 'Date' }},
+        y: { title: { display: true, text: 'Equity (₹)' }, beginAtZero: false }
+      }
+    }
+  });
+
+  // 📊 Daily P&L Bar Chart
+  const tradeBars = {{ trade_bars | tojson }};
+  const barLabels = tradeBars.map(t => t.date);
+  const barValues = tradeBars.map(t => t.pnl);
+  const barColors = tradeBars.map(t => t.pnl >= 0 ? '#28a745' : '#dc3545');
+
+  new Chart(document.getElementById('pnlBarChart'), {
+    type: 'bar',
+    data: {
+      labels: barLabels,
+      datasets: [{
+        label: 'Profit/Loss (₹)',
+        data: barValues,
+        backgroundColor: barColors,
+        borderRadius: 4
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        tooltip: {
+          callbacks: {
+            label: context => `₹${context.parsed.y.toFixed(2)}`
+          }
+        },
+        legend: { display: false }
+      },
+      scales: {
+        x: { title: { display: true, text: 'Date' }},
+        y: { title: { display: true, text: 'P&L (₹)' }, beginAtZero: false }
+      }
+    }
+  });
+
+  // 📊 Weekly P&L Bar Chart
+  const weeklyBars = {{ weekly_bars | tojson }};
+  const weekLabels = weeklyBars.map(w => w.week);
+  const weekValues = weeklyBars.map(w => w.pnl);
+  const weekColors = weeklyBars.map(w => w.pnl >= 0 ? '#28a745' : '#dc3545');
+
+  new Chart(document.getElementById('weeklyBarChart'), {
+    type: 'bar',
+    data: {
+      labels: weekLabels,
+      datasets: [{
+        label: 'Weekly P&L (₹)',
+        data: weekValues,
+        backgroundColor: weekColors,
+        borderRadius: 4
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        tooltip: {
+          callbacks: {
+            label: context => `₹${context.parsed.y.toFixed(2)}`
+          }
+        },
+        legend: { display: false }
+      },
+      scales: {
+        x: { title: { display: true, text: 'Week' }},
+        y: { title: { display: true, text: 'P&L (₹)' }, beginAtZero: false }
+      }
+    }
+  });
+
+  // 📊 Monthly P&L Bar Chart with dynamic colors
+  const monthlyLabels = {{ monthly_bars | map(attribute='month') | list | tojson }};
+  const monthlyValues = {{ monthly_bars | map(attribute='pnl') | list | tojson }};
+  const monthlyColors = monthlyValues.map(pnl => pnl >= 0 ? '#28a745' : '#dc3545');
+
+  new Chart(document.getElementById('monthlyPnlChart'), {
+    type: 'bar',
+    data: {
+      labels: monthlyLabels,
+      datasets: [{
+        label: 'Monthly P&L (₹)',
+        data: monthlyValues,
+        backgroundColor: monthlyColors,
+        borderRadius: 4
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        tooltip: {
+          callbacks: {
+            label: context => `₹${context.parsed.y.toFixed(2)}`
+          }
+        },
+        legend: { display: false }
+      },
+      scales: {
+        x: { title: { display: true, text: 'Month' }},
+        y: { title: { display: true, text: 'P&L (₹)' }, beginAtZero: true }
+      }
+    }
+  });
+</script>
+{% endblock %}

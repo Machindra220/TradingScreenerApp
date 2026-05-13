@@ -1,0 +1,165 @@
+{% extends "base_authenticated.html" %}
+{% block title %}EPS Surge Screener{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto p-4 lg:p-8 bg-gray-50 min-h-screen">
+    <div class="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
+        <div>
+            <h1 class="text-3xl font-extrabold text-gray-900 tracking-tight">📈 EPS Surge Screener</h1>
+            <p class="text-gray-500 mt-1">Identify stocks with accelerating earnings growth and relative strength.</p>
+        </div>
+        <div class="flex items-center gap-3">
+            <span class="flex items-center gap-2 px-3 py-1 bg-white border rounded-full text-xs font-medium text-gray-600 shadow-sm">
+                <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                Market Data Live
+            </span>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+            <h3 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Quick Analysis</h3>
+            <form method="post" action="{{ url_for('eps.eps_screener_from_form') }}" class="space-y-4">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <div class="relative">
+                    <input type="text" name="symbol" id="symbol" placeholder="e.g. RELIANCE"
+                           class="w-full pl-3 pr-10 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all uppercase font-bold">
+                </div>
+                <button type="submit" class="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg shadow-md transition-colors flex items-center justify-center gap-2">
+                    <span>🔍</span> Analyze Symbol
+                </button>
+            </form>
+        </div>
+
+        <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex flex-col justify-between">
+            <h3 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Master List</h3>
+            <p class="text-xs text-gray-500 mb-4 italic">Process standard watchlists for 25% YoY quarterly growth.</p>
+            <form method="post" action="{{ url_for('eps.eps_screener_from_file') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="w-full py-2.5 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg shadow-md transition-colors flex items-center justify-center gap-2">
+                    <span>📂</span> Run Master CSV
+                </button>
+            </form>
+        </div>
+
+        <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex flex-col justify-between">
+            <h3 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Power Trend</h3>
+            <p class="text-xs text-gray-500 mb-4 italic">Filter for Stage 2 breakouts combined with EPS surge.</p>
+            <form method="post" action="{{ url_for('eps.eps_screener_stage2_eps') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="w-full py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-lg shadow-md transition-colors flex items-center justify-center gap-2">
+                    <span>🚀</span> Run Stage 2 + EPS
+                </button>
+            </form>
+        </div>
+    </div>
+
+    {% if results_csv or results_manual %}
+    <div class="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
+        <div class="p-5 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+            <h2 class="font-bold text-gray-800 flex items-center gap-2">
+                {% if source_name %}{{ source_name }}{% else %}Results{% endif %}
+                <span class="text-xs font-normal text-gray-500">({{ (results_csv|length or results_manual|length) }} found)</span>
+            </h2>
+        </div>
+        
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse font-mono text-sm" id="main-screener-table">
+                <thead>
+                    <tr class="text-gray-500 bg-gray-50 border-b uppercase text-[10px] tracking-widest">
+                        <th class="px-6 py-4 font-medium">Symbol</th>
+                        <th class="px-4 py-4 font-medium text-right">Price</th>
+                        <th class="px-4 py-4 font-medium text-center">EPS Growth (Q1|Q2|Q3)</th>
+                        <th class="px-4 py-4 font-medium text-right">Volume</th>
+                        <th class="px-4 py-4 font-medium text-right">ROE%</th>
+                        <th class="px-4 py-4 font-medium text-right">Relative Strength</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    {% for stock in (results_manual or results_csv) %}
+                    <tr class="hover:bg-blue-50/30 transition-colors group">
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="flex items-center gap-3">
+                                <span class="font-bold text-gray-900 group-hover:text-blue-600">{{ stock.symbol_clean }}</span>
+                                <button onclick="copyToClipboard('{{ stock.symbol_clean }}')" class="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-blue-500 transition-opacity">
+                                    📋
+                                </button>
+                            </div>
+                        </td>
+                        <td class="px-4 py-4 text-right font-semibold text-gray-900">₹{{ "{:,.2f}".format(stock.price) }}</td>
+                        <td class="px-4 py-4 text-center">
+                            <div class="flex justify-center gap-1">
+                                {% for g in stock.eps_growth %}
+                                <span class="px-2 py-0.5 rounded text-[11px] font-bold {{ 'bg-green-100 text-green-700' if g >= 25 else 'bg-gray-100 text-gray-500' }}">
+                                    {{ g }}%
+                                </span>
+                                {% endfor %}
+                            </div>
+                        </td>
+                        <td class="px-4 py-4 text-right text-gray-600">{{ "{:,}".format(stock.volume) }}</td>
+                        <td class="px-4 py-4 text-right">
+                            <span class="{{ 'text-green-600 font-bold' if stock.roc_21d >= 17 else 'text-gray-500' }}">
+                                {{ stock.roc_21d }}%
+                            </span>
+                        </td>
+                        <td class="px-4 py-4 text-right">
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ 'bg-blue-100 text-blue-800' if stock.rs_vs_index_21d > 0 else 'bg-red-100 text-red-800' }}">
+                                {{ stock.rs_vs_index_21d }}
+                            </span>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% else %}
+    <div class="text-center py-20 bg-white rounded-xl border-2 border-dashed border-gray-200">
+        <p class="text-gray-400">No qualifying stocks identified. Try running a different list.</p>
+    </div>
+    {% endif %}
+</div>
+<!-- 📋 Copy-to-Clipboard Script -->
+<script>
+function copyToClipboard(id) {
+  const el = document.getElementById("copy-" + id);
+  if (el) {
+    navigator.clipboard.writeText(el.textContent).then(() => {
+      const tooltip = document.getElementById("tooltip-" + id);
+      if (tooltip) {
+        tooltip.style.opacity = "1";
+        setTimeout(() => {
+          tooltip.style.opacity = "0";
+        }, 1500);
+      }
+    });
+  }
+}
+
+</script>
+
+<!-- 🔃 Sortable Table Script -->
+<script>
+document.querySelectorAll("table th").forEach((header, index) => {
+  header.addEventListener("click", () => {
+    const table = header.closest("table");
+    const tbody = table.querySelector("tbody");
+    const rows = Array.from(tbody.querySelectorAll("tr")).filter(row => row.querySelector("td"));
+
+    const isAsc = header.classList.toggle("asc");
+    table.querySelectorAll("th").forEach(th => th !== header && th.classList.remove("asc", "desc"));
+    header.classList.toggle("desc", !isAsc);
+
+    rows.sort((a, b) => {
+      const cellA = a.children[index].textContent.trim();
+      const cellB = b.children[index].textContent.trim();
+      const valA = parseFloat(cellA.replace(/[^0-9.-]/g, "")) || cellA;
+      const valB = parseFloat(cellB.replace(/[^0-9.-]/g, "")) || cellB;
+      return isAsc ? (valA > valB ? 1 : -1) : (valA < valB ? 1 : -1);
+    });
+
+    rows.forEach(row => tbody.appendChild(row));
+  });
+});
+</script>
+{% endblock %}

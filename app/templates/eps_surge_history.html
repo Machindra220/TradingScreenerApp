@@ -1,0 +1,106 @@
+{% extends "base_authenticated.html" %}
+{% block title %}EPS Surge History{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto p-4 lg:p-8 bg-gray-50">
+    <div class="flex items-end justify-between mb-8">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-900">📜 Analysis Archive</h1>
+            <p class="text-sm text-gray-500">Track historical EPS surges and performance over time.</p>
+        </div>
+    </div>
+
+    <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200 mb-6">
+        <form method="get" class="flex flex-wrap items-center gap-6">
+            <div class="flex flex-col">
+                <label class="text-[10px] font-bold text-gray-400 uppercase mb-1">Stock Ticker</label>
+                <input type="text" name="symbol" value="{{ symbol_filter }}" placeholder="e.g. TCS"
+                       class="px-3 py-2 bg-gray-50 border rounded-lg text-sm font-bold focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div class="flex flex-col">
+                <label class="text-[10px] font-bold text-gray-400 uppercase mb-1">Screen Date</label>
+                <input type="date" name="date" value="{{ date_filter }}"
+                       class="px-3 py-2 bg-gray-50 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div class="flex gap-2 h-10 mt-5">
+                <button type="submit" class="px-6 bg-gray-900 text-white text-sm font-bold rounded-lg hover:bg-black transition-colors">Apply</button>
+                <a href="{{ url_for('eps.eps_screener_history') }}" class="px-6 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 flex items-center">Reset</a>
+            </div>
+        </form>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <table class="w-full text-xs font-mono" id="history-table">
+            <thead class="bg-gray-50 border-b">
+                <tr class="text-gray-400 text-left">
+                    <th class="px-6 py-4 font-bold uppercase tracking-tighter">Date</th>
+                    <th class="px-4 py-4 font-bold uppercase tracking-tighter">Ticker</th>
+                    <th class="px-4 py-4 font-bold uppercase tracking-tighter text-right">Signal Price</th>
+                    <th class="px-4 py-4 font-bold uppercase tracking-tighter text-center">EPS Q1|Q2|Q3</th>
+                    <th class="px-4 py-4 font-bold uppercase tracking-tighter text-right">Volume</th>
+                    <th class="px-4 py-4 font-bold uppercase tracking-tighter text-right">ROE%</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-50">
+                {% for stock in rows %}
+                <tr class="hover:bg-gray-50/50 transition-colors">
+                    <td class="px-6 py-4 text-gray-500">{{ stock.screener_date.strftime('%d %b %Y') }}</td>
+                    <td class="px-4 py-4 font-extrabold text-gray-900">{{ stock.symbol_clean }}</td>
+                    <td class="px-4 py-4 text-right text-gray-900">₹{{ "%.2f"|format(stock.price or 0) }}</td>
+                    <td class="px-4 py-4 text-center">
+                        <span class="text-blue-600 font-bold">{{ stock.eps_growth_q1 }}%</span>
+                        <span class="mx-1 text-gray-300">|</span>
+                        <span class="text-blue-600 font-bold">{{ stock.eps_growth_q2 }}%</span>
+                        <span class="mx-1 text-gray-300">|</span>
+                        <span class="text-blue-600 font-bold">{{ stock.eps_growth_q3 }}%</span>
+                    </td>
+                    <td class="px-4 py-4 text-right text-gray-400">{{ "{:,}".format(stock.volume or 0) }}</td>
+                    <td class="px-4 py-4 text-right font-semibold {{ 'text-green-600' if stock.roc_21d >= 17 else 'text-gray-400' }}">
+                        {{ stock.roc_21d }}%
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+<!-- 📋 Copy-to-Clipboard Script -->
+<script>
+function copyToClipboard(symbol) {
+  const el = document.getElementById("copy-" + symbol);
+  if (el) {
+    navigator.clipboard.writeText(el.textContent).then(() => {
+      const tooltip = document.getElementById("tooltip-" + symbol);
+      if (tooltip) {
+        tooltip.style.opacity = "1";
+        setTimeout(() => {
+          tooltip.style.opacity = "0";
+        }, 1500);
+      }
+    });
+  }
+}
+
+document.querySelectorAll("#sortable-table th").forEach((header, index) => {
+  header.addEventListener("click", () => {
+    const table = header.closest("table");
+    const tbody = table.querySelector("tbody");
+    const rows = Array.from(tbody.querySelectorAll("tr")).filter(row => row.querySelector("td"));
+
+    const isAsc = header.classList.toggle("asc");
+    table.querySelectorAll("th").forEach(th => th !== header && th.classList.remove("asc", "desc"));
+    header.classList.toggle("desc", !isAsc);
+
+    rows.sort((a, b) => {
+      const cellA = a.children[index].textContent.trim();
+      const cellB = b.children[index].textContent.trim();
+      const valA = parseFloat(cellA.replace(/[^0-9.-]/g, "")) || cellA;
+      const valB = parseFloat(cellB.replace(/[^0-9.-]/g, "")) || cellB;
+      return isAsc ? (valA > valB ? 1 : -1) : (valA < valB ? 1 : -1);
+    });
+
+    rows.forEach(row => tbody.appendChild(row));
+  });
+});
+</script>
+{% endblock %}

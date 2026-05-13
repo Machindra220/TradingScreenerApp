@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en"
+      x-data="{ 
+        darkMode: localStorage.getItem('darkMode') === 'true', 
+        sidebarOpen: true,
+        openSection: localStorage.getItem('openSection') || 'main'
+      }"
+      x-init="$watch('darkMode', val => localStorage.setItem('darkMode', val)); $watch('openSection', val => localStorage.setItem('openSection', val))"
+      :class="{ 'dark': darkMode }">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}Portfolio App{% endblock %}</title>
+  <link rel="icon" href="{{ url_for('static', filename='favicon.png') }}" type="image/x-icon">
+  
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <script src="https://cdn.jsdelivr.net/npm/@alpinejs/collapse@3.x.x/dist/cdn.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    [x-cloak] { display: none !important; }
+    .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+  </style>
+</head>
+
+<body class="bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-300">
+
+<div class="flex min-h-screen">
+  <aside :class="sidebarOpen ? 'w-64' : 'w-20'" 
+         class="bg-slate-900 text-slate-300 transition-all duration-300 flex flex-col border-r border-slate-800 shadow-xl fixed inset-y-0 left-0 z-50 lg:relative">
+    
+    <div class="flex items-center justify-between px-4 py-6 border-b border-slate-800/50">
+      <a href="{{ url_for('trades.dashboard') }}" class="flex items-center gap-3 overflow-hidden">
+        <div class="bg-blue-600 p-1.5 rounded-lg flex-shrink-0">
+            <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo" class="h-6 w-6 object-contain">
+        </div>
+        <span x-show="sidebarOpen" x-transition.opacity class="font-bold text-lg tracking-tight text-white whitespace-nowrap">Portfolio.io</span>
+      </a>
+      <button @click="sidebarOpen = !sidebarOpen" class="text-slate-400 hover:text-white p-1 rounded-md hover:bg-slate-800 transition-colors">
+        <svg x-show="sidebarOpen" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"/></svg>
+        <svg x-show="!sidebarOpen" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg>
+      </button>
+    </div>
+
+    <nav class="flex-1 px-3 py-4 space-y-4 overflow-y-auto custom-scrollbar">
+      
+      {% macro navlink(endpoint, label, icon) %}
+        {% set is_active = request.endpoint == endpoint %}
+        <a href="{{ url_for(endpoint) }}"
+           title="{{ label }}"
+           class="flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 group
+           {{ 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' if is_active else 'hover:bg-slate-800 hover:text-white' }}">
+          <span class="text-lg opacity-80 group-hover:opacity-100 transition-opacity">{{ icon }}</span>
+          <span x-show="sidebarOpen" x-cloak class="text-sm font-medium">{{ label }}</span>
+        </a>
+      {% endmacro %}
+
+      <div class="space-y-1">
+        <div x-show="sidebarOpen" class="px-3 text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">Core</div>
+        {{ navlink('trades.dashboard', 'Dashboard', '🏠') }}
+        {{ navlink('trades.add_trade', 'Add Trade', '➕') }}
+        {{ navlink('volar_ind.view_favorites_india', 'India Watchlist', '🧡') }}
+        {{ navlink('volar_us.view_favorites_us', 'US Watchlist', '💙') }}
+        {{ navlink('watchlist.add', 'Manual Watchlist', '📈') }}
+        {{ navlink('trades.trade_history', 'Trade History', '📜') }}
+        {{ navlink('ai_analyst.ai_chat', 'AI Analyst', '🤖') }}
+      </div>
+      
+
+      <div class="space-y-1">
+        <button @click="openSection = openSection === 'analysis' ? '' : 'analysis'" 
+                class="w-full flex items-center justify-between px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-slate-500 hover:text-slate-300">
+            <span x-show="sidebarOpen">Analysis Tools</span>
+            <span x-show="!sidebarOpen">---</span>
+            <svg x-show="sidebarOpen" :class="openSection === 'analysis' ? 'rotate-180' : ''" class="w-3 h-3 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
+        </button>
+        
+        <div x-show="openSection === 'analysis' || !sidebarOpen" x-collapse class="space-y-1">
+        {{ navlink('volar_us.volar_us_process', 'US Volar Stage2', '📈') }}
+        {{ navlink('volar_us_adaptive_bp.volar_us_process', 'US Adaptive RS', '⚡') }}
+			  {{ navlink('volar_ind.volar_process', 'IND Volar Stage2', '📈') }}
+        {{ navlink('volar_ind_adaptive_bp.volar_ind_process', 'IND Adaptive RS', '⚡') }}
+        {{ navlink('rs_roc.rs_roc_momentum_process', 'IND RS-ROC', '🚀') }}
+        {{ navlink('rs_roc_us.rs_roc_us_momentum_process', 'US RS-ROC', '🚀') }}
+			  {{ navlink('screener.sector_analysis_view', 'Sector Analysis', '📊') }}
+			  {{ navlink('performers.top_performers_view', 'Performers', '📈') }}
+			  {{ navlink('screener.stage2_view', 'Stage 2 Screener', '📊') }}
+			  {{ navlink('delivery.delivery_surge_view', 'Delivery Surge', '🚀') }}
+			  {{ navlink('stage2_delivery.stage2_delivery_screener_view', 'Stage 2 Delivery', '🚚') }}
+			  {{ navlink('momentum.momentum_rebalance_view', 'Momentum Strategy', '📊') }}
+			  {{ navlink('eps.eps_screener_view', 'EPS Surge Screener', '📈') }}
+        {{ navlink('stage2_screener_us.stage2_us_view', 'US Stage2 Screener', '📈') }}
+        {{ navlink('stage2_india.stage2_india_view', 'IND Stage2 Screener', '📈') }} 
+        {{ navlink('hh_hl_india.hh_hl_view', 'Stage2 HH HL Screener', '📈') }}
+        {{ navlink('ll_lh_india.ll_lh_view', 'Stage3 LL LH Screener', '📈') }}
+        
+        </div>
+      </div>
+
+            <div class="space-y-1">
+        <button @click="openSection = openSection === 'History' ? '' : 'History'" 
+                class="w-full flex items-center justify-between px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-slate-500 hover:text-slate-300">
+            <span x-show="sidebarOpen">Data History</span>
+            <span x-show="!sidebarOpen">---</span>
+            <svg x-show="sidebarOpen" :class="openSection === 'History' ? 'rotate-180' : ''" class="w-3 h-3 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
+        </button>
+        
+        <div x-show="openSection === 'History' || !sidebarOpen" x-collapse class="space-y-1">
+			  {{ navlink('screener.stage2_saved', 'Stage 2 History', '📦') }}
+			  {{ navlink('delivery.delivery_history', 'Delivery Surge History', '📦') }}
+			  {{ navlink('stage2_delivery.stage2_delivery_history', 'Stage 2 Delivery History', '📦') }}
+			  {{ navlink('eps.eps_screener_history', 'EPS Surge History', '📜') }}
+			  {{ navlink('momentum.momentum_history', 'Momentum History', '📜') }}
+			  {{ navlink('vcp.vcp_view', 'VCP Screener', '📉') }}
+			  {{ navlink('notes.notes_page', 'Notes', '📝') }}
+			  {{ navlink('stats.stats_dashboard', 'Stats', '📊') }}
+			  {{ navlink('calendar.calendar_view', 'Calendar', '📅') }}
+			  {{ navlink('period_performers.period_performers_view', 'Period Performers', '📊') }}
+        </div>
+      </div>
+
+      <div class="space-y-1 pt-2 border-t border-slate-800">
+        {{ navlink('stats.stats_dashboard', 'Statistics', '📊') }}
+        {{ navlink('calendar.calendar_view', 'Calendar', '📅') }}
+        {{ navlink('notes.notes_page', 'Research Notes', '📝') }}
+      </div>
+    </nav>
+
+    <div class="p-4 border-t border-slate-800 bg-slate-900/50 space-y-3">
+      <div class="flex items-center justify-between px-2">
+        <span x-show="sidebarOpen" class="text-xs font-medium text-slate-400">Appearance</span>
+        <button @click="darkMode = !darkMode" class="p-1.5 rounded-md hover:bg-slate-800 transition-colors">
+            <span x-show="!darkMode">🌙</span>
+            <span x-show="darkMode">☀️</span>
+        </button>
+      </div>
+      <a href="{{ url_for('auth.logout') }}"
+         class="flex items-center gap-3 px-3 py-2 rounded-lg text-red-400 hover:bg-red-500/10 transition-colors">
+        <span>🚪</span>
+        <span x-show="sidebarOpen" class="text-sm font-semibold">Logout</span>
+      </a>
+    </div>
+  </aside>
+
+  <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
+    <main class="flex-1 overflow-y-auto p-4 lg:p-8">
+      
+      {% if pinned_resources %}
+      <section class="mb-8">
+        <div class="flex items-center gap-3 mb-4">
+            <span class="text-xs font-bold uppercase tracking-widest text-slate-400 whitespace-nowrap">Pinned Resources</span>
+            <div class="h-px w-full bg-slate-200 dark:bg-slate-800"></div>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          {% for r in pinned_resources %}
+          <a href="{{ url_for('resources.access_resource', id=r.id) }}" target="_blank"
+             class="group flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-full text-sm font-medium hover:border-blue-500 hover:ring-2 hover:ring-blue-500/10 transition-all shadow-sm">
+            <span class="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
+            <span class="text-slate-700 dark:text-slate-300 group-hover:text-blue-600 dark:group-hover:text-blue-400">{{ r.title }}</span>
+          </a>
+          {% endfor %}
+        </div>
+      </section>
+      {% endif %}
+
+      <div class="max-w-7xl mx-auto">
+        {% block content %}{% endblock %}
+      </div>
+    </main>
+
+    <footer class="py-6 px-8 border-t border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 backdrop-blur-sm">
+      <div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4 text-xs font-medium text-slate-500">
+        <div>© 2026 Portfolio App • Engineered by Machindra</div>
+        <div class="flex items-center gap-6">
+          <a href="https://github.com/Machindra220" target="_blank" class="hover:text-blue-500 transition-colors">GitHub</a>
+          <a href="{{ url_for('resources.show_resources') }}" class="hover:text-blue-500 transition-colors">Resources</a>
+          <span class="px-2 py-0.5 rounded bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 font-bold uppercase">System Live</span>
+        </div>
+      </div>
+    </footer>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/sort_table.js') }}"></script>
+</body>
+</html>

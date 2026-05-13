@@ -1,0 +1,82 @@
+{% extends "base_authenticated.html" %}
+{% block content %}
+<div class="max-w-7xl mx-auto px-4 py-8">
+    <div class="flex justify-between items-center mb-8">
+        <div>
+            <h2 class="text-2xl font-black text-gray-900 uppercase tracking-tight">📈 HH-HL Trend Screener</h2>
+            <p class="text-[10px] font-bold text-gray-400 mt-1">ACTIVE FILE: <span class="text-blue-600">{{ last_file }}</span></p>
+        </div>
+        {% if stocks %}
+        <a href="{{ url_for('hh_hl_india.export_hhhl') }}" class="bg-green-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-green-700 transition">
+            📥 Export CSV
+        </a>
+        {% endif %}
+    </div>
+
+    <div class="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm mb-8">
+        <form method="POST" enctype="multipart/form-data" class="flex flex-col md:flex-row items-end gap-6">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <div class="flex-1 w-full">
+                <label class="block text-[10px] font-bold uppercase text-gray-400 mb-2">Change Ticker List (Optional)</label>
+                <input type="file" name="file" class="w-full text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-[10px] file:font-bold file:bg-blue-50 file:text-blue-700">
+            </div>
+            <button type="submit" onclick="document.getElementById('spinner').classList.remove('hidden')" class="bg-blue-600 text-white px-8 py-3 rounded-xl font-black text-xs uppercase hover:bg-blue-700 transition flex items-center gap-2">
+                <span>🚀 Run Scan</span>
+                <span id="spinner" class="hidden animate-spin">⏳</span>
+            </button>
+        </form>
+    </div>
+
+    {% if summary_message %}
+        <div class="mb-6 p-3 bg-blue-50 text-blue-700 text-xs font-bold rounded-lg border border-blue-100">{{ summary_message }}</div>
+    {% endif %}
+
+    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <table class="min-w-full text-left" id="trendTable">
+            <thead class="bg-gray-50/50 border-b border-gray-100">
+                <tr>
+                    <th class="px-4 py-4 text-[9px] font-bold uppercase text-gray-300 w-12">Sr.</th>
+                    <th class="px-6 py-4 text-[9px] font-bold uppercase text-gray-400">Symbol</th>
+                    <th class="px-6 py-4 text-[9px] font-bold uppercase text-gray-400">Price</th>
+                    <th class="px-6 py-4 text-[9px] font-bold uppercase text-gray-400">Swing Low</th>
+                    <th class="px-6 py-4 text-[9px] font-bold uppercase text-gray-400 cursor-pointer hover:text-blue-600" onclick="sortTable(4)">
+                        SL % ↕
+                    </th>
+                    <th class="px-6 py-4 text-[9px] font-bold uppercase text-gray-400">52W Retrace</th>
+                    <th class="px-6 py-4 text-[9px] font-bold uppercase text-gray-400">RS</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-50">
+                {% for stock in stocks %}
+                <tr class="hover:bg-gray-50/50 transition-colors">
+                    <td class="px-4 py-4 text-[10px] text-gray-300 font-medium">{{ loop.index }}</td>
+                    <td class="px-6 py-4 font-black text-blue-600">{{ stock.symbol }}</td>
+                    <td class="px-6 py-4 text-xs font-bold">₹{{ stock.price }}</td>
+                    <td class="px-6 py-4 text-xs text-gray-500">₹{{ stock.last_swing_low }}</td>
+                    <td class="px-6 py-4 text-xs font-black text-orange-600">{{ stock.sl_percent }}%</td>
+                    <td class="px-6 py-4 text-xs font-bold text-red-500">-{{ stock.retracement }}%</td>
+                    <td class="px-6 py-4 text-xs font-bold text-green-600">{{ stock.rs }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+function sortTable(columnIndex) {
+    const table = document.getElementById("trendTable");
+    const tbody = table.tBodies[0];
+    const rows = Array.from(tbody.rows);
+    const isAscending = table.getAttribute('data-order') === 'asc';
+    table.setAttribute('data-order', isAscending ? 'desc' : 'asc');
+
+    rows.sort((a, b) => {
+        const valA = parseFloat(a.cells[columnIndex].innerText.replace('%', ''));
+        const valB = parseFloat(b.cells[columnIndex].innerText.replace('%', ''));
+        return isAscending ? valA - valB : valB - valA;
+    });
+    tbody.append(...rows);
+}
+</script>
+{% endblock %}

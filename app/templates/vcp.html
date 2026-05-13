@@ -1,0 +1,105 @@
+{% extends "base_authenticated.html" %}
+{% block title %}VCP Screener{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto p-6">
+    <h1 class="text-2xl font-bold mb-2">📉 Volatility Contraction Pattern (VCP) Screener</h1>
+
+    <!-- Screener Form -->
+    <form method="post" action="{{ url_for('vcp.vcp_process') }}" id="screenerForm" class="mb-4">
+        <!-- 🔐 CSRF Protection -->
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" id="runButton"
+                class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+            🚀 Run VCP Screener
+        </button>
+        <span id="spinner" class="ml-3 hidden text-blue-600 animate-spin">⏳</span>
+    </form>
+
+    <!-- Summary Message -->
+    <div id="summaryMessage" class="mb-4 text-green-700 font-semibold"></div>
+
+    <!-- Results Table -->
+    <div id="resultsContainer">
+        {% if results %}
+        <table class="min-w-full bg-white rounded shadow">
+            <thead class="bg-gray-200">
+                <tr>
+                    <th class="px-4 py-2">#</th>
+                    <th class="px-4 py-2">Date</th>
+                    <th class="px-4 py-2">Symbol</th>
+                    <th class="px-4 py-2">Price</th>
+                    <th class="px-4 py-2">Volume</th>
+                    <th class="px-4 py-2">ROC (7D)</th>
+                    <th class="px-4 py-2">ROC (21D)</th>
+                    <th class="px-4 py-2">Contractions (%)</th>
+                    <th class="px-4 py-2">Contracting?</th>
+                    <th class="px-4 py-2">Tag</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in results %}
+                {% set clean_symbol = row.symbol.replace('.NS', '').replace('.BO', '') %}
+                <tr class="border-t">
+                    <td class="px-4 py-2">{{ loop.index }}</td>
+                    <td class="px-4 py-2">{{ row.date }}</td>
+                    <td class="px-4 py-2 font-semibold">{{ clean_symbol }}</td>
+                    <td class="px-4 py-2">₹{{ "%.2f"|format(row.price) }}</td>
+                    <td class="px-4 py-2">{{ "{:,}".format(row.volume) }}</td>
+                    <td class="px-4 py-2 {% if row.roc7 and row.roc7 >= 10 %}text-green-600{% elif row.roc7 and row.roc7 <= -5 %}text-red-500{% endif %}">
+                        {{ row.roc7 }}%
+                    </td>
+                    <td class="px-4 py-2 {% if row.roc21 and row.roc21 >= 10 %}text-green-600{% elif row.roc21 and row.roc21 <= -5 %}text-red-500{% endif %}">
+                        {{ row.roc21 }}%
+                    </td>
+                    <td class="px-4 py-2">{{ row.contractions }}</td>
+                    <td class="px-4 py-2 {% if row.is_contracting %}text-green-600{% else %}text-red-500{% endif %}">
+                        {{ 'Yes' if row.is_contracting else 'No' }}
+                    </td>
+                    <td class="px-4 py-2">{{ row.tag }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+    </div>
+</div>
+
+<!-- AJAX + Spinner Script -->
+<script>
+document.getElementById("screenerForm").addEventListener("submit", function(e) {
+    e.preventDefault();
+    const spinner = document.getElementById("spinner");
+    const runButton = document.getElementById("runButton");
+    const summaryMessage = document.getElementById("summaryMessage");
+    const resultsContainer = document.getElementById("resultsContainer");
+
+    spinner.classList.remove("hidden");
+    runButton.disabled = true;
+    summaryMessage.innerHTML = "";
+
+    fetch(this.action, {
+        method: "POST",
+        body: new FormData(this)
+    })
+    .then(response => response.text())
+    .then(html => {
+        // Replace resultsContainer with new table
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, "text/html");
+        const newResults = doc.querySelector("#resultsContainer");
+        const newSummary = doc.querySelector("#summaryMessage");
+
+        if (newResults) resultsContainer.innerHTML = newResults.innerHTML;
+        if (newSummary) summaryMessage.innerHTML = newSummary.innerHTML;
+    })
+    .catch(err => {
+        summaryMessage.innerHTML = "⚠️ Error running screener: " + err;
+    })
+    .finally(() => {
+        spinner.classList.add("hidden");
+        runButton.disabled = false;
+    });
+});
+</script>
+{% endblock %}

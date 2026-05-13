@@ -1,0 +1,75 @@
+{% extends 'base_authenticated.html' %}
+{% block content %}
+<h2 class="text-2xl font-semibold mb-4">📜 Momentum Strategy History (Nifty 500)</h2>
+
+<!-- Filters -->
+<form method="get" class="mb-4 flex gap-4 flex-wrap">
+  <input type="text" name="symbol" placeholder="Filter by symbol (e.g. INFY)"
+         value="{{ symbol_filter }}" class="px-3 py-2 border rounded w-48">
+  <input type="text" name="month" placeholder="Filter by month (YYYY-MM)"
+         value="{{ month_filter }}" class="px-3 py-2 border rounded w-48">
+  <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded">🔍 Filter</button>
+</form>
+
+<!-- Active Trades (BUY) -->
+<h3 class="text-xl font-semibold mb-2 text-blue-700">📈 Active Trades</h3>
+<table class="w-full table-auto border-collapse mb-8">
+  <thead>
+    <tr class="bg-blue-100 dark:bg-blue-800">
+      <th class="px-4 py-2 text-left">Date</th>
+      <th class="px-4 py-2 text-left">Symbol</th>
+      <th class="px-4 py-2 text-left">Price</th>
+      <th class="px-4 py-2 text-left">Qty</th>
+      <th class="px-4 py-2 text-left">Notes</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for trade in trades %}
+    <tr class="border-b">
+      <td class="px-4 py-2">{{ trade.trade_date }}</td>
+      <td class="px-4 py-2">{{ trade.symbol.replace('.NS', '') }}</td>
+      <td class="px-4 py-2">₹{{ trade.price }}</td>
+      <td class="px-4 py-2">{{ trade.quantity }}</td>
+      <td class="px-4 py-2">{{ trade.notes }}</td>
+    </tr>
+    {% else %}
+    <tr>
+      <td colspan="5" class="px-4 py-4 text-center text-gray-500">No trades found for selected filters.</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<!-- Removed Trades (SELL) -->
+<h3 class="text-xl font-semibold mb-2 text-red-700">📉 Removed Trades</h3>
+<table class="w-full table-auto border-collapse">
+  <thead>
+    <tr class="bg-red-100 dark:bg-red-800">
+      <th class="px-4 py-2 text-left">Symbol</th>
+      <th class="px-4 py-2 text-left">Entry Date</th>
+      <th class="px-4 py-2 text-left">Exit Date</th>
+      <th class="px-4 py-2 text-left">Entry Price</th>
+      <th class="px-4 py-2 text-left">Exit Price</th>
+      <th class="px-4 py-2 text-left">Return/Loss</th>
+      <th class="px-4 py-2 text-left">Return/Loss %</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for trade in removed_trades %}
+    <tr class="border-b">
+      <td class="px-4 py-2">{{ trade.symbol.replace('.NS', '') }}</td>
+      <td class="px-4 py-2">{{ trade.portfolio.buy_date }}</td>
+      <td class="px-4 py-2">{{ trade.trade_date }}</td>
+      <td class="px-4 py-2">₹{{ trade.portfolio.buy_price }}</td>
+      <td class="px-4 py-2">₹{{ trade.price }}</td>
+      <td class="px-4 py-2">₹{{ trade.profit_loss_value }}</td>
+      <td class="px-4 py-2">{{ trade.profit_loss_pct }}%</td>
+    </tr>
+    {% else %}
+    <tr>
+      <td colspan="7" class="px-4 py-4 text-center text-gray-500">No removed trades found.</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

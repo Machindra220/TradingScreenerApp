@@ -1,0 +1,81 @@
+{% extends "base_authenticated.html" %}
+{% block content %}
+<h2 class="text-xl font-semibold mb-2">📦 Saved Stage 2 Stocks (Last 30 Days)</h2>
+
+<form method="get" class="mb-4 flex gap-4 flex-wrap">
+  <input type="text" name="symbol" placeholder="Filter by symbol (e.g. INFY)"
+         value="{{ symbol_filter }}" class="px-3 py-2 border rounded w-48">
+
+  <input type="date" name="start_date" value="{{ start_date }}" class="px-3 py-2 border rounded">
+  <input type="date" name="end_date" value="{{ end_date }}" class="px-3 py-2 border rounded">
+
+  <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded">🔍 Filter</button>
+
+  <!-- New button to keep only single entries -->
+  <a href="{{ url_for('screener.stage2_saved', single='true') }}"
+     class="px-4 py-2 bg-green-600 text-white rounded">🧹 Show Latest Only</a>
+</form>
+
+
+<!-- Quick preset filters -->
+<div class="flex gap-2 mb-4">
+  <a href="{{ url_for('screener.stage2_saved', preset='7') }}"
+     class="px-3 py-1 bg-gray-200 hover:bg-gray-300 rounded text-sm">Last 7 Days</a>
+  <a href="{{ url_for('screener.stage2_saved', preset='15') }}"
+     class="px-3 py-1 bg-gray-200 hover:bg-gray-300 rounded text-sm">Last 15 Days</a>
+  <a href="{{ url_for('screener.stage2_saved', preset='30') }}"
+     class="px-3 py-1 bg-gray-200 hover:bg-gray-300 rounded text-sm">Last 30 Days</a>
+</div>
+
+{% if error %}
+  <p class="text-red-600 bg-red-100 border border-red-300 rounded px-4 py-2 mb-4">
+    {{ error }}
+  </p>
+{% elif stocks %}
+  <p class="text-sm text-gray-600 mb-4">Showing stocks screened and saved in the database.</p>
+  <button onclick="resetSort()" class="bg-gray-200 hover:bg-gray-300 text-sm px-3 py-1 rounded mb-2">
+    🔄 Reset Sort
+  </button>
+
+  <table class="min-w-full bg-white rounded shadow">
+    <thead class="bg-blue-100 text-left">
+      <tr>
+        <th class="px-4 py-2">#</th>
+        <th class="px-4 py-2">Date</th>
+        <th class="px-4 py-2">Symbol</th>
+        <th onclick="toggleSort('price')" data-sort="desc" class="sortable">Price ▲</th>
+        <th class="px-4 py-2">30W MA</th>
+        <th onclick="toggleSort('volume')" data-sort="desc" class="sortable">Volume ▲</th>
+        <th onclick="toggleSort('vol_avg')" data-sort="desc" class="sortable">Avg Volume ▲</th>
+        <th onclick="toggleSort('rs')" data-sort="desc" class="sortable">Rel Strength ▲</th>
+        <th onclick="toggleSort('days_present')" data-sort="desc" class="sortable">Days Present ▲</th>
+        <th class="px-4 py-2">Tag</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for stock in stocks %}
+      <tr class="border-t">
+        <td class="px-4 py-2">{{ loop.index }}</td>
+        <td class="px-4 py-2">{{ stock.date.strftime('%d/%m/%Y %H:%M') }}</td>
+        <td class="px-4 py-2 flex items-center gap-2">
+          <span id="symbol-{{ loop.index }}">{{ stock.symbol_clean }}</span>
+          <button onclick="copyToClipboard('{{ stock.symbol_clean }}')" class="text-blue-600 hover:underline text-sm">📋 Copy</button>
+        </td>
+        <td class="px-4 py-2" data-key="price">{{ stock.price }}</td>
+        <td class="px-4 py-2">{{ stock.ma_30w }}</td>
+        <td class="px-4 py-2" data-key="volume">{{ stock.volume }}</td>
+        <td class="px-4 py-2" data-key="vol_avg">{{ stock.vol_avg }}</td>
+        <td class="px-4 py-2" data-key="rs">{{ stock.rs }}</td>
+        <td class="px-4 py-2" data-key="days_present">{{ stock.days_present }}</td>
+        <td class="px-4 py-2">{{ stock.tag }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  <p class="text-yellow-600 bg-yellow-100 border border-yellow-300 rounded px-4 py-2 mt-4">
+    No Stage 2 stocks saved in the selected period.
+  </p>
+{% endif %}
+
+{% endblock %}

@@ -1,0 +1,90 @@
+{% extends "base_authenticated.html" %}
+{% block content %}
+<h2 class="text-xl font-semibold mb-2">📈 Stage 2 Stocks</h2>
+
+{% if error %}
+  <p class="text-red-600 bg-red-100 border border-red-300 rounded px-4 py-2 mb-4">
+    {{ error }}
+  </p>
+{% else %}
+
+<form method="post" action="{{ url_for('screener.stage2_process') }}" id="screenerForm" class="mb-4">
+   <!-- 🔐 CSRF Protection -->
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <button type="submit" id="runButton"
+          class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+    🚀 Run Stage 2 Screener
+  </button>
+  <span id="spinner" class="ml-3 hidden text-blue-600 animate-spin">⏳</span>
+</form>
+
+{% if summary_message %}
+  <p class="summary-toast text-green-700 bg-green-100 border border-green-300 rounded px-4 py-2 mb-4">
+    {{ summary_message }}
+  </p>
+{% endif %}
+
+  <p class="text-sm text-gray-600 mb-4">Last processed: {{ last_processed_time }}</p>
+  <p class="text-sm text-gray-600 mb-1">Source: {{ source_name }}</p>
+
+  {% if stocks %}
+  <table class="min-w-full bg-white rounded shadow">
+    <thead class="bg-blue-100 text-left">
+      <tr>
+        <th class="px-4 py-2">#</th>
+        <th class="px-4 py-2">Symbol</th>
+        <th onclick="toggleSort('price')" data-sort="desc" class="px-4 py-2">Price ▲</th>
+        <th class="px-4 py-2">30W MA</th>
+        <th onclick="toggleSort('volume')" data-sort="desc" class="px-4 py-2">Volume ▲</th>
+        <th onclick="toggleSort('vol_avg')" data-sort="desc" class="px-4 py-2">Avg Volume ▲</th>
+        <th class="px-4 py-2">Rel Strength</th>
+        <th onclick="toggleSort('days_present')" data-sort="desc" class="px-4 py-2">Persistence</th>
+        <th class="px-4 py-2">Tag</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for stock in stocks %}
+      <tr class="border-t">
+        <td class="px-4 py-2">{{ stock.rank }}</td>
+        <td class="px-4 py-2 flex items-center gap-2">
+          <span>{{ stock.symbol_clean }}</span>
+          <button onclick="copyToClipboard('{{ stock.symbol_clean }}')" class="text-blue-600 hover:underline text-sm">📋 Copy</button>
+        </td>
+        <td class="px-4 py-2" data-key="price">{{ stock.price }}</td>
+        <td class="px-4 py-2">{{ stock.ma_30w }}</td>
+        <td class="px-4 py-2" data-key="volume">{{ stock.volume }}</td>
+        <td class="px-4 py-2" data-key="vol_avg">{{ stock.vol_avg }}</td>
+        <td class="px-4 py-2" data-key="rs">{{ stock.rs }}</td>
+        <td class="px-4 py-2" data-key="days_present">{{ stock.persistence.split()[0] }}</td>
+        <td class="px-4 py-2">{{ stock.tag }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% elif summary_message %}
+    <p class="text-yellow-600 bg-yellow-100 border border-yellow-300 rounded px-4 py-2 mt-4">
+      No stocks matched Stage 2 criteria today.
+    </p>
+  {% endif %}
+ {% endif %}
+<!-- 
+<script>
+function copyToClipboard(text) {
+  navigator.clipboard.writeText(text).then(() => {
+    alert(`Copied: ${text}`);
+  });
+}
+
+function sortTable(key) {
+  const rows = Array.from(document.querySelectorAll("tbody tr"));
+  rows.sort((a, b) => {
+    const valA = parseFloat(a.querySelector(`[data-key="${key}"]`).textContent) || 0;
+    const valB = parseFloat(b.querySelector(`[data-key="${key}"]`).textContent) || 0;
+    return valB - valA; // descending
+  });
+  const tbody = document.querySelector("tbody");
+  tbody.innerHTML = "";
+  rows.forEach(row => tbody.appendChild(row));
+}
+</script> -->
+{% endblock %}

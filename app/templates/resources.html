@@ -1,0 +1,183 @@
+{% extends 'base_authenticated.html' %}
+{% block content %}
+
+<!-- 🖼️ Centered Logo -->
+<!-- <div class="flex justify-center mt-8 mb-4">
+  <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo" class="h-12">
+</div> -->
+
+<!-- 🧭 Page Heading -->
+<h2 class="text-2xl font-semibold text-center text-gray-800 mb-6">🧰 Helpful Resources</h2>
+
+<!-- 🔔 Flash Messages -->
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    {% for category, msg in messages %}
+      <div class="mb-4 px-4 py-2 rounded bg-blue-100 text-blue-800 text-sm max-w-3xl mx-auto">
+        {{ msg }}
+      </div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+
+<!-- ➕ Add Resource Button -->
+<div class="text-center mb-6">
+  <button onclick="openAddModal()"
+          class="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition">
+    ➕ Add Resource
+  </button>
+</div>
+
+<hr class="mb-6">
+
+<!-- 📋 Resources Table -->
+<div class="overflow-x-auto max-w-6xl mx-auto">
+  <table class="min-w-full border border-gray-300 rounded shadow-sm text-sm">
+    <thead class="bg-gray-300 text-gray-700">
+      <tr>
+        <th class="px-4 py-2 text-left">Title</th>
+        <th class="px-4 py-2 text-left">Category</th>
+        <th class="px-4 py-2 text-left">Note</th>
+        <th class="px-4 py-2 text-left">Pinned</th>
+        <th class="px-4 py-2 text-left">Last Accessed</th>
+        <th class="px-4 py-2 text-left">Actions</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-200">
+      {% for r in resources %}
+      <tr class="hover:bg-gray-50">
+        <td class="px-4 py-2 flex items-center gap-2">
+          <img src="https://www.google.com/s2/favicons?domain={{ r.url }}" class="h-5 w-5">
+          <a href="{{ url_for('resources.access_resource', id=r.id) }}"
+             target="_blank"
+             rel="noopener noreferrer"
+             class="text-indigo-600 hover:underline"
+             title="Access {{ r.title }} and update last used time">
+            {{ r.title }}
+          </a>
+        </td>
+        <td class="px-4 py-2">{{ r.category }}</td>
+        <td class="px-4 py-2">{{ r.note }}</td>
+        <td class="px-4 py-2">{{ '📌' if r.pinned else '' }}</td>
+        <td class="px-4 py-2">{{ r.last_accessed.strftime('%d-%m-%Y') if r.last_accessed else '—' }}</td>
+        <td class="px-4 py-2 whitespace-nowrap">
+          <div class="flex gap-2">
+            <!-- ✏️ Edit Button -->
+            <button type="button"
+                    onclick="openEditModal({{ r.id }}, '{{ r.title }}', '{{ r.url }}', '{{ r.category }}', `{{ r.note|escape }}`, {{ 'true' if r.pinned else 'false' }})"
+                    class="px-3 py-1 bg-indigo-600 text-white rounded hover:bg-indigo-700 text-sm">
+              ✏️
+            </button>
+
+            <!-- 🗑️ Delete Button -->
+            <form method="POST" action="{{ url_for('resources.delete_resource', id=r.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button type="submit"
+                      onclick="return confirm('Delete this resource?')"
+                      class="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 text-sm">
+                🗑️
+              </button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- ✏️ Add/Edit Modal -->
+<div id="resource-modal"
+     class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden flex items-center justify-center">
+  <form method="POST"
+        id="resource-form"
+        class="bg-white p-6 rounded shadow-md w-full max-w-lg space-y-4">
+
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+    <!-- 🏷️ Title -->
+    <input name="title"
+           id="modal-title"
+           placeholder="Title"
+           required
+           class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+
+    <!-- 🌐 URL -->
+    <input name="url"
+           id="modal-url"
+           placeholder="URL"
+           required
+           class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+
+    <!-- 📂 Category -->
+    <div>
+      <label class="block text-sm font-medium text-gray-700 mb-1">Category</label>
+      <select name="category"
+              id="modal-category"
+              class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        <option value="">-- Select Existing --</option>
+        {% for cat in categories %}
+          <option value="{{ cat }}">{{ cat }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <!-- ➕ New Category -->
+    <input name="new_category"
+           id="modal-new-category"
+           placeholder="New Category"
+           class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+
+    <!-- 📝 Note -->
+    <textarea name="note"
+              id="modal-note"
+              placeholder="Note"
+              class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
+
+    <!-- 📌 Pin Checkbox -->
+    <label class="inline-flex items-center gap-2 text-sm text-gray-700">
+      <input type="checkbox" name="pinned" id="modal-pinned" class="rounded">
+      📌 Pin
+    </label>
+
+    <!-- ✅ Modal Actions -->
+    <div class="flex justify-end gap-4 pt-4">
+      <button type="submit"
+              class="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition">
+        💾 Save
+      </button>
+      <button type="button"
+              onclick="closeModal()"
+              class="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-100 transition">
+        ❌ Cancel
+      </button>
+    </div>
+  </form>
+</div>
+
+<!-- 🧠 Modal Logic -->
+<script>
+function openAddModal() {
+  const form = document.getElementById('resource-form');
+  form.action = "{{ url_for('resources.add_resource') }}";
+  form.reset();
+  document.getElementById('resource-modal').classList.remove('hidden');
+}
+
+function openEditModal(id, title, url, category, note, pinned) {
+  const form = document.getElementById('resource-form');
+  form.action = `/resources/edit/${id}`;
+  document.getElementById('modal-title').value = title;
+  document.getElementById('modal-url').value = url;
+  document.getElementById('modal-category').value = category;
+  document.getElementById('modal-note').value = note;
+  document.getElementById('modal-pinned').checked = pinned;
+  document.getElementById('resource-modal').classList.remove('hidden');
+}
+
+function closeModal() {
+  document.getElementById('resource-modal').classList.add('hidden');
+}
+</script>
+
+{% endblock %}

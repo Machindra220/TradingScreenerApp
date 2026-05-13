@@ -1,0 +1,77 @@
+{% extends 'base_authenticated.html' %}
+{% block content %}
+<div class="max-w-7xl mx-auto px-4 py-8">
+    <div class="flex justify-between items-center mb-8">
+        <h2 class="text-2xl font-black text-indigo-900 uppercase tracking-tight">🧡 {{ market }} Watch-list</h2>
+        <span class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Live Performance Mode</span>
+    </div>
+
+    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <table class="min-w-full text-left text-xs">
+            <thead class="bg-gray-50 border-b border-gray-100">
+                <tr>
+                    <th class="px-6 py-4 font-bold uppercase text-gray-400">Symbol</th>
+                    <th class="px-6 py-4 font-bold uppercase text-gray-400">Price</th>
+                    <th class="px-6 py-4 font-bold uppercase text-gray-400 text-center">RS %tile</th>
+                    <th class="px-6 py-4 font-bold uppercase text-gray-400">VOLAR</th>
+                    <th class="px-6 py-4 font-bold uppercase text-gray-400">Perf %</th>
+                    <th class="px-6 py-4 font-bold uppercase text-gray-400 text-right">Action</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-50">
+                {% for stock in stocks %}
+                <tr id="row-{{ stock.symbol_clean if stock.symbol_clean else stock.symbol }}" class="hover:bg-indigo-50/30 transition-colors">
+                    <td class="px-6 py-4 font-black text-indigo-700">
+                        {{ stock.symbol_clean if stock.symbol_clean else stock.symbol }}
+                    </td>
+                    <td class="px-6 py-4 font-bold text-gray-900">{{ currency }}{{ stock.price }}</td>
+                    <td class="px-6 py-4 text-center">
+                        <span class="inline-block px-3 py-1 rounded-full text-[10px] font-black {% if stock.rs_percentile|default(0) >= 90 %}bg-blue-600 text-white shadow-sm{% else %}bg-gray-100 text-gray-500{% endif %}">
+                            {{ stock.rs_percentile|default('N/A') }}
+                        </span>
+                    </td>
+                    <td class="px-6 py-4 font-black text-indigo-600">{{ stock.volar }}</td>
+                    <td class="px-6 py-4 font-bold {% if stock.performance > 0 %}text-green-600{% else %}text-red-500{% endif %}">
+                        {{ stock.performance }}%
+                    </td>
+                    <td class="px-6 py-4 text-right">
+                        <button onclick="removeFavorite('{{ stock.symbol_clean if stock.symbol_clean else stock.symbol }}')" 
+                                class="text-red-400 hover:text-red-600 transition font-bold uppercase text-[9px]">
+                            Delete 🗑️
+                        </button>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="6" class="px-6 py-12 text-center text-gray-400 italic">Your {{ market }} watch-list is empty. Star some stocks to see them here!</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+function removeFavorite(symbol) {
+    if(!confirm("Remove " + symbol + " from watch-list?")) return;
+
+    const formData = new FormData();
+    formData.append('symbol', symbol);
+    formData.append('csrf_token', '{{ csrf_token }}');
+
+    // Dynamically pick the removal route based on the market
+    const route = "{{ market }}" === "India" ? "/remove-favorite-india" : "/remove-favorite-us";
+
+    fetch(route, {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if(data.status === "success") {
+            document.getElementById('row-' + symbol).remove();
+        }
+    });
+}
+</script>
+{% endblock %}

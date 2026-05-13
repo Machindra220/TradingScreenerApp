@@ -1,0 +1,234 @@
+{% extends "base_authenticated.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+
+<!-- 🧭 Page Heading -->
+<h2 class="text-2xl font-semibold mb-4 text-gray-800 dark:text-white">
+  Running Trades - Dev Environment
+  <!-- <span class="text-base text-gray-500 font-normal">— Total Invested: ₹{{ total_invested }}</span> -->
+</h2>
+<h2 class="text-xl font-semibold text-green-700 dark:text-green-400 mb-4">
+  ✅ Open Trades: {{ open_trade_count }} |
+  Total Invested (Open): ₹{{ "%.2f"|format(total_invested) }}
+</h2>
+
+<!-- 🔔 Flash Messages -->
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% for category, message in messages %}
+    <div class="mb-4 px-4 py-2 rounded bg-blue-100 text-blue-800 text-sm">
+      {{ message }}
+    </div>
+  {% endfor %}
+{% endwith %}
+
+<!-- ➕ Add Trade Button -->
+<a href="{{ url_for('trades.add_trade') }}"
+   class="inline-block mb-4 px-4 py-2 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700 transition">
+  ➕ Add New Trade
+</a>
+
+<form method="get" action="{{ url_for('trades.dashboard') }}" class="mb-4 flex items-center space-x-2">
+  <!-- Strategy Dropdown -->
+  <select name="strategy_tag"
+          class="px-2 py-1 border border-gray-300 rounded focus:ring-indigo-500 focus:outline-none text-sm dark:bg-slate-900 dark:border-slate-700 dark:text-slate-200">
+    <option value="">All Strategies</option>
+    <option value="Top-Performers">Top-Performers</option>
+    <option value="VCP">VCP</option>
+    <option value="Delivery Surge">Delivery Surge</option>
+    <option value="Earnings">Earnings</option>
+    <option value="Breakout">Breakout</option>
+    <option value="No Strategy">No Strategy</option>
+  </select>
+
+  <!-- Filter Button with Icon -->
+  <button type="submit"
+          class="flex items-center px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 transition text-sm">
+    <!-- Filter Icon (Heroicons solid funnel) -->
+    <svg xmlns="http://www.w3.org/2000/svg"
+         class="h-4 w-4 mr-1"
+         fill="none"
+         viewBox="0 0 24 24"
+         stroke="currentColor">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L14 13.414V19a1 1 0 01-.447.894l-4 2.5A1 1 0 019 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
+    </svg>
+    Filter
+  </button>
+</form>
+
+<!-- 📊 Trades Table -->
+{% if trades %}
+  <div class="overflow-x-auto rounded-lg border border-gray-300 dark:border-slate-800 shadow-sm">
+    <table class="min-w-full text-sm">
+      <thead class="bg-gray-200 dark:bg-slate-800 text-gray-700 dark:text-slate-200">
+        <tr>
+          <th class="px-4 py-3 text-left font-semibold">Stock<br><span class="text-xs font-normal">Strategy</span></th>
+          <th class="px-4 py-3 text-left font-semibold">Qty</th>
+          <th class="px-4 py-3 text-center font-semibold">Avg Price<br><span class="text-xs font-normal">Entry Date</span></th>
+          <!-- <th class="px-4 py-2 text-center">Exit Price<br><span class="text-xs font-normal">Exit Date</span></th> -->
+          <!-- <th class="px-4 py-2 text-left">Avg Price</th> -->
+          
+          <th class="px-4 py-3 text-left font-semibold">Exited Qty</th>
+          <th class="px-4 py-3 text-left font-semibold">Invested</th>
+          <th class="px-4 py-3 text-left font-semibold">Realized PnL</th>
+          <!-- <th class="px-4 py-2 text-left">Entry Date</th> -->
+          <th class="px-4 py-3 text-left font-semibold">Note</th>
+          <th class="px-4 py-3 text-left font-semibold">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-200 dark:divide-slate-800 bg-white dark:bg-slate-900/50">
+        {% for trade in trades %}
+        <tr class="hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors">
+          <!-- 📌 Trade Status Badge + Stock Name -->
+           <td class="px-4 py-2">
+            <!-- First line: status + symbol -->
+            <div class="flex items-center gap-2">
+              {% if trade.status == "Closed" %}
+                <span class="bg-green-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">C</span>
+              {% elif trade.quantity < trade.exited_quantity and trade.quantity > 0 %}
+                <span class="bg-green-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">PE</span>
+              {% else %}
+                <span class="bg-green-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">O</span>
+              {% endif %}
+              <span class="font-bold text-gray-900 dark:text-white uppercase tracking-tight">{{ trade.stock_name }}</span>
+            </div>
+
+            <!-- Second line: strategy tag -->
+            <div class="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase mt-1">
+              {{ trade.strategy_tag or "—" }}
+            </div>
+          </td>
+
+
+          <td class="px-4 py-3 dark:text-slate-300 font-medium">{{ trade.quantity }}</td>
+          <!-- 💰 Trade Details -->
+           <!-- Entry Column -->
+          <td class="text-gray-900 dark:text-white font-semibold">
+            ₹{{ trade.avg_entry_price }}
+            <div class="text-[10px] text-gray-500 dark:text-slate-500">
+              {{ trade.entry_date }}
+            </div>
+          </td>
+          <!-- <td class="px-4 py-2">₹{{ trade.avg_entry_price }}</td> -->
+          <td class="px-4 py-2 dark:text-slate-300 font-medium">{{ trade.exited_quantity }}</td>
+          <td class="px-4 py-3 dark:text-slate-300">₹{{ trade.total_invested }}</td>
+          <td class="text-gray-900 dark:text-white font-semibold">₹{{ trade.realized_pnl }}</td>
+          <!-- <td class="px-4 py-2">{{ trade.entry_date }}</td> -->
+          <td class="px-4 py-3 text-gray-600 dark:text-slate-400 italic text-xs max-w-xs truncate">{{ trade.note }}</td>
+
+
+          <!-- 🛠️ Action Buttons -->
+          <td class="px-4 py-2 whitespace-nowrap">
+            <div class="flex gap-2">
+              <!-- View -->
+              <form method="GET" action="{{ url_for('trades.view_trade', trade_id=trade.id) }}">
+                <button type="submit"
+                        class="px-2 py-1 bg-gray-600 text-white text-xs rounded hover:bg-gray-700"
+                        title="View Trade">
+                  🔍
+                </button>
+              </form>
+
+              <!-- Edit -->
+              <form method="GET" action="{{ url_for('trades.edit_trade', trade_id=trade.id) }}">
+                <button type="submit"
+                        class="px-2 py-1 bg-indigo-600 text-white text-xs rounded hover:bg-indigo-700"
+                        title="Edit Trade">
+                  ✏️
+                </button>
+              </form>
+
+              <!-- Delete -->
+              <form method="POST" action="{{ url_for('trades.delete_trade', trade_id=trade.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit"
+                        onclick="return confirm('Delete this trade?')"
+                        class="px-2 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700"
+                        title="Delete Trade">
+                  🗑️
+                </button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <!-- 📭 Empty State -->
+  <p class="mt-4 text-gray-600">No trades yet. Start by adding one!</p>
+{% endif %}
+
+<!-- 🧾 Modal (Unused but kept for future enhancement) -->
+<div id="trade-modal-overlay"
+     class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden flex items-center justify-center">
+  <div class="bg-white p-6 rounded shadow-md w-80 text-center">
+    <p class="mb-4">Are you sure you want to delete this trade?</p>
+    <form id="trade-modal-form" method="POST">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit"
+              class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">
+        Yes, Delete
+      </button>
+      <button type="button"
+              onclick="closeTradeModal()"
+              class="ml-2 px-4 py-2 border rounded">
+        Cancel
+      </button>
+    </form>
+  </div>
+</div>
+
+<!-- incomplete trades -->
+{% if incomplete_trades %}
+  <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6 rounded">
+    <h3 class="text-lg font-semibold text-yellow-800 mb-2">⚠️ Incomplete Trades</h3>
+    <p class="text-sm text-yellow-700 mb-3">These stocks have no buy/sell entries yet:</p>
+    <ul class="space-y-2">
+      {% for t in incomplete_trades %}
+        <li class="flex items-center justify-between bg-white border border-yellow-200 rounded px-4 py-2 shadow-sm">
+          <span class="text-sm font-medium text-yellow-900">{{ t.stock_name }}</span>
+          <div class="flex gap-2">
+            <!-- 🔍 View -->
+            <a href="{{ url_for('trades.view_trade', trade_id=t.id) }}"
+               class="px-2 py-1 bg-gray-600 text-white text-xs rounded hover:bg-gray-700  transition">
+              🔍 
+            </a>
+
+            <!-- ✏️ Edit -->
+            <a href="{{ url_for('trades.edit_trade', trade_id=t.id) }}"
+               class="px-2 py-1 bg-indigo-600 text-white text-xs rounded hover:bg-indigo-700 transition">
+              ✏️ 
+            </a>
+
+            <!-- 🗑️ Delete -->
+            <form method="POST" action="{{ url_for('trades.delete_trade', trade_id=t.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button type="submit"
+                      onclick="return confirm('Delete trade for {{ t.stock_name }}?')"
+                      class="px-2 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700 transition">
+                🗑️ 
+              </button>
+            </form>
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+  </div>
+{% endif %}
+
+
+<!-- 🧠 Modal Logic -->
+<script>
+function openTradeModal(button) {
+  const form = document.getElementById('trade-modal-form');
+  const overlay = document.getElementById('trade-modal-overlay');
+  const deleteUrl = button.getAttribute('data-delete-url');
+
+  form.action = deleteUrl;
+  overlay.classList.remove('hidden');
+}
+</script>
+
+{% endblock %}

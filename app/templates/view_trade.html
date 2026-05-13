@@ -1,0 +1,256 @@
+{% extends "base_authenticated.html" %}
+{% block title %}Trade Details{% endblock %}
+{% block content %}
+<div class="max-w-6xl mx-auto px-4 py-8">
+
+    <div class="text-center mb-10">
+        <h2 class="text-3xl font-black text-gray-900 dark:text-white tracking-tight uppercase flex items-center justify-center">
+            {{ trade.stock_name }}
+            <span class="ml-3 px-2 py-0.5 rounded text-[10px] font-bold tracking-widest {{ 'bg-green-100 text-green-700' if status == 'Open' else 'bg-gray-100 text-gray-600' }}">
+                {{ status | upper }}
+            </span>
+        </h2>
+        <p class="text-gray-500 text-xs mt-2 uppercase tracking-widest font-semibold">Transaction Ledger & Performance</p>
+    </div>
+
+<!-- 🔔 Flash Messages -->
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% for category, message in messages %}
+    <div class="mb-4 px-4 py-2 rounded bg-blue-100 text-blue-800 text-sm">
+      {{ message }}
+    </div>
+  {% endfor %}
+{% endwith %}
+
+<!-- 📈 Trade Summary -->
+ <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8 max-w-4xl mx-auto">
+        <div class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm text-center">
+            <p class="text-[9px] font-bold uppercase tracking-widest text-gray-400 mb-1">Realized P&L</p>
+            <div class="text-xl font-black">
+                {% if pnl is not none %}
+                    <span class="{{ 'text-green-600' if pnl >= 0 else 'text-red-600' }}">
+                        {{ '₹' if pnl >= 0 else '-₹' }}{{ pnl|abs }}
+                    </span>
+                {% else %}<span class="text-gray-300">—</span>{% endif %}
+            </div>
+        </div>
+
+        <div class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm text-center">
+            <p class="text-[9px] font-bold uppercase tracking-widest text-gray-400 mb-1">Duration</p>
+            <div class="text-xl font-black text-gray-800 dark:text-white">
+                {{ duration_days }} <span class="text-xs font-medium text-gray-400">Days</span>
+            </div>
+        </div>
+
+        <div class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm text-center flex flex-col items-center justify-center">
+            <p class="text-[9px] font-bold uppercase tracking-widest text-gray-400 mb-1">Status</p>
+            <div class="flex items-center gap-2">
+                <span class="h-2 w-2 rounded-full {{ 'bg-green-500 animate-pulse' if status == 'Open' else 'bg-gray-400' }}"></span>
+                <span class="font-bold text-gray-700 dark:text-gray-200 text-sm">{{ status }}</span>
+            </div>
+        </div>
+    </div>
+
+
+<!-- Forms -->
+ <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8 max-w-4xl mx-auto">
+  
+  <div class="group">
+    <div class="flex items-center mb-3 px-1">
+        <h3 class="text-md font-bold text-gray-800 dark:text-white flex items-center">
+            <span class="w-1.5 h-4 bg-green-500 rounded mr-2"></span> Buy Entry
+        </h3>
+    </div>
+    <form method="POST" action="{{ url_for('trades.add_entry', trade_id=trade.id) }}"
+          class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm hover:shadow-md transition-shadow space-y-3">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+      <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label for="buy_quantity" class="block text-[9px] font-bold uppercase tracking-widest text-gray-400 mb-1 ml-1">Quantity</label>
+            <input type="number" name="quantity" id="buy_quantity" required
+                   class="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-transparent focus:border-green-500 focus:ring-2 focus:ring-green-500/10 rounded-lg outline-none transition-all font-semibold text-sm">
+          </div>
+
+          <div>
+            <label for="buy_price" class="block text-[9px] font-bold uppercase tracking-widest text-gray-400 mb-1 ml-1">Buy Price</label>
+            <input type="number" step="0.01" name="price" id="buy_price" required
+                   class="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-transparent focus:border-green-500 focus:ring-2 focus:ring-green-500/10 rounded-lg outline-none transition-all font-semibold text-sm">
+          </div>
+      </div>
+
+      <div>
+        <label for="buy_date" class="block text-[9px] font-bold uppercase tracking-widest text-gray-400 mb-1 ml-1">Date</label>
+        <input type="date" name="date" id="buy_date" required value="{{ current_date }}"
+               class="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-transparent focus:border-green-500 focus:ring-2 focus:ring-green-500/10 rounded-lg outline-none transition-all text-sm">
+      </div>
+
+      <div>
+        <label for="buy_note" class="block text-[9px] font-bold uppercase tracking-widest text-gray-400 mb-1 ml-1">Note</label>
+        <textarea name="note" id="buy_note" rows="1"
+                  placeholder="Rationale..."
+                  class="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-transparent focus:border-green-500 focus:ring-2 focus:ring-green-500/10 rounded-lg outline-none transition-all text-xs"></textarea>
+      </div>
+
+      <button type="submit"
+              class="w-full py-2 bg-green-600 hover:bg-green-700 text-white font-bold text-xs rounded-lg transition-all transform active:scale-95 flex items-center justify-center">
+        <span>Add Buy</span>
+      </button>
+    </form>
+  </div>
+
+  <div class="group">
+    <div class="flex items-center mb-3 px-1">
+        <h3 class="text-md font-bold text-gray-800 dark:text-white flex items-center">
+            <span class="w-1.5 h-4 bg-red-500 rounded mr-2"></span> Sell Exit
+        </h3>
+    </div>
+    <form method="POST" action="{{ url_for('trades.add_exit', trade_id=trade.id) }}"
+          class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm hover:shadow-md transition-shadow space-y-3">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+      <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label for="sell_quantity" class="block text-[9px] font-bold uppercase tracking-widest text-gray-400 mb-1 ml-1">Quantity</label>
+            <input type="number" name="quantity" id="sell_quantity" required
+                   class="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-transparent focus:border-red-500 focus:ring-2 focus:ring-red-500/10 rounded-lg outline-none transition-all font-semibold text-sm">
+          </div>
+
+          <div>
+            <label for="sell_price" class="block text-[9px] font-bold uppercase tracking-widest text-gray-400 mb-1 ml-1">Sell Price</label>
+            <input type="number" step="0.01" name="price" id="sell_price" required
+                   class="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-transparent focus:border-red-500 focus:ring-2 focus:ring-red-500/10 rounded-lg outline-none transition-all font-semibold text-sm">
+          </div>
+      </div>
+
+      <div>
+        <label for="sell_date" class="block text-[9px] font-bold uppercase tracking-widest text-gray-400 mb-1 ml-1">Date</label>
+        <input type="date" name="date" id="sell_date" required value="{{ current_date }}"
+               class="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-transparent focus:border-red-500 focus:ring-2 focus:ring-red-500/10 rounded-lg outline-none transition-all text-sm">
+      </div>
+
+      <div>
+        <label for="sell_note" class="block text-[9px] font-bold uppercase tracking-widest text-gray-400 mb-1 ml-1">Note</label>
+        <textarea name="note" id="sell_note" rows="1"
+                  placeholder="Outcome..."
+                  class="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-transparent focus:border-red-500 focus:ring-2 focus:ring-red-500/10 rounded-lg outline-none transition-all text-xs"></textarea>
+      </div>
+
+      <button type="submit"
+              class="w-full py-2 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-lg transition-all transform active:scale-95 flex items-center justify-center">
+        <span>Add Sell</span>
+      </button>
+    </form>
+  </div>
+
+  <div class="lg:col-span-2 flex justify-center gap-6 mt-2">
+      <a href="{{ url_for('trades.dashboard') }}" class="text-[10px] font-bold uppercase tracking-widest text-gray-400 hover:text-indigo-600 transition-colors inline-flex items-center">
+          <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+          Dashboard
+      </a>
+      <a href="{{ url_for('trades.trade_history') }}" class="text-[10px] font-bold uppercase tracking-widest text-gray-400 hover:text-indigo-600 transition-colors inline-flex items-center">
+          <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+          History
+      </a>
+  </div>
+</div>
+
+
+<!-- 🟢 Buy Transactions Table -->
+ <h3 class="text-md font-bold text-gray-800 dark:text-white mb-2 flex items-center">
+    <span class="w-1.5 h-3.5 bg-green-500 rounded-sm mr-2"></span> Buy Transactions
+</h3>
+{% if entries %}
+  <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden mb-4">
+    <table class="w-full text-left border-collapse">
+      <thead class="bg-gray-50/50 dark:bg-gray-900/50 border-b border-gray-100 dark:border-gray-700">
+        <tr>
+          <th class="px-4 py-1.5 text-[9px] font-bold uppercase tracking-wider text-gray-400">Date</th>
+          <th class="px-4 py-1.5 text-[9px] font-bold uppercase tracking-wider text-gray-400 text-center">Qty</th>
+          <th class="px-4 py-1.5 text-[9px] font-bold uppercase tracking-wider text-gray-400">Price</th>
+          <th class="px-4 py-1.5 text-[9px] font-bold uppercase tracking-wider text-gray-400">Invested</th>
+          <th class="px-4 py-1.5 text-[9px] font-bold uppercase tracking-wider text-gray-400">Note</th>
+          <th class="px-4 py-1.5 text-[9px] font-bold uppercase tracking-wider text-gray-400 text-right">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-50 dark:divide-gray-700">
+        {% for e in entries %}
+        <tr class="hover:bg-gray-50/50 transition-colors group">
+          <td class="px-4 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-400">{{ e.date.strftime('%d %b %Y') }}</td>
+          <td class="px-4 py-1.5 text-sm font-bold text-gray-900 dark:text-white text-center">{{ e.quantity }}</td>
+          <td class="px-4 py-1.5 text-sm text-gray-600 dark:text-gray-400">₹{{ e.price }}</td>
+          <td class="px-4 py-1.5 text-sm font-bold text-indigo-600">₹{{ e.invested_amount }}</td>
+          <td class="px-4 py-1.5 text-[11px] text-gray-500 " title="{{ e.note }}">{{ e.note or '—' }}</td>
+          <td class="px-4 py-1.5 text-right whitespace-nowrap">
+            <div class="flex justify-end gap-0.5">
+              <form method="GET" action="{{ url_for('trades.edit_entry', entry_id=e.id) }}">
+                <button type="submit" class="p-1 text-gray-400 hover:text-blue-600 rounded-md transition text-xs" title="Edit">✏️</button>
+              </form>
+              <form method="POST" action="{{ url_for('trades.delete_entry', entry_id=e.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" onclick="return confirm('Delete?')" class="p-1 text-gray-400 hover:text-red-600 rounded-md transition text-xs" title="Delete">🗑️</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <div class="py-4 text-center bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-dashed border-gray-200 dark:border-gray-700 mb-4">
+    <p class="text-xs text-gray-500 italic">No buy entries.</p>
+  </div>
+{% endif %}
+
+
+<!-- 🟢 Sell Transactions Table -->
+<h3 class="text-md font-bold text-gray-800 dark:text-white mb-2 flex items-center">
+    <span class="w-1.5 h-3.5 bg-red-500 rounded-sm mr-2"></span> Sell Transactions
+</h3>
+{% if exits %}
+  <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden mb-4">
+    <table class="w-full text-left border-collapse">
+      <thead class="bg-gray-50/50 dark:bg-gray-900/50 border-b border-gray-100 dark:border-gray-700">
+        <tr>
+          <th class="px-4 py-1.5 text-[9px] font-bold uppercase tracking-wider text-gray-400">Date</th>
+          <th class="px-4 py-1.5 text-[9px] font-bold uppercase tracking-wider text-gray-400 text-center">Qty</th>
+          <th class="px-4 py-1.5 text-[9px] font-bold uppercase tracking-wider text-gray-400">Price</th>
+          <th class="px-4 py-1.5 text-[9px] font-bold uppercase tracking-wider text-gray-400">Exited</th>
+          <th class="px-4 py-1.5 text-[9px] font-bold uppercase tracking-wider text-gray-400">Note</th>
+          <th class="px-4 py-1.5 text-[9px] font-bold uppercase tracking-wider text-gray-400 text-right">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-50 dark:divide-gray-700">
+        {% for x in exits %}
+        <tr class="hover:bg-gray-50/50 transition-colors group">
+          <td class="px-4 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-400">{{ x.date.strftime('%d %b %Y') }}</td>
+          <td class="px-4 py-1.5 text-sm font-bold text-gray-900 dark:text-white text-center">{{ x.quantity }}</td>
+          <td class="px-4 py-1.5 text-sm text-gray-600 dark:text-gray-400">₹{{ x.price }}</td>
+          <td class="px-4 py-1.5 text-sm font-bold text-red-600">₹{{ x.exit_amount }}</td>
+          <td class="px-4 py-1.5 text-[11px] text-gray-500 " title="{{ x.note }}">{{ x.note or '—' }}</td>
+          <td class="px-4 py-1.5 text-right whitespace-nowrap">
+            <div class="flex justify-end gap-0.5">
+              <form method="GET" action="{{ url_for('trades.edit_exit', exit_id=x.id) }}">
+                <button type="submit" class="p-1 text-gray-400 hover:text-blue-600 rounded-md transition text-xs">✏️</button>
+              </form>
+              <form method="POST" action="{{ url_for('trades.delete_exit', exit_id=x.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" onclick="return confirm('Delete?')" class="p-1 text-gray-400 hover:text-red-600 rounded-md transition text-xs">🗑️</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <div class="py-4 text-center bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-dashed border-gray-200 dark:border-gray-700 mb-4">
+    <p class="text-xs text-gray-500 italic">No sell exits.</p>
+  </div>
+{% endif %}
+
+
+</div>
+{% endblock %}

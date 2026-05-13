@@ -1,0 +1,52 @@
+{% extends "base_authenticated.html" %}
+{% block content %}
+<h2 class="text-xl font-semibold mb-4">🔥 Top Stocks in {{ sector }}</h2>
+
+{% if error %}
+  <p class="text-red-600 bg-red-100 border border-red-300 rounded px-4 py-2 mb-4">
+    {{ error }}
+  </p>
+{% elif stocks %}
+  <table class="min-w-full bg-white rounded shadow">
+    <thead class="bg-blue-100 text-left">
+      <tr>
+        <th class="px-4 py-2">#</th>
+        <th class="px-4 py-2">Symbol</th>
+        <th class="px-4 py-2">Price</th>
+        <th class="px-4 py-2">30W MA</th>
+        <th class="px-4 py-2">RS</th>
+        <th class="px-4 py-2">Persistence</th>
+        <th class="px-4 py-2">Tag</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for stock in stocks %}
+      <tr class="border-t">
+        <td class="px-4 py-2">{{ stock.rank }}</td>
+        <td class="px-4 py-2 flex items-center gap-2">
+          <span>{{ stock.symbol_clean }}</span>
+          <button onclick="copyToClipboard('{{ stock.symbol_clean }}')" class="text-blue-600 hover:underline text-sm">📋 Copy</button>
+        </td>
+        <td class="px-4 py-2">{{ stock.price }}</td>
+        <td class="px-4 py-2">{{ stock['30w_ma'] }}</td>
+        <td class="px-4 py-2">{{ stock.rs }}</td>
+        <td class="px-4 py-2">{{ stock.persistence }}</td>
+        <td class="px-4 py-2">{{ stock.tag }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  <p class="text-yellow-600 bg-yellow-100 border border-yellow-300 rounded px-4 py-2 mt-4">
+    No Stage 2 stocks found in {{ sector }}.
+  </p>
+{% endif %}
+
+<script>
+function copyToClipboard(text) {
+  navigator.clipboard.writeText(text).then(() => {
+    alert(`Copied: ${text}`);
+  });
+}
+</script>
+{% endblock %}

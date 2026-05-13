@@ -1,0 +1,150 @@
+.notes-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 16px;
+}
+.notes-table th, .notes-table td {
+  border: 1px solid #ccc;
+  padding: 8px;
+}
+.note-thumb {
+  height: 40px;
+  border-radius: 4px;
+}
+.modal {
+  display: none;
+  position: fixed;
+  top: 10%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: white;
+  padding: 16px;
+  border-radius: 8px;
+  box-shadow: 0 0 10px rgba(0,0,0,0.2);
+  z-index: 9999;
+  width: 90%;
+  max-width: 480px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+.modal-actions {
+  margin-top: 12px;
+  display: flex;
+  gap: 10px;
+}
+.flash-success {
+  background-color: #d1e7dd;
+  color: #0f5132;
+  padding: 0.5em;
+  border-radius: 5px;
+  margin-bottom: 1em;
+}
+.flash-error {
+  background-color: #f8d7da;
+  color: #842029;
+  padding: 0.5em;
+  border-radius: 5px;
+  margin-bottom: 1em;
+}
+#editor {
+  height: 200px;
+  margin-bottom: 12px;
+}
+.image-thumb {
+  display: inline-block;
+  position: relative;
+  margin: 6px;
+}
+.image-thumb img {
+  height: 60px;
+  border-radius: 4px;
+}
+.image-thumb button {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  background: red;
+  color: white;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.notes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.note-card {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+}
+
+.note-header {
+  font-size: 1.1em;
+  margin-bottom: 8px;
+  font-weight: bold;
+}
+
+.note-body {
+  font-size: 0.95em;
+  color: #333;
+  margin-bottom: 12px;
+}
+
+.note-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.image-thumb {
+  position: relative;
+  display: inline-block;
+}
+
+.image-thumb img {
+  height: 80px;
+  border-radius: 4px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+}
+
+.image-thumb button {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  background: red;
+  color: white;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 0.8em;
+  padding: 2px 6px;
+}
+
+.note-actions {
+  text-align: right;
+}
+
+.notes-wrapper {
+  margin-top: 1rem;
+}
+
+.note-card {
+  background-color: #fdfdfd;
+}
+
+.note-body {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.note-images img {
+  max-height: 120px;
+  object-fit: cover;
+}

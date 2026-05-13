@@ -1,0 +1,71 @@
+{% extends "base_authenticated.html" %}
+{% block title %}Add Trade{% endblock %}
+{% block content %}
+
+<!-- 🧭 Page Heading -->
+<div class="flex justify-center">
+  <h2 class="text-2xl font-semibold mb-6 text-gray-800 text-center">Add New Trade</h2>
+</div>
+
+<!-- 🔔 Flash Messages -->
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% for category, message in messages %}
+    <div class="mb-4 px-4 py-2 rounded bg-blue-100 text-blue-800 text-sm text-center">
+      {{ message }}
+    </div>
+  {% endfor %}
+{% endwith %}
+
+<!-- 📋 Trade Entry Form -->
+<div class="flex justify-center">
+  <form method="POST" action="{{ url_for('trades.add_trade') }}" class="w-full max-w-md bg-white p-6 rounded shadow">
+    <!-- 🔐 CSRF Protection -->
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+    <!-- 🏷️ Stock Name Input -->
+    <div class="mb-4">
+      <label for="stock_name" class="block text-sm font-medium text-gray-700 mb-1">Stock Name</label>
+      <input type="text"
+             name="stock_name"
+             id="stock_name"
+             placeholder="e.g. INFY"
+             required
+             oninput="this.value = this.value.toUpperCase()"
+             class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+    </div>
+
+    <!-- 🏷️ Strategy Tag Dropdown -->
+    <div class="mb-4">
+      <label for="strategy_tag" class="block text-sm font-medium text-gray-700 mb-1">Strategy Tag</label>
+      <select name="strategy_tag" id="strategy_tag" required
+              class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        <option value="Top-Performers">Top-Performers</option>
+        <option value="VCP">VCP</option>
+        <option value="Delivery Surge">Delivery Surge</option>
+        <option value="Earnings">Earnings</option>
+        <option value="Breakout">Breakout</option>
+        <option value="No Strategy">No Strategy</option>
+      </select>
+    </div>
+
+    <!-- 📝 Optional Note (Uncomment if needed) -->
+    {# 
+    <div class="mb-4">
+      <label for="entry_note" class="block text-sm font-medium text-gray-700 mb-1">Note (optional)</label>
+      <textarea name="entry_note"
+                id="entry_note"
+                rows="3"
+                placeholder="Add any context or strategy..."
+                class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
+    </div>
+    #}
+
+    <!-- ✅ Submit Button -->
+    <button type="submit"
+            class="w-full px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition">
+      Create Trade
+    </button>
+  </form>
+</div>
+
+{% endblock %}

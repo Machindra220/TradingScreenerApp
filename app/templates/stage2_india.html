@@ -1,0 +1,73 @@
+{% extends "base_authenticated.html" %}
+{% block content %}
+<div class="max-w-7xl mx-auto px-4 py-8">
+    <div class="flex justify-between items-center mb-6">
+        <h2 class="text-2xl font-black text-gray-900 dark:text-white uppercase tracking-tight">🇮🇳 India Stage 2 Screener</h2>
+        <div class="text-[10px] font-bold text-gray-400 uppercase">Latest File: {{ last_file or 'None' }}</div>
+    </div>
+
+    <div class="bg-white dark:bg-gray-800 p-6 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm mb-8">
+        <form method="POST" enctype="multipart/form-data" class="flex flex-col md:flex-row items-end gap-6">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <div class="flex-1 w-full">
+                <label class="block text-[10px] font-bold uppercase text-gray-400 mb-2 ml-1">Upload India Stock List (Excel/CSV)</label>
+                <input type="file" name="file" class="w-full text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-[10px] file:font-bold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100">
+            </div>
+            <button type="submit" onclick="document.getElementById('spinner').classList.remove('hidden')" class="w-full md:w-auto px-8 py-3 bg-indigo-600 text-white text-xs font-black uppercase rounded-xl hover:bg-indigo-700 transition flex items-center justify-center gap-2">
+                <span>🚀 Run India Stage 2 Screener</span>
+                <span id="spinner" class="hidden animate-spin">⏳</span>
+            </button>
+        </form>
+    </div>
+
+    {% if summary_message %}
+        <div class="mb-6 p-3 bg-green-50 border border-green-100 text-green-700 text-xs font-bold rounded-lg">{{ summary_message }}</div>
+    {% endif %}
+
+    <div class="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="min-w-full text-left">
+                <thead class="bg-gray-50/50 dark:bg-gray-900/50 border-b border-gray-100 dark:border-gray-700">
+                    <tr>
+                        <th class="px-4 py-3 text-[9px] font-bold uppercase text-gray-400">#</th>
+                        <th class="px-4 py-3 text-[9px] font-bold uppercase text-gray-400">Symbol</th>
+                        <th class="px-4 py-3 text-[9px] font-bold uppercase text-gray-400">Sector</th>
+                        <th class="px-4 py-3 text-[9px] font-bold uppercase text-gray-400">Price</th>
+                        <th class="px-4 py-3 text-[9px] font-bold uppercase text-gray-400">Retracement</th>
+                        <th class="px-4 py-3 text-[9px] font-bold uppercase text-gray-400">Vol vs Avg</th>
+                        <th class="px-4 py-3 text-[9px] font-bold uppercase text-gray-400">Rel Strength</th>
+                        <th class="px-4 py-3 text-[9px] font-bold uppercase text-gray-400">Persistence</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-50 dark:divide-gray-700">
+                    {% for stock in stocks %}
+                    <tr class="hover:bg-gray-50/50 transition-colors">
+                        <td class="px-4 py-4 text-xs font-bold text-gray-400">{{ loop.index }}</td>
+                        <td class="px-4 py-4 font-black text-indigo-600 text-sm">{{ stock.symbol }}</td>
+                        <td class="px-4 py-4 text-[10px] font-bold text-gray-500 uppercase">{{ stock.sector }}</td>
+                        <td class="px-4 py-4 text-xs font-bold text-gray-900 dark:text-white">₹{{ stock.price }}</td>
+                        <td class="px-4 py-4 text-xs font-bold text-red-500">-{{ stock.retracement }}%</td>
+                        <td class="px-4 py-4">
+                            <div class="flex items-center gap-2">
+                                <span class="text-xs font-bold">{{ (stock.volume / 1000000)|round(1) }}M</span>
+                                {% if stock.vol_status == "🔥" %}
+                                    <span class="text-[10px] bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded font-black">HIGH VOL</span>
+                                {% endif %}
+                            </div>
+                        </td>
+                        <td class="px-4 py-4 text-xs font-bold text-blue-600">{{ stock.rs }}</td>
+                        <td class="px-4 py-4">
+                            <span class="px-2 py-1 rounded-md text-[10px] font-bold bg-gray-100 text-gray-600">{{ stock.persistence }}</span>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="8" class="px-6 py-12 text-center text-gray-400 text-xs italic">Click the run button to begin screening the Indian market.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

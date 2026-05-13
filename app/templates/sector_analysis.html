@@ -1,0 +1,83 @@
+{% extends "base_authenticated.html" %}
+{% block content %}
+<h2 class="text-xl font-semibold mb-4">📊 Sector Analysis</h2>
+
+<!-- ✅ Run Screener Button -->
+<form method="post" action="{{ url_for('screener.sector_analysis_process') }}" id="sectorScreenerForm" class="mb-6">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <button type="submit" id="runSectorScreenerButton"
+          class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
+    🚀 Run Sector Screener
+  </button>
+  <span id="sectorScreenerSpinner" class="ml-3 hidden text-green-600 animate-spin">⏳</span>
+</form>
+
+<!-- ✅ Summary Toast -->
+{% if summary_message %}
+  <p data-summary-message class="text-green-700 bg-green-100 border border-green-300 rounded px-4 py-2 mb-4">
+    {{ summary_message }}
+  </p>
+{% endif %}
+
+<!-- ✅ Error Message -->
+{% if error %}
+  <p class="text-red-600 bg-red-100 border border-red-300 rounded px-4 py-2 mb-4">
+    {{ error }}
+  </p>
+{% endif %}
+
+<!-- ✅ Sector Table -->
+{% if sectors %}
+  <table class="min-w-full bg-white rounded shadow">
+    <thead class="bg-blue-100 text-left">
+      <tr>
+        <th class="px-4 py-2">#</th>
+        <th class="px-4 py-2">Sector</th>
+        <th class="px-4 py-2">Price</th>
+        <th class="px-4 py-2">30W MA</th>
+        <th class="px-4 py-2">Rel Strength</th>
+        <th class="px-4 py-2">Tag</th>
+        <th class="px-4 py-2">Top Stocks</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in sectors %}
+      <tr class="border-t">
+        <td class="px-4 py-2">{{ s.serial }}</td>
+        <td class="px-4 py-2">{{ s.sector }}</td>
+        <td class="px-4 py-2">{{ s.price }}</td>
+        <td class="px-4 py-2">{{ s.ma_30w }}</td>
+        <td class="px-4 py-2">{{ s.rs }}</td>
+        <td class="px-4 py-2">{{ s.tag }}</td>
+        <td class="px-4 py-2">
+          <a href="{{ url_for('screener.sector_stocks', sector=s.sector) }}" class="text-blue-600 hover:underline">View</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endif %}
+
+<!-- ✅ Spinner + Toast Script -->
+<script>
+document.getElementById("sectorScreenerForm")?.addEventListener("submit", function(e) {
+  const btn = document.getElementById("runSectorScreenerButton");
+  const spinner = document.getElementById("sectorScreenerSpinner");
+
+  btn.disabled = true;
+  btn.textContent = "Processing...";
+  spinner.classList.remove("hidden");
+});
+
+window.addEventListener("load", function() {
+  const message = document.querySelector("[data-summary-message]")?.textContent;
+  if (message) {
+    const toast = document.createElement("div");
+    toast.textContent = message;
+    toast.className = "fixed bottom-4 right-4 bg-green-600 text-white px-4 py-2 rounded shadow-lg z-50";
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 4000);
+  }
+});
+</script>
+{% endblock %}

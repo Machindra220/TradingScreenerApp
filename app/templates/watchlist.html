@@ -1,0 +1,176 @@
+{% extends "base_authenticated.html" %}
+{% block title %}📈 Watchlist – Future Trade Opportunities{% endblock %}
+{% block content %}
+
+<h2 class="text-2xl font-semibold text-gray-800 mb-6">📈 Watchlist – Future Trade Opportunities</h2>
+
+<!-- 🔔 Flash Messages -->
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% for category, message in messages %}
+    <div class="mb-4 px-4 py-2 rounded bg-blue-100 text-blue-800 text-sm">
+      {{ message }}
+    </div>
+  {% endfor %}
+{% endwith %}
+
+<!-- ➕ Add Watchlist Form -->
+<form method="POST" action="{{ url_for('watchlist.add') }}" class="mb-8">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    <!-- Stock Name -->
+    <div>
+      <label for="stock_name" class="block text-sm font-medium text-gray-700 mb-1">Stock Name</label>
+      <input type="text" name="stock_name" id="stock_name" required
+             class="w-full px-3 py-2 border border-gray-300 rounded focus:ring-indigo-500 focus:outline-none" />
+    </div>
+
+    <!-- Target Price -->
+    <div>
+      <label for="target_price" class="block text-sm font-medium text-gray-700 mb-1">Current Price</label>
+      <input type="number" step="0.01" name="target_price" id="target_price" required min="0.01"
+             onwheel="this.blur()"
+             class="w-full px-3 py-2 border border-gray-300 rounded focus:ring-indigo-500 focus:outline-none" />
+    </div>
+
+    <!-- Stop Loss -->
+    <div>
+      <label for="stop_loss" class="block text-sm font-medium text-gray-700 mb-1">Stop Loss</label>
+      <input type="number" step="0.01" name="stop_loss" id="stop_loss" required min="0.01"
+             onwheel="this.blur()"
+             class="w-full px-3 py-2 border border-gray-300 rounded focus:ring-indigo-500 focus:outline-none" />
+    </div>
+
+    <!-- Expected Move -->
+    <div>
+      <label for="expected_move" class="block text-sm font-medium text-gray-700 mb-1">Expected Target</label>
+      <input type="number" step="0.01" name="expected_move" id="expected_move" required min="0.01"
+             onwheel="this.blur()"
+             class="w-full px-3 py-2 border border-gray-300 rounded focus:ring-indigo-500 focus:outline-none" />
+    </div>
+
+    <!-- Setup Type -->
+    <div>
+      <label for="setup_type" class="block text-sm font-medium text-gray-700 mb-1">Setup Type</label>
+      <select name="setup_type" id="setup_type" required
+              class="w-full px-3 py-2 border border-gray-300 rounded focus:ring-indigo-500 focus:outline-none">
+        <option value="">Select</option>
+        <option value="Breakout">Breakout</option>
+        <option value="Pullback">Pullback</option>
+        <option value="Reversal">Reversal</option>
+        <option value="News Driven">News Driven</option>
+      </select>
+    </div>
+
+    <!-- Confidence -->
+    <div>
+      <label for="confidence" class="block text-sm font-medium text-gray-700 mb-1">Confidence</label>
+      <select name="confidence" id="confidence"
+              class="w-full px-3 py-2 border border-gray-300 rounded focus:ring-indigo-500 focus:outline-none">
+        <option value="">Select</option>
+        <option value="High">High</option>
+        <option value="Medium">Medium</option>
+        <option value="Low">Low</option>
+      </select>
+    </div>
+
+    <!-- Date Added -->
+    <div>
+      <label for="date_added" class="block text-sm font-medium text-gray-700 mb-1">Date Added</label>
+      <input type="date" name="date_added" id="date_added" required
+             class="w-full px-3 py-2 border border-gray-300 rounded focus:ring-indigo-500 focus:outline-none" />
+    </div>
+
+    <!-- Notes -->
+    <div class="md:col-span-2 lg:col-span-3">
+      <label for="notes" class="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+      <textarea name="notes" id="notes" rows="2"
+                placeholder="Catalyst, earnings, macro context..."
+                class="w-full px-3 py-2 border border-gray-300 rounded focus:ring-indigo-500 focus:outline-none"></textarea>
+    </div>
+  </div>
+
+  <!-- Submit Button -->
+  <div class="mt-6">
+    <button type="submit"
+            class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition">
+      ➕ Add to Watchlist
+    </button>
+  </div>
+</form>
+
+<!-- 📋 Watchlist Table -->
+<h4 class="text-lg font-semibold text-gray-800 mt-6 mb-2">📋 Current Watchlist</h4>
+
+<!-- Responsive scroll container for table -->
+<div class="overflow-x-auto rounded shadow border border-gray-200">
+  <table class="min-w-full text-sm text-left text-gray-700">
+    <thead class="bg-gray-300 text-gray-800">
+      <tr>
+        <th class="px-4 py-2">Stock</th>
+        <th class="px-4 py-2">LTP</th>
+        <th class="px-4 py-2">SL</th>
+        <th class="px-4 py-2">Target</th>
+        <th class="px-4 py-2">Setup</th>
+        <th class="px-4 py-2">Confidence</th>
+        <th class="px-4 py-2">Date</th>
+        <!-- <th class="px-4 py-2">Status</th> -->
+        <th class="px-4 py-2">Notes</th>
+        <th class="px-4 py-2">Actions</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-200">
+      {% for item in watchlist %}
+      <tr class="hover:bg-gray-50">
+        <td class="px-4 py-2 font-medium text-gray-900">{{ item.stock_name }}</td>
+        <td class="px-4 py-2">₹{{ item.target_price }}</td>
+        <td class="px-4 py-2">₹{{ item.stop_loss }}</td>
+        <td class="px-4 py-2">₹{{ item.expected_move }}</td>
+        <td class="px-4 py-2">{{ item.setup_type }}</td>
+        <td class="px-4 py-2">{{ item.confidence }}</td>
+        <td class="px-4 py-2">{{ item.date_added.strftime('%d/%m/%y') }}</td>
+        <!-- <td class="px-4 py-2">{{ item.status }}</td> -->
+        <td class="px-4 py-2">{{ item.notes }}</td>
+        <td class="px-4 py-2 whitespace-nowrap">
+          <div class="flex gap-2">
+            <!-- Edit Button -->
+            <form method="GET" action="{{ url_for('watchlist.edit', item_id=item.id) }}">
+              <button type="submit"
+                      class="px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+                      title="Edit">
+                ✏️
+              </button>
+            </form>
+            <!-- Delete Button -->
+            <form method="POST" action="{{ url_for('watchlist.delete', item_id=item.id) }}"
+                  onsubmit="return confirm('Are you sure you want to delete this item?');">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button type="submit"
+                      class="px-2 py-1 bg-red-600 text-white rounded hover:bg-red-700 text-sm"
+                      title="Delete">
+                🗑️
+              </button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="10" class="px-4 py-4 text-center text-gray-500 italic">No watchlist items yet.</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- 📅 Auto-fill today's date if empty -->
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    const dateInput = document.getElementById('date_added');
+    if (!dateInput.value) {
+      const today = new Date().toISOString().split('T')[0];
+      dateInput.value = today;
+    }
+  });
+</script
+{% endblock %}

@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-2xl font-bold text-gray-800 dark:text-white">CAN SLIM: Earnings Filter</h1>
+        <span class="bg-blue-100 text-blue-800 text-xs font-semibold px-2.5 py-0.5 rounded">Criteria: 25% Q/A Growth</span>
+    </div>
+
+    <div class="bg-white dark:bg-gray-800 shadow-md rounded-lg overflow-hidden">
+        <table class="min-w-full leading-normal">
+            <thead>
+                <tr class="bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-200 text-sm uppercase">
+                    <th class="px-5 py-3 text-left">Ticker</th>
+                    <th class="px-5 py-3 text-left">Company</th>
+                    <th class="px-5 py-3 text-center">Price</th>
+                    <th class="px-5 py-3 text-center">Qtr Growth (%)</th>
+                    <th class="px-5 py-3 text-center">Ann Growth (%)</th>
+                    <th class="px-5 py-3 text-center">ROE (%)</th>
+                </tr>
+            </thead>
+            <tbody class="text-gray-700 dark:text-gray-300">
+                {% for stock in stocks %}
+                <tr class="border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-900 transition">
+                    <td class="px-5 py-4 font-bold text-blue-600">{{ stock.symbol }}</td>
+                    <td class="px-5 py-4">{{ stock.name }}</td>
+                    <td class="px-5 py-4 text-center">${{ stock.price }}</td>
+                    <td class="px-5 py-4 text-center text-green-500 font-semibold">{{ stock.q_growth }}%</td>
+                    <td class="px-5 py-4 text-center text-green-500 font-semibold">{{ stock.a_growth }}%</td>
+                    <td class="px-5 py-4 text-center">{{ stock.roe }}%</td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="6" class="px-5 py-10 text-center text-gray-500 italic">No stocks currently meeting the O'Neil criteria in your watchlist.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

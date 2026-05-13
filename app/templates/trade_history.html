@@ -1,0 +1,183 @@
+{% extends "base_authenticated.html" %}
+{% block title %}Trade History{% endblock %}
+{% block content %}
+
+<div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+    <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
+        <p class="text-sm font-medium text-gray-500 mb-1">Win Rate</p>
+        <div class="flex items-center">
+            <h3 class="text-2xl font-bold text-gray-800">{{ kpis.win_rate }}%</h3>
+            <div class="ml-auto w-12 h-12">
+                <svg viewBox="0 0 36 36" class="w-full h-full text-indigo-500">
+                    <path class="stroke-current" stroke-width="3" fill="none" stroke-dasharray="{{ kpis.win_rate }}, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                </svg>
+            </div>
+        </div>
+    </div>
+
+    <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
+        <p class="text-sm font-medium text-gray-500 mb-1">Total Realized P&L</p>
+        <h3 class="text-2xl font-bold {{ 'text-green-600' if kpis.pnl >= 0 else 'text-red-600' }}">
+            {{ '₹' if kpis.pnl >= 0 else '-₹' }}{{ "%.2f"|format(kpis.pnl|abs) }}
+        </h3>
+    </div>
+
+    <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
+        <p class="text-sm font-medium text-gray-500 mb-1">Profit Factor</p>
+        <h3 class="text-2xl font-bold text-indigo-600">{{ kpis.profit_factor }}</h3>
+        <p class="text-xs text-gray-400">Ratio: Wins vs Losses</p>
+    </div>
+
+    <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
+        <p class="text-sm font-medium text-gray-500 mb-1">Avg. Holding Time</p>
+        <h3 class="text-2xl font-bold text-gray-800">{{ kpis.avg_duration }} <span class="text-sm font-normal text-gray-500">Days</span></h3>
+    </div>
+</div>
+
+<div class="bg-gray-50 p-4 rounded-xl mb-6 border border-gray-200">
+    <form method="GET" action="{{ url_for('trades.trade_history') }}" class="flex flex-wrap items-center gap-4">
+        <div class="flex-1 min-w-[200px]">
+            <select name="stock" class="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                <option value="">All Stocks</option>
+                {% for symbol in stock_list %}
+                <option value="{{ symbol }}" {% if symbol == selected_stock %}selected{% endif %}>{{ symbol }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="flex-1 min-w-[150px]">
+            <select name="strategy_tag" class="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                <option value="">All Strategies</option>
+                <option value="Breakout" {% if selected_strategy == 'Breakout' %}selected{% endif %}>Breakout</option>
+                <option value="VCP" {% if selected_strategy == 'VCP' %}selected{% endif %}>VCP</option>
+                <option value="Earnings" {% if selected_strategy == 'Earnings' %}selected{% endif %}>Earnings</option>
+            </select>
+        </div>
+
+        <div class="flex-1 min-w-[180px]">
+            <select name="date_range" class="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                <option value="all_time" {% if selected_range == 'all_time' %}selected{% endif %}>📅 All Time</option>
+                <option value="last_7_days" {% if selected_range == 'last_7_days' %}selected{% endif %}>Last 7 Days</option>
+                <option value="last_30_days" {% if selected_range == 'last_30_days' %}selected{% endif %}>Last 30 Days</option>
+                <option value="last_month" {% if selected_range == 'last_month' %}selected{% endif %}>Last Month</option>
+                <option value="last_3_months" {% if selected_range == 'last_3_months' %}selected{% endif %}>Last 3 Months</option>
+                <option value="ytd" {% if selected_range == 'ytd' %}selected{% endif %}>YTD</option>
+                <option value="last_year" {% if selected_range == 'last_year' %}selected{% endif %}>Last Year</option>
+            </select>
+        </div>
+
+        <button type="submit" class="px-6 py-2 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 transition duration-200">
+            Apply Filters
+        </button>
+        
+        <a href="{{ url_for('trades.export_history', stock=selected_stock, date_range=selected_range) }}" class="p-2 text-gray-500 hover:text-green-600 transition" title="Export to Excel">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+        </a>
+    </form>
+</div>
+
+<div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+    <table class="min-w-full divide-y divide-gray-200">
+        <thead class="bg-gray-50">
+            <tr>
+                <th class="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Asset / Strategy</th>
+                <th class="px-6 py-4 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Entry vs Exit</th>
+                <th class="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Qty / Days</th>
+                <th class="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Realized P&L</th>
+                <th class="px-6 py-4 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Result</th>
+                <th class="px-6 py-4 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
+            </tr>
+        </thead>
+        <tbody class="bg-white divide-y divide-gray-200">
+            {% for t in trades %}
+            <tr class="hover:bg-gray-50 transition-colors cursor-pointer group" onclick="toggleDetails('details-{{ t.id }}')">
+                <td class="px-6 py-4">
+                    <div class="font-bold text-gray-900">{{ t.stock_name }}</div>
+                    <div class="text-xs text-indigo-500 font-medium">{{ t.strategy or "No Strategy" }}</div>
+                </td>
+                <td class="px-6 py-4 text-center">
+                    <div class="text-sm font-semibold text-gray-700">₹{{ "%.2f"|format(t.avg_entry) }} → ₹{{ "%.2f"|format(t.avg_exit) }}</div>
+                    <div class="text-xs text-gray-400 mt-1">
+                        {{ t.entry_date.strftime('%d %b') }} - {{ t.exit_date.strftime('%d %b %y') }}
+                    </div>
+                </td>
+                <td class="px-6 py-4">
+                    <div class="text-sm text-gray-700 font-medium">{{ t.total_quantity }} Units</div>
+                    <div class="text-xs text-gray-400">{{ t.total_days }} Days Held</div>
+                </td>
+                <td class="px-6 py-4">
+                    <div class="text-sm font-bold {{ 'text-green-600' if t.is_win else 'text-red-600' }}">
+                        {{ '▲' if t.is_win else '▼' }} ₹{{ "%.2f"|format(t.realized_pnl|abs) }}
+                    </div>
+                    <div class="text-xs {{ 'text-green-500' if t.is_win else 'text-red-400' }}">
+                        ({{ "%.2f"|format(t.pnl_pct) }}%)
+                    </div>
+                </td>
+                <td class="px-6 py-4 text-center">
+                    {% if t.is_win %}
+                    <span class="px-3 py-1 text-xs font-bold rounded-full bg-green-100 text-green-700 border border-green-200">WIN</span>
+                    {% else %}
+                    <span class="px-3 py-1 text-xs font-bold rounded-full bg-red-100 text-red-700 border border-red-200">LOSS</span>
+                    {% endif %}
+                </td>
+                <td class="px-6 py-4 text-right">
+                    <div class="flex justify-end gap-2">
+                        <a href="{{ url_for('trades.view_trade', trade_id=t.id) }}" class="text-gray-400 hover:text-indigo-600">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                            </svg>
+                        </a>
+                    </div>
+                </td>
+            </tr>
+            <tr id="details-{{ t.id }}" class="hidden bg-indigo-50/30">
+                <td colspan="6" class="px-8 py-4">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <p class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Trade Notes & Journal</p>
+                            <p class="text-sm text-gray-700 italic">"{{ t.notes or 'No notes provided for this trade.' }}"</p>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Chart Analysis</p>
+                            <div class="inline-block px-4 py-8 border-2 border-dashed border-gray-300 rounded-lg text-gray-400 text-xs text-center">
+                                Chart Screenshot Placeholder
+                            </div>
+                        </div>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% if pagination %}
+<div class="flex items-center justify-between mt-8 pb-10">
+    <p class="text-sm text-gray-500">
+        Showing page {{ pagination.page }} of {{ pagination.pages }}
+    </p>
+    <nav class="flex gap-2">
+        {% if pagination.has_prev %}
+        <a href="{{ url_for('trades.trade_history', page=pagination.prev_num, stock=selected_stock, date_range=selected_range) }}" 
+           class="px-4 py-2 text-sm bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition">Previous</a>
+        {% endif %}
+        
+        {% if pagination.has_next %}
+        <a href="{{ url_for('trades.trade_history', page=pagination.next_num, stock=selected_stock, date_range=selected_range) }}" 
+           class="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">Next Page</a>
+        {% endif %}
+    </nav>
+</div>
+{% endif %}
+
+<script>
+function toggleDetails(id) {
+    const el = document.getElementById(id);
+    el.classList.toggle('hidden');
+}
+</script>
+
+{% endblock %}

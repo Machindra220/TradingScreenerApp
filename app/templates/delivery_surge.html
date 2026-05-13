@@ -1,0 +1,61 @@
+<!-- templates/delivery_surge.html -->
+ {% extends "base_authenticated.html" %}
+{% block title %}Delivery Surge Screener{% endblock %}
+{% block content %}
+<div class="max-w-4xl mx-auto p-6">
+    <h1 class="text-2xl font-bold mb-2">📈 Delivery Surge Screener</h1>
+    <form method="post" action="{{ url_for('delivery.delivery_surge_process') }}" id="screenerForm" class="mb-4">
+         <!-- 🔐 CSRF Protection -->
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" id="runButton"
+                class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+            🚀 Run Delivery Surge Screener
+        </button>
+        <span id="spinner" class="ml-3 hidden text-blue-600 animate-spin">⏳</span>
+    </form>
+
+{% if summary_message %}
+  <div id="summaryMessage" data-message="{{ summary_message | escape }}"></div>
+{% endif %}
+
+    {% if last_processed_time %}
+    <p class="text-sm text-gray-600 mb-4">
+        Last updated: {{ last_processed_time.strftime('%d %b %Y, %H:%M') }}
+    </p>
+    {% endif %}
+
+    <table class="min-w-full bg-white rounded shadow">
+        <thead class="bg-gray-200">
+            <tr>
+                <th class="px-4 py-2">#</th>
+                <th class="px-4 py-2">Symbol</th>
+                <th class="px-4 py-2">Price</th>
+                <th class="px-4 py-2">Change %</th>
+                <th class="px-4 py-2">Volume</th>
+                <th class="px-4 py-2">Delivery Spike</th>
+                <th class="px-4 py-2">ROC (21D)</th>
+                <th class="px-4 py-2">RS vs Index</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for stock in stocks %}
+            {% set clean_symbol = stock.ticker.replace('.NS', '').replace('.BO', '') %}
+            <tr class="border-t">
+                <td class="px-4 py-2">{{ loop.index }}</td>
+                <td class="px-4 py-2 font-semibold">{{ clean_symbol }}</td>
+                <td class="px-4 py-2">₹{{ "%.2f"|format(stock.current_price) }}</td>
+                <td class="px-4 py-2 text-green-600">{{ stock.price_change_pct }}%</td>
+                <td class="px-4 py-2">{{ "{:,}".format(stock.volume) }}</td>
+                <td class="px-4 py-2">{{ stock.delivery_spike }}x</td>
+                <td class="px-4 py-2 {% if stock.roc_21d >= 10 %}text-green-600{% elif stock.roc_21d <= -5 %}text-red-500{% endif %}">
+                    {{ stock.roc_21d }}%
+                </td>
+                <td class="px-4 py-2 {% if stock.rs_vs_index_21d >= 5 %}text-green-600{% elif stock.rs_vs_index_21d <= -5 %}text-red-500{% endif %}">
+                    {{ stock.rs_vs_index_21d }}%
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

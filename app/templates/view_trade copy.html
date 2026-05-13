@@ -1,0 +1,220 @@
+{% extends "base_authenticated.html" %}
+{% block title %}Trade Details{% endblock %}
+{% block content %}
+
+<h2 class="text-2xl font-semibold text-gray-800 mb-4">{{ trade.stock_name }} – Trade Details</h2>
+
+<!-- 🔔 Flash Messages -->
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% for category, message in messages %}
+    <div class="mb-4 px-4 py-2 rounded bg-blue-100 text-blue-800 text-sm">
+      {{ message }}
+    </div>
+  {% endfor %}
+{% endwith %}
+
+<!-- 📈 Trade Summary -->
+<p class="text-sm text-gray-700 mb-4">
+  <strong>Status:</strong> {{ status }} |
+  <strong>P&L:</strong>
+  {% if pnl is not none %}
+    {% if pnl >= 0 %}
+      <span class="text-green-600 font-semibold">₹{{ pnl }}</span>
+    {% else %}
+      <span class="text-red-600 font-semibold">₹{{ pnl }}</span>
+    {% endif %}
+  {% else %}
+    <span class="text-gray-500">—</span>
+  {% endif %}
+  |
+  {% if status == "Open" %}
+    <strong>Running for:</strong> {{ duration_days }} days
+  {% else %}
+    <strong>Completed in:</strong> {{ duration_days }} days
+  {% endif %}
+</p>
+
+{% if trade.note %}
+  <p class="text-sm text-gray-700 mb-6"><strong>Note:</strong> {{ trade.note }}</p>
+{% endif %}
+
+<!-- Forms -->
+ <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-10">
+  <!-- Buy Entry Form -->
+  <div>
+    <h3 class="text-lg font-semibold text-gray-800 mb-2 text-center">Buy Entry</h3>
+    <form method="POST" action="{{ url_for('trades.add_entry', trade_id=trade.id) }}"
+          class="bg-white p-6 rounded shadow space-y-4 w-full max-w-xl mx-auto">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+      <div>
+        <label for="buy_quantity" class="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
+        <input type="number" name="quantity" id="buy_quantity" required
+               class="w-full px-3 py-2 border border-gray-300 rounded focus:ring-indigo-500 focus:outline-none" />
+      </div>
+
+      <div>
+        <label for="buy_price" class="block text-sm font-medium text-gray-700 mb-1">Buy Price</label>
+        <input type="number" step="0.01" name="price" id="buy_price" required
+               class="w-full px-3 py-2 border border-gray-300 rounded focus:ring-indigo-500 focus:outline-none" />
+      </div>
+
+      <div>
+        <label for="buy_date" class="block text-sm font-medium text-gray-700 mb-1">Date</label>
+        <input type="date" name="date" id="buy_date" required value="{{ current_date }}"
+               class="w-full px-3 py-2 border border-gray-300 rounded focus:ring-indigo-500 focus:outline-none" />
+      </div>
+
+      <div>
+        <label for="buy_note" class="block text-sm font-medium text-gray-700 mb-1">Note</label>
+        <textarea name="note" id="buy_note" rows="2"
+                  placeholder="Add buy rationale or context..."
+                  class="w-full px-3 py-2 border border-gray-300 rounded focus:ring-indigo-500 focus:outline-none"></textarea>
+      </div>
+
+      <button type="submit"
+              class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition">
+        🟢 Add Buy
+      </button>
+    </form>
+  </div>
+
+  <!-- Sell Exit Form -->
+  <div>
+    <h3 class="text-lg font-semibold text-gray-800 mb-2 text-center">Sell Exit</h3>
+    <form method="POST" action="{{ url_for('trades.add_exit', trade_id=trade.id) }}"
+          class="bg-white p-6 rounded shadow space-y-4 w-full max-w-xl mx-auto">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+      <div>
+        <label for="sell_quantity" class="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
+        <input type="number" name="quantity" id="sell_quantity" required
+               class="w-full px-3 py-2 border border-gray-300 rounded focus:ring-indigo-500 focus:outline-none" />
+      </div>
+
+      <div>
+        <label for="sell_price" class="block text-sm font-medium text-gray-700 mb-1">Sell Price</label>
+        <input type="number" step="0.01" name="price" id="sell_price" required
+               class="w-full px-3 py-2 border border-gray-300 rounded focus:ring-indigo-500 focus:outline-none" />
+      </div>
+
+      <div>
+        <label for="sell_date" class="block text-sm font-medium text-gray-700 mb-1">Date</label>
+        <input type="date" name="date" id="sell_date" required value="{{ current_date }}"
+               class="w-full px-3 py-2 border border-gray-300 rounded focus:ring-indigo-500 focus:outline-none" />
+      </div>
+
+      <div>
+        <label for="sell_note" class="block text-sm font-medium text-gray-700 mb-1">Note</label>
+        <textarea name="note" id="sell_note" rows="2"
+                  placeholder="Add exit rationale or outcome..."
+                  class="w-full px-3 py-2 border border-gray-300 rounded focus:ring-indigo-500 focus:outline-none"></textarea>
+      </div>
+
+      <button type="submit"
+              class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition">
+        🔴 Add Sell
+      </button>
+    </form>
+  </div>
+</div>
+
+
+<!-- 🟢 Buy History Table -->
+<h3 class="text-lg font-semibold text-gray-800 mt-8 mb-2">Buy History</h3>
+{% if entries %}
+  <div class="overflow-x-auto rounded shadow border border-gray-200 mb-6">
+    <table class="min-w-full text-sm text-left text-gray-700">
+      <thead class="bg-gray-100 text-gray-800">
+        <tr>
+          <th class="px-4 py-2">Date</th>
+          <th class="px-4 py-2">Qty</th>
+          <th class="px-4 py-2">Price</th>
+          <th class="px-4 py-2">Invested</th>
+          <th class="px-4 py-2">Note</th>
+          <th class="px-4 py-2">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-200">
+        {% for e in entries %}
+        <tr class="hover:bg-gray-50">
+          <td class="px-4 py-2">{{ e.date.strftime('%d %b %Y') }}</td>
+          <td class="px-4 py-2">{{ e.quantity }}</td>
+          <td class="px-4 py-2">₹{{ e.price }}</td>
+          <td class="px-4 py-2">₹{{ e.invested_amount }}</td>
+          <td class="px-4 py-2">{{ e.note or '—' }}</td>
+          <td class="px-4 py-2 whitespace-nowrap">
+            <div class="flex gap-2">
+              <form method="GET" action="{{ url_for('trades.edit_entry', entry_id=e.id) }}">
+                <button type="submit"
+                        class="px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+                        title="Edit Entry">✏️</button>
+              </form>
+              <form method="POST" action="{{ url_for('trades.delete_entry', entry_id=e.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit"
+                        onclick="return confirm('Delete this entry?')"
+                        class="px-2 py-1 bg-red-600 text-white rounded hover:bg-red-700 text-sm"
+                        title="Delete Entry">🗑️</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <p class="text-gray-500 italic">No buy entries yet.</p>
+{% endif %}
+
+
+<!-- 🔴 Sell History Table -->
+<h3 class="text-lg font-semibold text-gray-800 mt-8 mb-2">Sell History</h3>
+{% if exits %}
+  <div class="overflow-x-auto rounded shadow border border-gray-200 mb-6">
+    <table class="min-w-full text-sm text-left text-gray-700">
+      <thead class="bg-gray-100 text-gray-800">
+        <tr>
+          <th class="px-4 py-2">Date</th>
+          <th class="px-4 py-2">Qty</th>
+          <th class="px-4 py-2">Price</th>
+          <th class="px-4 py-2">Exited</th>
+          <th class="px-4 py-2">Note</th>
+          <th class="px-4 py-2">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-200">
+        {% for x in exits %}
+        <tr class="hover:bg-gray-50">
+          <td class="px-4 py-2">{{ x.date.strftime('%d %b %Y') }}</td>
+          <td class="px-4 py-2">{{ x.quantity }}</td>
+          <td class="px-4 py-2">₹{{ x.price }}</td>
+          <td class="px-4 py-2">₹{{ x.exit_amount }}</td>
+          <td class="px-4 py-2">{{ x.note or '—' }}</td>
+          <td class="px-4 py-2 whitespace-nowrap">
+            <div class="flex gap-2">
+              <form method="GET" action="{{ url_for('trades.edit_exit', exit_id=x.id) }}">
+                <button type="submit"
+                        class="px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+                        title="Edit Exit">✏️</button>
+              </form>
+              <form method="POST" action="{{ url_for('trades.delete_exit', exit_id=x.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit"
+                        onclick="return confirm('Delete this exit?')"
+                        class="px-2 py-1 bg-red-600 text-white rounded hover:bg-red-700 text-sm"
+                        title="Delete Exit">🗑️</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <p class="text-gray-500 italic">No sell exits yet.</p>
+{% endif %}
+
+{% endblock %}

@@ -1,0 +1,132 @@
+{% extends "base_authenticated.html" %}
+{% block title %}Delivery Surge History{% endblock %}
+{% block content %}
+<div class="max-w-6xl mx-auto p-6">
+  <h1 class="text-2xl font-bold mb-4">📦 Delivery Surge History (Last 30 Days)</h1>
+
+  <!-- 🔍 Filter Form -->
+  <form method="get" class="mb-4 flex gap-4 flex-wrap items-end">
+    <!-- Symbol Filter -->
+    <div>
+      <label for="symbol" class="block text-sm font-medium text-gray-700 mb-1">Symbol</label>
+      <input type="text" name="symbol" id="symbol" placeholder="e.g. INFY"
+             value="{{ symbol_filter }}" class="px-3 py-2 border rounded w-48">
+    </div>
+
+    <!-- Date Filter -->
+    <div>
+      <label for="date" class="block text-sm font-medium text-gray-700 mb-1">Date</label>
+      <input type="date" name="date" id="date"
+             value="{{ date_filter }}" class="px-3 py-2 border rounded w-48">
+    </div>
+
+    <!-- Buttons -->
+    <div class="flex gap-2 mt-6">
+      <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded">🔍 Filter</button>
+      <a href="{{ url_for('delivery.delivery_history') }}" class="px-4 py-2 bg-gray-300 text-gray-800 rounded hover:bg-gray-400">🔄 Reset</a>
+    </div>
+  </form>
+
+  <!-- 📊 Table -->
+  <div class="overflow-x-auto">
+    <table class="table-auto w-full border-collapse shadow-md rounded bg-white" id="sortable-table">
+      <thead class="bg-gray-200 text-sm">
+        <tr>
+          <th class="px-4 py-2 cursor-pointer">#</th>
+          <th class="px-4 py-2 cursor-pointer">Date</th>
+          <th class="px-4 py-2 cursor-pointer">Symbol</th>
+          <th class="px-4 py-2 cursor-pointer">Price</th>
+          <th class="px-4 py-2 cursor-pointer">Volume</th>
+          <th class="px-4 py-2 cursor-pointer">Delivery Spike</th>
+          <th class="px-4 py-2 cursor-pointer">ROC (21D)</th>
+          <th class="px-4 py-2 cursor-pointer">RS vs Index</th>
+          <th class="px-4 py-2">Tag</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for stock in stocks %}
+        <tr class="border-t text-sm hover:bg-gray-50">
+          <td class="px-4 py-2">{{ loop.index }}</td>
+          <td class="px-4 py-2">{{ stock.date.strftime('%d-%b-%Y') }}</td>
+          <td class="px-4 py-2 flex items-center gap-2">
+            <span id="copy-{{ stock.symbol_clean }}">{{ stock.symbol_clean }}</span>
+            <button onclick="copyToClipboard('{{ stock.symbol_clean }}')" class="text-blue-600 hover:underline text-xs relative group">
+              📋
+              <span id="tooltip-{{ stock.symbol_clean }}" class="absolute -top-6 left-0 bg-black text-white text-xs px-2 py-1 rounded opacity-0 transition-opacity duration-300">
+                Copied!
+              </span>
+            </button>
+          </td>
+          <td class="px-4 py-2">₹{{ "%.2f"|format(stock.price) }}</td>
+          <td class="px-4 py-2">{{ "{:,}".format(stock.volume) }}</td>
+          <td class="px-4 py-2">{{ stock.delivery_spike }}x</td>
+          <td class="px-4 py-2 {% if stock.roc_21d >= 10 %}text-green-600{% elif stock.roc_21d <= -5 %}text-red-500{% endif %}">
+            {{ stock.roc_21d }}%
+          </td>
+          <td class="px-4 py-2 {% if stock.rs_vs_index_21d >= 5 %}text-green-600{% elif stock.rs_vs_index_21d <= -5 %}text-red-500{% endif %}">
+            {{ stock.rs_vs_index_21d }}%
+          </td>
+          <td class="px-4 py-2">{{ stock.tag }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="9" class="px-4 py-6 text-center text-gray-500">No delivery surge stocks found for the selected filters.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- 📋 Silent Copy-to-Clipboard Script -->
+<!-- <script>
+function copyToClipboard(id) {
+  const el = document.getElementById(id);
+  if (el) {
+    navigator.clipboard.writeText(el.textContent);
+  }
+}
+</script> -->
+
+<!-- 🔃 Sortable Table Script -->
+<script>
+
+
+function copyToClipboard(symbol) {
+  const el = document.getElementById("copy-" + symbol);
+  if (el) {
+    navigator.clipboard.writeText(el.textContent).then(() => {
+      const tooltip = document.getElementById("tooltip-" + symbol);
+      if (tooltip) {
+        tooltip.style.opacity = "1";
+        setTimeout(() => {
+          tooltip.style.opacity = "0";
+        }, 1500);
+      }
+    });
+  }
+}
+
+document.querySelectorAll("#sortable-table th").forEach((header, index) => {
+  header.addEventListener("click", () => {
+    const table = header.closest("table");
+    const tbody = table.querySelector("tbody");
+    const rows = Array.from(tbody.querySelectorAll("tr")).filter(row => row.querySelector("td"));
+
+    const isAsc = header.classList.toggle("asc");
+    table.querySelectorAll("th").forEach(th => th !== header && th.classList.remove("asc", "desc"));
+    header.classList.toggle("desc", !isAsc);
+
+    rows.sort((a, b) => {
+      const cellA = a.children[index].textContent.trim();
+      const cellB = b.children[index].textContent.trim();
+      const valA = parseFloat(cellA.replace(/[^0-9.-]/g, "")) || cellA;
+      const valB = parseFloat(cellB.replace(/[^0-9.-]/g, "")) || cellB;
+      return isAsc ? (valA > valB ? 1 : -1) : (valA < valB ? 1 : -1);
+    });
+
+    rows.forEach(row => tbody.appendChild(row));
+  });
+});
+</script>
+{% endblock %}

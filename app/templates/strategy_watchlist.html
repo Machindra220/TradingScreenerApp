@@ -1,0 +1,33 @@
+{% extends 'base_authenticated.html' %}
+{% block content %}
+<div class="max-w-7xl mx-auto px-4 py-8">
+    <h2 class="text-2xl font-black text-indigo-900 mb-8 uppercase">📈 Strategy: {{ strategy_name }}</h2>
+
+    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <table class="min-w-full text-left text-xs">
+            <thead class="bg-gray-50 border-b border-gray-100">
+                <tr>
+                    <th class="px-6 py-4 font-bold uppercase text-gray-400">Symbol</th>
+                    <th class="px-6 py-4 font-bold uppercase text-gray-400">Date Added</th>
+                    <th class="px-6 py-4 font-bold uppercase text-gray-400">Entry Price</th>
+                    <th class="px-6 py-4 font-bold uppercase text-gray-400">Current Price</th>
+                    <th class="px-6 py-4 font-bold uppercase text-gray-400 text-right">Total Return %</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-50">
+                {% for stock in stocks %}
+                <tr class="hover:bg-gray-50 transition">
+                    <td class="px-6 py-4 font-black text-indigo-700">{{ stock.symbol }}</td>
+                    <td class="px-6 py-4 text-gray-500">{{ stock.entry_date }}</td>
+                    <td class="px-6 py-4 font-bold">{{ currency }}{{ stock.entry_price }}</td>
+                    <td class="px-6 py-4 font-bold">{{ currency }}{{ stock.current_price }}</td>
+                    <td class="px-6 py-4 text-right font-black {% if stock.return_pct >= 0 %}text-green-600{% else %}text-red-500{% endif %}">
+                        {{ "+" if stock.return_pct > 0 }}{{ stock.return_pct }}%
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
