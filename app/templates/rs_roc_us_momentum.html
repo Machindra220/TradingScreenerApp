@@ -25,7 +25,7 @@
                 Filtering S&P 500 for Stage 2 leaders with Relative Strength vs <span class="font-bold text-indigo-600">S&P 500 (^GSPC)</span>.
             </div>
             <button type="submit" onclick="document.getElementById('spinner').classList.remove('hidden')" class="bg-indigo-600 text-white px-8 py-3 rounded-xl font-black text-xs uppercase hover:bg-indigo-700 transition flex items-center gap-2 shadow-lg shadow-indigo-200">
-                <span>🇺🇸 Run US Pro Scan</span>
+                <span>Run US RS+ROC Scan</span>
                 <span id="spinner" class="hidden animate-spin">⏳</span>
             </button>
         </form>
@@ -39,10 +39,10 @@
                     <th class="px-6 py-4 font-bold uppercase text-gray-400 cursor-pointer" onclick="sortTable(1)">Change ↕</th>
                     <th class="px-6 py-4 font-bold uppercase text-gray-400">Symbol</th>
                     <th class="px-6 py-4 font-bold uppercase text-gray-400 cursor-pointer" onclick="sortTable(3)">Price ↕</th>
-                    <th class="px-6 py-4 font-bold uppercase text-gray-400">Sector</th>
                     <th class="px-6 py-4 font-bold uppercase text-gray-400 text-center">RS %tile</th>
                     <th class="px-6 py-4 font-bold uppercase text-gray-400">ROC 3M</th>
                     <th class="px-6 py-4 font-bold uppercase text-gray-400 text-right">ROC 6M</th>
+                    <th class="px-6 py-4 font-bold uppercase text-gray-400">Sector</th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-gray-50">
@@ -60,7 +60,7 @@
                         {% endif %}
                     </td>
                     <td class="px-6 py-4 font-black text-indigo-700">{{ stock.symbol }}</td>
-                    <td class="px-6 py-4 font-bold text-gray-900">${{ stock.price }}</td> <td class="px-6 py-4 text-gray-500 uppercase font-bold text-[10px]">{{ stock.sector }}</td>
+                    <td class="px-6 py-4 font-bold text-gray-900">${{ stock.price }}</td> 
                     <td class="px-6 py-4 text-center">
                         <span class="inline-block px-3 py-1 rounded-full text-[10px] font-black 
                             {% if stock.rs_up %}bg-green-500 text-white shadow-sm underline{% elif stock.rs_percentile >= 90 %}bg-blue-600 text-white shadow-sm{% else %}bg-gray-100 text-gray-500{% endif %}">
@@ -76,6 +76,7 @@
                     <td class="px-6 py-4 text-right font-bold text-gray-900">
                         {{ stock.roc_6m }}%
                     </td>
+                    <td class="px-6 py-4 text-gray-500 uppercase font-bold text-[8px]">{{ stock.sector }}</td>
                 </tr>
                 {% endfor %}
             </tbody>

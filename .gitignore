@@ -28,3 +28,4 @@ tray_launcher.py
 Other-Code-Files/
 my_backup_200226.sql
 docker-compose-for-pulling-portfolio-app-image.yml
+.venv_old

@@ -3,7 +3,7 @@
 <div class="max-w-7xl mx-auto px-4 py-8">
     <div class="flex justify-between items-center mb-8">
         <div>
-            <h2 class="text-2xl font-black text-indigo-900 uppercase tracking-tight">🚀 Pro Strategy: RS + ROC</h2>
+            <h2 class="text-2xl font-black text-indigo-900 uppercase tracking-tight">🚀 NSE Pro Strategy: RS + ROC</h2>
             <p class="text-[9px] font-bold text-gray-400 mt-1 uppercase tracking-widest">
                 Last Run: <span class="text-blue-600">{{ last_time|default('N/A') }}</span> | Universe: <span class="text-gray-600">Nifty 500 (Automated)</span>
             </p>
@@ -22,26 +22,27 @@
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <div class="text-xs text-gray-500 max-w-md">
                 <p class="font-bold uppercase text-[9px] text-gray-400 tracking-widest mb-1">Strategy Logic</p>
-                Filters for Nifty 500 stocks in <span class="font-bold text-indigo-600">Stage 2</span> (Price > 200 EMA) with high <span class="font-bold text-blue-600">Relative Strength</span> and accelerating <span class="font-bold text-green-600">Rate of Change</span>.
+                Filtering Nifty 500 for Stage 2 leaders with Relative Strength vs <span class="font-bold text-indigo-600">Nifty 50 (^NSEI)</span>.
             </div>
             <button type="submit" onclick="document.getElementById('spinner').classList.remove('hidden')" class="bg-indigo-600 text-white px-8 py-3 rounded-xl font-black text-xs uppercase hover:bg-indigo-700 transition flex items-center gap-2 shadow-lg shadow-indigo-200">
-                <span>🚀 Run Pro Scan</span>
+                <span>🚀 Run NSE RS+ROC Scan</span>
                 <span id="spinner" class="hidden animate-spin">⏳</span>
             </button>
         </form>
     </div>
 
     <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-8">
-        <table class="min-w-full text-left text-xs" id="rsRocTable">
+        <table class="min-w-full text-left text-xs" id="proScreenerTable">
             <thead class="bg-gray-50 border-b border-gray-100">
                 <tr>
                     <th class="px-6 py-4 font-bold uppercase text-gray-400">Rank</th>
-                    <th class="px-6 py-4 font-bold uppercase text-gray-400">Change</th>
+                    <th class="px-6 py-4 font-bold uppercase text-gray-400 cursor-pointer" onclick="sortTable(1)">Change ↕</th>
                     <th class="px-6 py-4 font-bold uppercase text-gray-400">Symbol</th>
-                    <th class="px-6 py-4 font-bold uppercase text-gray-400">Sector</th>
+                    <th class="px-6 py-4 font-bold uppercase text-gray-400 cursor-pointer" onclick="sortTable(3)">Price ↕</th>
                     <th class="px-6 py-4 font-bold uppercase text-gray-400 text-center">RS %tile</th>
                     <th class="px-6 py-4 font-bold uppercase text-gray-400">ROC 3M</th>
                     <th class="px-6 py-4 font-bold uppercase text-gray-400 text-right">ROC 6M</th>
+                    <th class="px-6 py-4 font-bold uppercase text-gray-400">Sector</th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-gray-50">
@@ -50,8 +51,10 @@
                     <td class="px-6 py-4 font-bold text-gray-300">{{ stock.rank }}</td>
                     <td class="px-6 py-4">
                         {% if stock.rank_status == 'new' %}
+                            <span class="hidden">-999</span>
                             <span class="text-[8px] px-2 py-1 bg-blue-50 text-blue-600 rounded font-bold uppercase">New</span>
                         {% else %}
+                            <span class="hidden">{{ stock.rank_diff }}</span>
                             <span class="font-bold {% if stock.rank_diff > 0 %}text-green-600{% elif stock.rank_diff < 0 %}text-red-500{% else %}text-gray-300{% endif %}">
                                 {{ stock.rank_diff }}{% if stock.rank_diff > 0 %} ▲{% elif stock.rank_diff < 0 %} ▼{% endif %}
                             </span>
@@ -63,7 +66,7 @@
                             <button onclick="addToFavorites('{{ stock.symbol }}')" class="text-gray-300 hover:text-yellow-400 transition focus:outline-none">⭐</button>
                         </div>
                     </td>
-                    <td class="px-6 py-4 text-gray-500 uppercase font-bold text-[10px]">{{ stock.sector }}</td>
+                    <td class="px-6 py-4 font-bold text-gray-900">₹{{ stock.price }}</td>
                     
                     <td class="px-6 py-4 text-center">
                         <span class="inline-block px-3 py-1 rounded-full text-[10px] font-black 
@@ -74,14 +77,13 @@
                             {% for val in stock.rs_h %}{{ val }}{% if not loop.last %}, {% endif %}{% endfor %}
                         </div>
                     </td>
-
                     <td class="px-6 py-4 font-black {% if stock.roc_3m > 15 %}text-green-600{% else %}text-indigo-600{% endif %}">
                         {{ stock.roc_3m }}%
                     </td>
-
                     <td class="px-6 py-4 text-right font-bold text-gray-900">
                         {{ stock.roc_6m }}%
                     </td>
+                    <td class="px-6 py-4 text-gray-500 uppercase font-bold text-[8px]">{{ stock.sector }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -90,17 +92,34 @@
 </div>
 
 <script>
+function sortTable(n) {
+    const table = document.getElementById("proScreenerTable");
+    const rows = Array.from(table.rows).slice(1);
+    const isAsc = table.getAttribute("data-order") === "asc";
+    table.setAttribute("data-order", isAsc ? "desc" : "asc");
+
+    rows.sort((a, b) => {
+        let valA = a.cells[n].querySelector('.hidden') ? a.cells[n].querySelector('.hidden').innerText : a.cells[n].innerText;
+        let valB = b.cells[n].querySelector('.hidden') ? b.cells[n].querySelector('.hidden').innerText : b.cells[n].innerText;
+        
+        valA = parseFloat(valA.replace(/[^\d.-]/g, '')) || 0;
+        valB = parseFloat(valB.replace(/[^\d.-]/g, '')) || 0;
+        
+        return isAsc ? valA - valB : valB - valA;
+    });
+    
+    const tbody = table.querySelector("tbody");
+    rows.forEach(row => tbody.appendChild(row));
+}
+
 function addToFavorites(symbol) {
     const formData = new FormData();
     formData.append('symbol', symbol);
     formData.append('csrf_token', '{{ csrf_token }}');
 
-    fetch('/add-favorite-india', {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => response.json())
-    .then(data => { alert(data.message); });
+    fetch('/add-favorite-india', { method: 'POST', body: formData })
+    .then(res => res.json())
+    .then(data => alert(data.message));
 }
 </script>
 {% endblock %}
