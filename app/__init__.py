@@ -52,6 +52,7 @@ def create_app():
     from app.routes.ai_analyst import ai_analyst_bp
     from app.routes.rs_roc_screener import rs_roc_bp
     from app.routes.rs_roc_us_screener import rs_roc_us_bp
+    from app.routes.chart import chart_bp
 
     app.register_blueprint(rs_roc_us_bp)
     app.register_blueprint(rs_roc_bp)
@@ -83,6 +84,7 @@ def create_app():
     app.register_blueprint(volar_us_adaptive_bp)
     app.register_blueprint(volar_ind_adaptive_bp)
     app.register_blueprint(ai_analyst_bp)
+    app.register_blueprint(chart_bp)
 
 
     # Home route
