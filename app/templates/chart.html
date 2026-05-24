@@ -2,7 +2,7 @@
 {% block content %}
 <div class="max-w-7xl mx-auto px-4 py-4 space-y-4">
 
-    <!-- Toolbar -->
+    <!-- ── Toolbar ─────────────────────────────────────────────────────── -->
     <div class="bg-gray-900 px-4 py-3 rounded-xl border border-gray-800 flex items-center justify-between shadow-md">
         <div class="flex items-center gap-3">
             <div class="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></div>
@@ -13,8 +13,7 @@
             </span>
         </div>
         <div class="flex items-center gap-2">
-            <input type="text" id="ticker-search"
-                   placeholder="NSE Symbol..."
+            <input type="text" id="ticker-search" placeholder="NSE Symbol..."
                    value="{{ default_stock }}"
                    class="bg-gray-950 text-gray-200 text-[11px] font-bold uppercase tracking-tight px-3 py-1.5 rounded-lg border border-gray-800 focus:outline-none focus:border-indigo-500 w-48 transition-all"
                    onkeypress="if(event.key==='Enter') loadChartTelemetry(this.value)">
@@ -25,24 +24,39 @@
         </div>
     </div>
 
-    <!-- Error banner -->
+    <!-- ── Error banner ─────────────────────────────────────────────────── -->
     <div id="error-banner"
          class="hidden bg-red-950 border border-red-800 text-red-400 px-4 py-2 rounded-xl text-xs font-bold uppercase">
     </div>
 
-    <!-- Chart area: price pane (70%) + RS pane (30%) stacked -->
+    <!-- ── OHLCV tooltip bar (top-right of price chart) ─────────────────── -->
+    <div id="ohlcv-bar"
+         class="hidden bg-gray-900/95 border border-gray-800 rounded-xl px-4 py-2 flex flex-wrap gap-4 text-[10px] font-bold uppercase tracking-tight shadow-lg">
+        <span class="text-gray-500">O <span id="tip-open"  class="text-gray-200">—</span></span>
+        <span class="text-gray-500">H <span id="tip-high"  class="text-green-400">—</span></span>
+        <span class="text-gray-500">L <span id="tip-low"   class="text-red-400">—</span></span>
+        <span class="text-gray-500">C <span id="tip-close" class="text-gray-200">—</span></span>
+        <span class="text-gray-500">V <span id="tip-vol"   class="text-indigo-400">—</span></span>
+        <span class="text-gray-500">Chg <span id="tip-chg" class="text-gray-200">—</span></span>
+    </div>
+
+    <!-- ── Chart stack ──────────────────────────────────────────────────── -->
     <div class="bg-gray-950 rounded-2xl border border-gray-800 shadow-2xl relative overflow-hidden">
 
-        <!-- FIX 3: Split into two explicit divs so we control each pane's height
-             independently. LightweightCharts v4+ removed the 'pane' option from
-             addLineSeries/addAreaSeries — you must create a second chart instance
-             OR use the new createPane() API (v5 only). Using two separate charts
-             is the most compatible approach across v3/v4/v5. -->
-        <div id="price-viewport"  class="w-full" style="height: 440px;"></div>
-        <div class="border-t border-gray-800/60"></div>
-        <div id="rs-viewport"     class="w-full" style="height: 180px;"></div>
+        <!-- Price pane: candles + EMA20/50/200 -->
+        <div id="price-viewport" class="w-full" style="height:420px;"></div>
 
-        <!-- Spinner overlay -->
+        <div class="border-t border-gray-800/60"></div>
+
+        <!-- RS pane: green above 0 / red below 0 -->
+        <div id="rs-viewport" class="w-full" style="height:150px;"></div>
+
+        <div class="border-t border-gray-800/60"></div>
+
+        <!-- Accumulation pane: OBV-style cumulative net volume -->
+        <div id="acc-viewport" class="w-full" style="height:130px;"></div>
+
+        <!-- Spinner -->
         <div id="chart-spinner"
              class="absolute inset-0 bg-gray-950/80 backdrop-blur-sm flex items-center justify-center z-50">
             <div class="flex flex-col items-center gap-3">
@@ -52,198 +66,286 @@
         </div>
     </div>
 
-    <!-- Legend -->
-    <div class="flex gap-4 text-[9px] font-bold uppercase text-gray-500 px-1">
+    <!-- ── Legend ───────────────────────────────────────────────────────── -->
+    <div class="flex flex-wrap gap-x-5 gap-y-1.5 text-[9px] font-bold uppercase text-gray-500 px-1">
         <span class="flex items-center gap-1.5"><span class="w-3 h-1 bg-blue-500 rounded inline-block"></span>EMA 20</span>
+        <span class="flex items-center gap-1.5"><span class="w-3 h-1 bg-purple-400 rounded inline-block"></span>EMA 50</span>
         <span class="flex items-center gap-1.5"><span class="w-3 h-1 bg-amber-500 rounded inline-block"></span>EMA 200</span>
-        <span class="flex items-center gap-1.5"><span class="w-3 h-1 bg-indigo-500 rounded inline-block"></span>RS vs Nifty 50</span>
         <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-indigo-500 inline-block"></span>RS ≥ 90th %tile candles</span>
-        <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-green-500 inline-block"></span>RS rising 4 days straight</span>
+        <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-green-500 inline-block"></span>RS rising 4 days (price dot)</span>
+        <span class="flex items-center gap-1.5"><span class="w-3 h-1 bg-green-500 rounded inline-block"></span>RS vs Nifty500 &gt; 0</span>
+        <span class="flex items-center gap-1.5"><span class="w-3 h-1 bg-red-500 rounded inline-block"></span>RS vs Nifty500 &lt; 0</span>
+        <span class="flex items-center gap-1.5"><span class="w-3 h-1 bg-cyan-500 rounded inline-block"></span>Accumulation (OBV)</span>
     </div>
 </div>
 
-<!-- FIX 4: Pin to v3.3.0 — the last stable version that supports the 'pane' option
-     on series config AND setMarkers() on a series directly.
-     Unpinned 'latest' resolved to v5 which has completely different API and broke:
-       - addCandlestickSeries({pane:0/1}) — pane param removed
-       - addAreaSeries({pane:1})          — same
-       - layout.background.type='vertical' — not a valid type (should be 'solid')
-     Pinning to 3.3.0 makes all existing series/pane code work as-is. -->
+<!-- LightweightCharts v3.3.0 — stable API for multi-pane + setMarkers -->
 <script src="https://unpkg.com/lightweight-charts@3.3.0/dist/lightweight-charts.standalone.production.js"></script>
 
 <script>
-let priceChart = null;
-let rsChart    = null;
+// ─────────────────────────────────────────────────────────────────────────────
+// Chart instances & series refs
+// ─────────────────────────────────────────────────────────────────────────────
+let priceChart = null, rsChart = null, accChart = null;
+let candleSeries, ema20S, ema50S, ema200S;
+let rsPosSeries, rsNegSeries;   // two line series for green/red RS
+let accSeries;
 
-// FIX 5: layout.background needs type:'solid' not 'vertical' (typo in original)
-// 'vertical' is not a valid background type and caused the chart background
-// to render incorrectly or throw a silent internal error.
-const CHART_COMMON = {
+// Candle lookup for OHLCV tooltip
+let candleMap = {};
+
+const COMMON = {
     layout: {
         background: { type: 'solid', color: '#030712' },
-        textColor:  '#9CA3AF',
+        textColor:  '#6B7280',
         fontFamily: 'Inter, sans-serif'
     },
-    grid: {
-        vertLines: { color: '#111827' },
-        horzLines: { color: '#111827' }
-    },
+    grid:      { vertLines: { color: '#0F172A' }, horzLines: { color: '#0F172A' } },
     crosshair: {
         mode: LightweightCharts.CrosshairMode.Normal,
-        vertLine: { color: '#4B5563', labelBackgroundColor: '#1F2937' },
-        horzLine: { color: '#4B5563', labelBackgroundColor: '#1F2937' }
+        vertLine: { color: '#374151', labelBackgroundColor: '#1F2937' },
+        horzLine: { color: '#374151', labelBackgroundColor: '#1F2937' }
     },
-    timeScale: { borderColor: '#1F2937', timeVisible: false }
+    rightPriceScale: { borderColor: '#1F2937' },
+    timeScale:       { borderColor: '#1F2937', timeVisible: false }
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Init / destroy
+// ─────────────────────────────────────────────────────────────────────────────
 function destroyCharts() {
-    if (priceChart) { try { priceChart.remove(); } catch(e){} priceChart = null; }
-    if (rsChart)    { try { rsChart.remove();    } catch(e){} rsChart    = null; }
+    [priceChart, rsChart, accChart].forEach(c => { if (c) { try { c.remove(); } catch(e){} } });
+    priceChart = rsChart = accChart = null;
+    candleMap  = {};
 }
 
 function initCharts() {
     destroyCharts();
+    const pEl  = document.getElementById('price-viewport');
+    const rEl  = document.getElementById('rs-viewport');
+    const aEl  = document.getElementById('acc-viewport');
+    [pEl, rEl, aEl].forEach(el => el.innerHTML = '');
 
-    const priceEl = document.getElementById('price-viewport');
-    const rsEl    = document.getElementById('rs-viewport');
-    priceEl.innerHTML = '';
-    rsEl.innerHTML    = '';
+    priceChart = LightweightCharts.createChart(pEl, { ...COMMON, width: pEl.clientWidth, height: 420,
+        timeScale: { ...COMMON.timeScale, timeVisible: false } });
 
-    // Price chart — candles + EMA20 + EMA200
-    priceChart = LightweightCharts.createChart(priceEl, {
-        ...CHART_COMMON,
-        width:  priceEl.clientWidth,
-        height: 440,
-        timeScale: { ...CHART_COMMON.timeScale, timeVisible: false }
+    rsChart = LightweightCharts.createChart(rEl, { ...COMMON, width: rEl.clientWidth, height: 150,
+        timeScale: { ...COMMON.timeScale, timeVisible: false } });
+
+    accChart = LightweightCharts.createChart(aEl, { ...COMMON, width: aEl.clientWidth, height: 130,
+        timeScale: { ...COMMON.timeScale, timeVisible: true } });
+
+    // ── Crosshair sync: price → rs → acc ────────────────────────────────
+    priceChart.subscribeCrosshairMove(p => {
+        if (p.time) {
+            rsChart.setCrosshairPosition(NaN, p.time, rsPosSeries);
+            accChart.setCrosshairPosition(NaN, p.time, accSeries);
+            // OHLCV tooltip
+            const c = candleMap[p.time];
+            if (c) updateOHLCV(c);
+        } else {
+            rsChart.clearCrosshairPosition();
+            accChart.clearCrosshairPosition();
+        }
     });
 
-    // RS chart — area + underline markers
-    rsChart = LightweightCharts.createChart(rsEl, {
-        ...CHART_COMMON,
-        width:  rsEl.clientWidth,
-        height: 180,
-        timeScale: { ...CHART_COMMON.timeScale, timeVisible: true }
-    });
-
-    // Sync crosshair: when you hover price chart, RS chart crosshair follows
-    priceChart.subscribeCrosshairMove(param => {
-        if (param.time) rsChart.setCrosshairPosition(NaN, param.time, rsLineSeries);
-        else rsChart.clearCrosshairPosition();
-    });
-
-    // Sync scroll/zoom
-    priceChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
-        if (range) rsChart.timeScale().setVisibleLogicalRange(range);
-    });
-    rsChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
-        if (range) priceChart.timeScale().setVisibleLogicalRange(range);
-    });
+    // ── Scroll / zoom sync ───────────────────────────────────────────────
+    function syncRange(src, ...targets) {
+        src.timeScale().subscribeVisibleLogicalRangeChange(r => {
+            if (r) targets.forEach(t => t.timeScale().setVisibleLogicalRange(r));
+        });
+    }
+    syncRange(priceChart, rsChart, accChart);
+    syncRange(rsChart,    priceChart, accChart);
+    syncRange(accChart,   priceChart, rsChart);
 }
 
-// Series refs — set during loadChartTelemetry
-let candleSeries, ema20Series, ema200Series, rsLineSeries, underlineSeries;
+// ─────────────────────────────────────────────────────────────────────────────
+// OHLCV tooltip helper
+// ─────────────────────────────────────────────────────────────────────────────
+function updateOHLCV(c) {
+    const bar   = document.getElementById('ohlcv-bar');
+    const prev  = candleMap[c.prevDate];
+    const chg   = prev ? ((c.close - prev.close) / prev.close * 100).toFixed(2) : null;
+    const chgEl = document.getElementById('tip-chg');
 
+    document.getElementById('tip-open').innerText  = c.open.toFixed(2);
+    document.getElementById('tip-high').innerText  = c.high.toFixed(2);
+    document.getElementById('tip-low').innerText   = c.low.toFixed(2);
+    document.getElementById('tip-close').innerText = c.close.toFixed(2);
+    document.getElementById('tip-vol').innerText   = formatVol(c.volume);
+
+    if (chg !== null) {
+        chgEl.innerText   = `${chg > 0 ? '+' : ''}${chg}%`;
+        chgEl.className   = chg > 0 ? 'text-green-400' : (chg < 0 ? 'text-red-400' : 'text-gray-400');
+    } else {
+        chgEl.innerText = '—';
+        chgEl.className = 'text-gray-400';
+    }
+    bar.classList.remove('hidden');
+}
+
+function formatVol(v) {
+    if (!v) return '—';
+    if (v >= 1e7) return (v / 1e7).toFixed(2) + ' Cr';
+    if (v >= 1e5) return (v / 1e5).toFixed(2) + ' L';
+    if (v >= 1e3) return (v / 1e3).toFixed(1) + 'K';
+    return v.toString();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Split RS data into positive (green) and negative (red) segments
+// LightweightCharts v3 has no baseline series, so we split manually:
+// above-zero points keep their value; below-zero points are nulled out, and vice versa
+// ─────────────────────────────────────────────────────────────────────────────
+function splitRSSegments(rsData) {
+    // We build two full-length arrays. Where the value is on the wrong side
+    // we insert the zero-crossing interpolation point so fills look clean.
+    const pos = [];
+    const neg = [];
+
+    for (let i = 0; i < rsData.length; i++) {
+        const cur  = rsData[i];
+        const prev = rsData[i - 1];
+
+        // Detect zero crossing and insert interpolated point
+        if (prev && ((prev.value < 0 && cur.value >= 0) || (prev.value >= 0 && cur.value < 0))) {
+            // Simple midpoint date isn't possible with date strings, so just cap at 0
+            pos.push({ time: cur.time, value: 0 });
+            neg.push({ time: cur.time, value: 0 });
+        }
+
+        pos.push({ time: cur.time, value: cur.value >= 0 ? cur.value : 0 });
+        neg.push({ time: cur.time, value: cur.value < 0  ? cur.value : 0 });
+    }
+    return { pos, neg };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Main load function
+// ─────────────────────────────────────────────────────────────────────────────
 function loadChartTelemetry(symbol) {
     if (!symbol || !symbol.trim()) return;
-    symbol = symbol.trim().toUpperCase().replace(".NS", "");
+    symbol = symbol.trim().toUpperCase().replace('.NS', '');
 
-    const spinner   = document.getElementById('chart-spinner');
-    const errBanner = document.getElementById('error-banner');
-    spinner.classList.remove('hidden');
-    errBanner.classList.add('hidden');
+    document.getElementById('chart-spinner').classList.remove('hidden');
+    document.getElementById('error-banner').classList.add('hidden');
+    document.getElementById('ohlcv-bar').classList.add('hidden');
 
     initCharts();
 
-    // Create series on price chart
-    candleSeries  = priceChart.addCandlestickSeries({
-        upColor:        '#22C55E',
-        downColor:      '#EF4444',
-        borderUpColor:  '#22C55E',
-        borderDownColor:'#EF4444',
-        wickUpColor:    '#22C55E',
-        wickDownColor:  '#EF4444'
+    // ── Price chart series ───────────────────────────────────────────────
+    candleSeries = priceChart.addCandlestickSeries({
+        upColor: '#22C55E', downColor: '#EF4444',
+        borderUpColor: '#22C55E', borderDownColor: '#EF4444',
+        wickUpColor: '#22C55E', wickDownColor: '#EF4444'
     });
-    ema20Series   = priceChart.addLineSeries({ color: '#3B82F6', lineWidth: 1, title: 'EMA 20',  lastValueVisible: false, priceLineVisible: false });
-    ema200Series  = priceChart.addLineSeries({ color: '#F59E0B', lineWidth: 2, title: 'EMA 200', lastValueVisible: false, priceLineVisible: false });
+    ema20S  = priceChart.addLineSeries({ color: '#3B82F6', lineWidth: 1, title: 'EMA 20',  lastValueVisible: true,  priceLineVisible: false });
+    ema50S  = priceChart.addLineSeries({ color: '#A78BFA', lineWidth: 1, title: 'EMA 50',  lastValueVisible: true,  priceLineVisible: false });
+    ema200S = priceChart.addLineSeries({ color: '#F59E0B', lineWidth: 2, title: 'EMA 200', lastValueVisible: true,  priceLineVisible: false });
 
-    // Create series on RS chart
-    rsLineSeries  = rsChart.addAreaSeries({
-        lineColor:   '#6366F1',
-        lineWidth:    2,
-        topColor:    'rgba(99,102,241,0.25)',
-        bottomColor: 'rgba(99,102,241,0.0)',
-        title:       'RS vs Nifty50',
-        lastValueVisible: false,
-        priceLineVisible: false
+    // ── RS chart series: pos (green area) + neg (red area) ───────────────
+    rsPosSeries = rsChart.addAreaSeries({
+        lineColor: '#22C55E', lineWidth: 1.5,
+        topColor: 'rgba(34,197,94,0.30)', bottomColor: 'rgba(34,197,94,0.0)',
+        title: 'RS > 0', lastValueVisible: false, priceLineVisible: false
     });
-    underlineSeries = rsChart.addLineSeries({
-        color:     '#22C55E',
-        lineWidth:  0,
-        lastValueVisible: false,
-        priceLineVisible: false
+    rsNegSeries = rsChart.addAreaSeries({
+        lineColor: '#EF4444', lineWidth: 1.5,
+        topColor: 'rgba(239,68,68,0.0)', bottomColor: 'rgba(239,68,68,0.30)',
+        title: 'RS < 0', lastValueVisible: false, priceLineVisible: false
+    });
+
+    // ── Accumulation chart series ────────────────────────────────────────
+    accSeries = accChart.addAreaSeries({
+        lineColor: '#06B6D4', lineWidth: 1.5,
+        topColor: 'rgba(6,182,212,0.25)', bottomColor: 'rgba(6,182,212,0.0)',
+        title: 'Accum/Dist', lastValueVisible: true, priceLineVisible: false
     });
 
     fetch(`/api/v1/chart-telemetry/${symbol}`)
-        .then(res => res.json())
+        .then(r => r.json())
         .then(data => {
             if (data.status === 'error') throw new Error(data.message);
-            if (!data.series || !data.series.candles) throw new Error("Invalid data payload from server.");
+            if (!data.series?.candles)  throw new Error('Invalid payload structure.');
 
+            // Badge
             document.getElementById('active-ticker-badge').innerText =
                 `${data.symbol}  ·  RS %tile: ${data.rs_percentile}`;
 
-            // Colour candles where RS rank ≥ 90 in indigo
-            const styledCandles = data.series.candles.map(c => {
-                if (c.rs_pct >= 90) {
-                    return {
-                        time: c.time, open: c.open, high: c.high, low: c.low, close: c.close,
-                        color:           '#4F46E5',
-                        borderUpColor:   '#6366F1', borderDownColor: '#6366F1',
-                        wickUpColor:     '#6366F1', wickDownColor:   '#6366F1'
-                    };
-                }
-                return { time: c.time, open: c.open, high: c.high, low: c.low, close: c.close };
+            // Build candle lookup map for OHLCV tooltip
+            const dates = data.series.candles.map(c => c.time);
+            data.series.candles.forEach((c, i) => {
+                candleMap[c.time] = { ...c, prevDate: dates[i - 1] || null };
             });
 
-            candleSeries.setData(styledCandles);
-            ema20Series.setData(data.series.ema20   || []);
-            ema200Series.setData(data.series.ema200 || []);
-            rsLineSeries.setData(data.series.rs     || []);
+            // Style candles: indigo if RS %tile ≥ 90
+            const styled = data.series.candles.map(c => {
+                if (c.rs_pct >= 90) return {
+                    time: c.time, open: c.open, high: c.high, low: c.low, close: c.close,
+                    color: '#4F46E5',
+                    borderUpColor: '#6366F1', borderDownColor: '#6366F1',
+                    wickUpColor:   '#6366F1', wickDownColor:   '#6366F1'
+                };
+                return { time: c.time, open: c.open, high: c.high, low: c.low, close: c.close };
+            });
+            candleSeries.setData(styled);
 
-            // RS uptrend markers on the RS pane
-            if (data.series.underline && data.series.underline.length > 0) {
-                const markers = data.series.underline.map(pt => ({
+            // EMA lines
+            ema20S.setData(data.series.ema20   || []);
+            ema50S.setData(data.series.ema50   || []);
+            ema200S.setData(data.series.ema200 || []);
+
+            // RS uptrend markers on the PRICE candles (so they're always visible)
+            if (data.series.rs_up?.length) {
+                const markers = data.series.rs_up.map(pt => ({
                     time:     pt.time,
                     position: 'belowBar',
                     color:    '#22C55E',
                     shape:    'circle',
-                    size:      1
+                    size:      1,
+                    text:     ''
                 }));
-                underlineSeries.setMarkers(markers);
+                candleSeries.setMarkers(markers);
             }
+
+            // RS split into green (>0) / red (<0) areas
+            const { pos, neg } = splitRSSegments(data.series.rs || []);
+            rsPosSeries.setData(pos);
+            rsNegSeries.setData(neg);
+
+            // Accumulation line
+            accSeries.setData(data.series.acc || []);
 
             priceChart.timeScale().fitContent();
             rsChart.timeScale().fitContent();
-            spinner.classList.add('hidden');
+            accChart.timeScale().fitContent();
+
+            document.getElementById('chart-spinner').classList.add('hidden');
         })
         .catch(err => {
-            spinner.classList.add('hidden');
-            errBanner.innerText = `TELEMETRY FAULT: ${err.message}`;
-            errBanner.classList.remove('hidden');
-            document.getElementById('active-ticker-badge').innerText = "FAULT";
+            document.getElementById('chart-spinner').classList.add('hidden');
+            const b = document.getElementById('error-banner');
+            b.innerText = `TELEMETRY FAULT: ${err.message}`;
+            b.classList.remove('hidden');
+            document.getElementById('active-ticker-badge').innerText = 'FAULT';
         });
 }
 
-// Resize both charts when window resizes
+// ─────────────────────────────────────────────────────────────────────────────
+// Responsive resize
+// ─────────────────────────────────────────────────────────────────────────────
 window.addEventListener('resize', () => {
-    const priceEl = document.getElementById('price-viewport');
-    const rsEl    = document.getElementById('rs-viewport');
-    if (priceChart) priceChart.resize(priceEl.clientWidth, 440);
-    if (rsChart)    rsChart.resize(rsEl.clientWidth, 180);
+    const pEl = document.getElementById('price-viewport');
+    const rEl = document.getElementById('rs-viewport');
+    const aEl = document.getElementById('acc-viewport');
+    if (priceChart) priceChart.resize(pEl.clientWidth, 420);
+    if (rsChart)    rsChart.resize(rEl.clientWidth, 150);
+    if (accChart)   accChart.resize(aEl.clientWidth, 130);
 });
 
 document.addEventListener('DOMContentLoaded', () => {
-    setTimeout(() => loadChartTelemetry("{{ default_stock }}"), 150);
+    setTimeout(() => loadChartTelemetry('{{ default_stock }}'), 150);
 });
 </script>
 {% endblock %}
