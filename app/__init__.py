@@ -53,6 +53,7 @@ def create_app():
     from app.routes.rs_roc_screener import rs_roc_bp
     from app.routes.rs_roc_us_screener import rs_roc_us_bp
     from app.routes.chart import chart_bp
+    from gap_volume_screener import gap_vol_bp
 
     app.register_blueprint(rs_roc_us_bp)
     app.register_blueprint(rs_roc_bp)
@@ -85,6 +86,7 @@ def create_app():
     app.register_blueprint(volar_ind_adaptive_bp)
     app.register_blueprint(ai_analyst_bp)
     app.register_blueprint(chart_bp)
+    app.register_blueprint(gap_vol_bp)
 
 
     # Home route
