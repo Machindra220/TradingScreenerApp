@@ -3,10 +3,17 @@
 <div class="max-w-7xl mx-auto px-4 py-8">
     <div class="flex justify-between items-center mb-8">
         <div>
-            <h2 class="text-2xl font-black text-indigo-900 uppercase tracking-tight">🇮🇳 India Tactical Multi-Section Screener</h2>
+            <h2 class="text-2xl font-black text-indigo-900 uppercase tracking-tight">India - Volume Breakout & Gap Up Screener</h2>
             <p class="text-[7px] font-bold text-gray-400 mt-1 uppercase tracking-widest">
                 Last Run: <span class="text-blue-600">{{ last_processed_time|default('N/A') }}</span> | Source: {{ source_name|default('None') }}
             </p>
+        </div>
+        <div>
+            {% if both_stocks or vol_stocks or gap_stocks %}
+            <a href="{{ url_for('gap_volume_india.export_gap_volume_india') }}" class="bg-gray-900 text-white px-5 py-2.5 rounded-xl text-[10px] font-bold hover:bg-black transition shadow-lg shadow-gray-200 uppercase tracking-wider">
+                📥 Export All to CSV
+            </a>
+            {% endif %}
         </div>
     </div>
 
