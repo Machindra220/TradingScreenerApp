@@ -40,17 +40,17 @@ def create_app():
     # from routes.static_pages import static_pages
     from app.routes.vcp_screener import vcp_bp    
     from app.routes.period_performers import period_performers_bp
-    from app.routes.volar_stage2_screener import volar_bp
+    from app.routes.volar_stage2_ind_screener import volar_bp
     from app.routes.earnings_screen import earnings_bp
     from app.routes.stage2_screener_us import screener_us_bp
     from app.routes.stage2_india import screener_india_bp
     from app.routes.hh_hl_india import hh_hl_bp
     from app.routes.ll_lh_india import ll_lh_bp
-    from app.routes.volar_us_screener import volar_us_bp
+    from app.routes.volar_stage2_us_screener import volar_us_bp
     from app.routes.adaptive_volar_us_scr import volar_us_adaptive_bp
     from app.routes.adaptive_volar_ind_scr import volar_ind_adaptive_bp
     from app.routes.ai_analyst import ai_analyst_bp
-    from app.routes.rs_roc_screener import rs_roc_bp
+    from app.routes.rs_roc_ind_screener import rs_roc_bp
     from app.routes.rs_roc_us_screener import rs_roc_us_bp
     from app.routes.chart import chart_bp
     from app.routes.gap_volume_us_screener import gap_vol_bp

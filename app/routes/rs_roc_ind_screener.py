@@ -114,7 +114,7 @@ def rs_roc_momentum_process():
             json.dump({'stocks': results, 'time': last_time}, f)
         stocks = results
 
-    return render_template("rs_roc_momentum.html", stocks=stocks, last_time=last_time)
+    return render_template("rs_roc_ind_momentum.html", stocks=stocks, last_time=last_time)
 
 @rs_roc_bp.route("/export-rs-roc")
 def export_rs_roc():

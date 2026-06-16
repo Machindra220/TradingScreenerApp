@@ -1,47 +1,39 @@
 import os
 import json
+import uuid
 import pandas as pd
 import yfinance as yf
 from datetime import datetime
 from io import StringIO
 import requests
-from flask import Blueprint, render_template, request, send_file
+from flask import Blueprint, render_template, request, send_file, session, redirect, url_for
 
-# Standardize blueprint to use global app/templates
 rs_roc_us_bp = Blueprint("rs_roc_us", __name__)
 
-# Paths for US results
+# --- PATH COMPARTMENTALIZATION ---
 UPLOAD_FOLDER = os.path.abspath(os.path.join(os.getcwd(), 'uploads', 'rs_roc_us'))
 RESULTS_JSON = os.path.join(UPLOAD_FOLDER, 'last_rs_roc_us_results.json')
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+HISTORY_CACHE_DIR = os.path.join(UPLOAD_FOLDER, 'history_cache')
+os.makedirs(HISTORY_CACHE_DIR, exist_ok=True)
 
 def fetch_snp500_symbols():
-    """Fetches the current S&P 500 list from Wikipedia with robust headers"""
     url = 'https://en.wikipedia.org/wiki/List_of_S%26P_500_companies'
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-    
     try:
         response = requests.get(url, headers=headers, timeout=10)
         tables = pd.read_html(StringIO(response.text))
         df = tables[0]
-        
-        # Standardize tickers: Wikipedia uses '.' (BRK.B), yfinance needs '-' (BRK-B)
         df['Symbol'] = df['Symbol'].str.replace('.', '-', regex=False)
-        
         return df[['Symbol', 'GICS Sector']].rename(columns={'GICS Sector': 'Industry'}).to_dict('records')
     except Exception as e:
         print(f"Error fetching S&P 500: {e}")
         return []
 
 def screen_us_pro_momentum(stock_list):
-    """US Logic: RS Percentile (1Y) vs S&P 500 + ROC (3M/6M)"""
     symbols = [s['Symbol'] for s in stock_list]
-    
-    # auto_adjust=True handles dividend/split adjustments
     data = yf.download(symbols + ["^GSPC"], period="1y", interval="1d", auto_adjust=True)['Close']
     
     results = []
-    # Calculate Benchmark Return
     bench_ret_1y = (data["^GSPC"].iloc[-1] / data["^GSPC"].iloc[0]) - 1
 
     for item in stock_list:
@@ -64,7 +56,7 @@ def screen_us_pro_momentum(stock_list):
             results.append({
                 "symbol": sym,
                 "sector": item['Industry'],
-                "price": round(current_price, 2), # ✅ Added Price
+                "price": round(current_price, 2),
                 "rs_raw": rs_score,
                 "roc_3m": round(roc_3m, 2),
                 "roc_6m": round(roc_6m, 2)
@@ -74,9 +66,13 @@ def screen_us_pro_momentum(stock_list):
     if not results: return []
 
     df = pd.DataFrame(results)
-    df['rs_percentile'] = df['rs_raw'].rank(pct=True).mul(100).round(0).astype(int)
+    df['rs_raw'] = pd.to_numeric(df['rs_raw'], errors='coerce')
+    df = df.dropna(subset=['rs_raw'])
     
-    # --- Trend Persistence Logic ---
+    if df.empty: return []
+
+    df['rs_percentile'] = df['rs_raw'].rank(pct=True).mul(100).round(0).fillna(0).astype(int)
+    
     existing_history = {}
     if os.path.exists(RESULTS_JSON):
         with open(RESULTS_JSON, 'r') as f:
@@ -96,11 +92,20 @@ def screen_us_pro_momentum(stock_list):
     
     return df.to_dict(orient="records")
 
+# --- CORE APP INTERACTIONS ---
+
 @rs_roc_us_bp.route("/rs-roc-us-momentum", methods=["GET", "POST"])
 def rs_roc_us_momentum_process():
     stocks = []
     last_time = None
     old_ranks = {}
+
+    # Initialize a secure local cache file tracker inside the disk mapping directory if missing
+    user_cache_file = os.path.join(HISTORY_CACHE_DIR, 'meta_history.json')
+    history_meta = []
+    if os.path.exists(user_cache_file):
+        with open(user_cache_file, 'r') as f:
+            history_meta = json.load(f)
 
     if os.path.exists(RESULTS_JSON):
         with open(RESULTS_JSON, 'r') as f:
@@ -119,18 +124,62 @@ def rs_roc_us_momentum_process():
         for s in results:
             prev = old_ranks.get(s['symbol'])
             if prev is None:
-                s["rank_status"], s["rank_diff"] = "new", -999 #  Numerical flag for sorting
+                s["rank_status"], s["rank_diff"] = "new", -999
             else:
                 diff = prev - s["rank"]
                 s["rank_diff"] = diff
                 s["rank_status"] = "up" if diff > 0 else ("down" if diff < 0 else "stable")
         
         last_time = datetime.now().strftime("%d %b %Y %I:%M %p")
+        
+        # 💾 DISK RESTORATION LOGIC: Save the large data array block cleanly to local disk storage
+        snapshot_id = f"snapshot_{uuid.uuid4().hex}"
+        snapshot_file_path = os.path.join(HISTORY_CACHE_DIR, f"{snapshot_id}.json")
+        with open(snapshot_file_path, 'w') as f:
+            json.dump(results, f)
+            
+        # Store only lightweight metadata descriptors inside our tracker manifest file
+        history_meta.insert(0, {
+            "snapshot_id": snapshot_id,
+            "time": last_time,
+            "count": len(results)
+        })
+        history_meta = history_meta[:5] # Keep track of last 5 runs max
+        
+        with open(user_cache_file, 'w') as f:
+            json.dump(history_meta, f)
+
         with open(RESULTS_JSON, 'w') as f:
             json.dump({'stocks': results, 'time': last_time}, f)
         stocks = results
 
-    return render_template("rs_roc_us_momentum.html", stocks=stocks, last_time=last_time)
+    return render_template("rs_roc_us_momentum.html", stocks=stocks, last_time=last_time, history=history_meta)
+
+@rs_roc_us_bp.route("/restore-rs-roc-us/<snapshot_id>")
+def restore_rs_roc_us_snapshot(snapshot_id):
+    """🛡️ INFRASTRUCTURE UPGRADE: Restores full datasets directly from your secure disk cache folder"""
+    snapshot_file_path = os.path.join(HISTORY_CACHE_DIR, f"{snapshot_id}.json")
+    user_cache_file = os.path.join(HISTORY_CACHE_DIR, 'meta_history.json')
+    
+    if os.path.exists(snapshot_file_path):
+        with open(snapshot_file_path, 'r') as f:
+            restored_records = json.load(f)
+            
+        # Reconstruct the metadata description line context
+        restored_time = datetime.now().strftime("%d %b %Y %I:%M %p") + " (Restored Snapshot)"
+        if os.path.exists(user_cache_file):
+            with open(user_cache_file, 'r') as f:
+                meta_list = json.load(f)
+            for m in meta_list:
+                if m.get('snapshot_id') == snapshot_id:
+                    restored_time = m.get('time') + " (Restored Snapshot)"
+                    break
+        
+        # Overwrite current active results layer seamlessly
+        with open(RESULTS_JSON, 'w') as f:
+            json.dump({'stocks': restored_records, 'time': restored_time}, f)
+            
+    return redirect(url_for('rs_roc_us.rs_roc_us_momentum_process'))
 
 @rs_roc_us_bp.route("/export-rs-roc-us")
 def export_rs_roc_us():

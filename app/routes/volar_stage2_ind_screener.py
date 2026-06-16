@@ -1,38 +1,35 @@
 import os
 import json
+import uuid
 import pandas as pd
 import yfinance as yf
 from datetime import datetime
-from flask import Blueprint, render_template, request, send_file, session
-from werkzeug.utils import secure_filename
+from flask import Blueprint, render_template, request, send_file, session, redirect, url_for
 
-volar_us_bp = Blueprint("volar_us", __name__)
+volar_bp = Blueprint("volar_ind", __name__)
 
 # --- PATH LOGIC (Root Level) ---
-# Ensures 'uploads' is created at the project root level
-UPLOAD_FOLDER = os.path.abspath(os.path.join(os.getcwd(), 'uploads', 'volar_us'))
-RESULTS_JSON = os.path.join(UPLOAD_FOLDER, 'last_volar_us_results.json')
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+UPLOAD_FOLDER = os.path.abspath(os.path.join(os.getcwd(), 'uploads', 'volar_ind'))
+RESULTS_JSON = os.path.join(UPLOAD_FOLDER, 'last_volar_results.json')
+LAST_CSV_CONFIG = os.path.join(UPLOAD_FOLDER, 'last_csv_path.json')
+HISTORY_CACHE_DIR = os.path.join(UPLOAD_FOLDER, 'history_cache')
+os.makedirs(HISTORY_CACHE_DIR, exist_ok=True)
 
 def fetch_daily_data(symbol, days=252):
-    """Fetches 1 year of daily data"""
     ticker = yf.Ticker(symbol)
     return ticker.history(period=f"{days}d", interval="1d")
 
 def compute_volar(close_series):
-    """Calculates Total Return / Volatility"""
     total_return = (close_series.iloc[-1] / close_series.iloc[0]) - 1
     volatility = close_series.pct_change(fill_method=None).std()
     return total_return / volatility if volatility != 0 else None
 
 def compute_relative_strength(stock_close, index_close):
-    """Calculates RS against the S&P 500"""
     stock_return = (stock_close.iloc[-1] / stock_close.iloc[0]) - 1
     index_return = (index_close.iloc[-1] / index_close.iloc[0]) - 1
     return stock_return / index_return if index_return != 0 else None
 
-def is_volar_candidate(symbol, index_symbol="^GSPC"): 
-    """US Stage 2 Criteria: Pullback < 30% and Price > 200 EMA"""
+def is_volar_candidate(symbol, index_symbol="^NSEI"):
     try:
         stock_df = fetch_daily_data(symbol)
         index_df = fetch_daily_data(index_symbol)
@@ -59,20 +56,21 @@ def is_volar_candidate(symbol, index_symbol="^GSPC"):
                 "relative_strength": round(rs_val, 2),
                 "performance": round(performance * 100, 2)
             }
-    except Exception:
-        return None
+    except Exception as e:
+        print(f"Error screening {symbol}: {e}")
     return None
 
-def screen_volar_us(symbols):
-    results = [is_volar_candidate(sym) for sym in symbols if is_volar_candidate(sym)]
+def screen_volar(symbols):
+    results = []
+    for sym in symbols:
+        data = is_volar_candidate(sym)
+        if data: results.append(data)
+    
     if not results: return []
     
     df = pd.DataFrame(results)
-    df['relative_strength'] = pd.to_numeric(df['relative_strength'], errors='coerce')
-    df = df.dropna(subset=['relative_strength'])
-    df['rs_percentile'] = df['relative_strength'].rank(pct=True).mul(100).round(0).fillna(0).astype(int)
+    df['rs_percentile'] = df['relative_strength'].rank(pct=True).mul(100).round(0).astype(int)
     
-    # --- US TREND PERSISTENCE ---
     existing_history = {}
     if os.path.exists(RESULTS_JSON):
         with open(RESULTS_JSON, 'r') as f:
@@ -83,7 +81,7 @@ def screen_volar_us(symbols):
                 'perf_h': s.get('perf_h', [])
             } for s in old_cache}
 
-    def inject_trends_us(row):
+    def inject_trends(row):
         sym = row['symbol']
         h = existing_history.get(sym, {'rs_h': [], 'vol_h': [], 'perf_h': []})
         row['rs_h'] = (h['rs_h'] + [row['rs_percentile']])[-5:]
@@ -92,71 +90,72 @@ def screen_volar_us(symbols):
         row['rs_up'] = len(row['rs_h']) > 1 and all(x < y for x, y in zip(row['rs_h'], row['rs_h'][1:]))
         return row
 
-    df = df.apply(inject_trends_us, axis=1)
-    # ----------------------------
-
+    df = df.apply(inject_trends, axis=1)
     df.sort_values(by="relative_strength", ascending=False, inplace=True)
     df.reset_index(drop=True, inplace=True)
     df["rank"] = df.index + 1
     return df.to_dict(orient="records")
 
-@volar_us_bp.route("/volar-us", methods=["GET", "POST"])
-def volar_us_process():
+@volar_bp.route("/volar-ind", methods=["GET", "POST"])
+def volar_process():
     stocks = []
     last_processed_time = None
     source_name = "None"
-    last_csv_config = os.path.join(UPLOAD_FOLDER, 'last_csv_path.json')
     compare_mode = request.args.get('compare') == 'true'
     
-    # 1. Initialize variables outside of blocks to prevent NameError
+    meta_history_file = os.path.join(HISTORY_CACHE_DIR, 'meta_history.json')
+    history_meta = []
+    if os.path.exists(meta_history_file):
+        with open(meta_history_file, 'r') as f:
+            history_meta = json.load(f)
+
     old_ranks = {}
     if os.path.exists(RESULTS_JSON):
         with open(RESULTS_JSON, 'r') as f:
             cache = json.load(f)
             stocks = cache.get('stocks', [])
-            old_ranks = {s['symbol']: s['rank'] for s in stocks}
+            old_ranks = {s.get('symbol_clean', s['symbol']): s['rank'] for s in stocks}
             last_processed_time = cache.get('time')
             source_name = cache.get('source', 'Cached Scan')
 
     if request.method == "POST":
         file = request.files.get('file')
         
-        # 2. Persistent CSV Selection Logic
         if file and file.filename != '':
+            from werkzeug.utils import secure_filename
             filename = secure_filename(file.filename)
             filepath = os.path.join(UPLOAD_FOLDER, filename)
             file.save(filepath)
-            with open(last_csv_config, 'w') as f:
+            with open(LAST_CSV_CONFIG, 'w') as f:
                 json.dump({'path': filepath, 'name': filename}, f)
             source_name = filename
-        elif os.path.exists(last_csv_config):
-            with open(last_csv_config, 'r') as f:
+        elif os.path.exists(LAST_CSV_CONFIG):
+            with open(LAST_CSV_CONFIG, 'r') as f:
                 cfg = json.load(f)
                 filepath = cfg.get('path')
                 source_name = cfg.get('name')
         else:
-            filepath = os.path.abspath(os.path.join(os.getcwd(), 'data', 'sp500.csv'))
-            source_name = "S&P 500 Default"
+            filepath = os.path.abspath(os.path.join(os.getcwd(), 'data', 'nifty_500.csv'))
+            source_name = "Nifty 500 Default"
 
         if not os.path.exists(filepath):
-            return render_template("stage2_volar_us.html", error=f"File not found: {filepath}")
+            return render_template("stage2_volar_ind.html", error=f"File not found: {filepath}")
 
-        # 3. Processing & Ranking
         df_input = pd.read_csv(filepath)
         col_name = 'Symbol' if 'Symbol' in df_input.columns else 'symbol'
-        symbols = [str(s).strip().upper() for s in df_input[col_name].dropna().unique()]
+        symbols = [str(s).strip().upper() + ".NS" for s in df_input[col_name].dropna().unique()]
         
-        results = screen_volar_us(symbols)
+        results = screen_volar(symbols)
         enriched = []
         leaders_90 = []
         
         for stock in results:
-            sym = stock["symbol"]
-            stock["symbol_clean"] = sym
+            sym_clean = stock["symbol"].replace(".NS", "")
+            stock["symbol_clean"] = sym_clean
             if stock.get('rs_percentile', 0) >= 90:
-                leaders_90.append(sym)
+                leaders_90.append(sym_clean)
 
-            prev_rank = old_ranks.get(sym)
+            prev_rank = old_ranks.get(sym_clean)
             if prev_rank is None:
                 stock["rank_status"], stock["rank_diff"] = "new", 0
             else:
@@ -167,33 +166,66 @@ def volar_us_process():
 
         last_processed_time = datetime.now().strftime("%d %b %Y %I:%M %p")
         
-        # 4. Update Session History
-        history = session.get('volar_us_history', [])
-        history.insert(0, {"time": last_processed_time, "source": source_name, "count": len(enriched), "leaders_90": leaders_90})
-        session['volar_us_history'] = history[:5]
-        session.modified = True
+        # 💾 DISK WRITE: Snapshot full database arrays locally to bypass browser cookie limits
+        snapshot_id = f"snapshot_{uuid.uuid4().hex}"
+        snapshot_file_path = os.path.join(HISTORY_CACHE_DIR, f"{snapshot_id}.json")
+        with open(snapshot_file_path, 'w') as f:
+            json.dump(enriched, f)
+            
+        history_meta.insert(0, {
+            "snapshot_id": snapshot_id,
+            "time": last_processed_time,
+            "source": source_name,
+            "count": len(enriched),
+            "leaders_90": leaders_90
+        })
+        history_meta = history_meta[:5]
+        with open(meta_history_file, 'w') as f:
+            json.dump(history_meta, f)
 
-        # 5. Save Results
         with open(RESULTS_JSON, 'w') as f:
             json.dump({'stocks': enriched, 'time': last_processed_time, 'source': source_name}, f)
         stocks = enriched
-
-    # History retrieval for Template
-    history = session.get('volar_us_history', [])
-    if compare_mode and len(history) >= 3:
-        leader_sets = [set(h.get('leaders_90', [])) for h in history[:3]]
-        consistent = set.intersection(*leader_sets) if leader_sets else set()
+    
+    if compare_mode and len(history_meta) >= 3:
+        leader_sets = [set(h.get('leaders_90', [])) for h in history_meta[:3]]
+        consistent_symbols = set.intersection(*leader_sets) if leader_sets else set()
         for s in stocks:
-            if s['symbol'] in consistent: s['is_consistent'] = True
+            if s.get('symbol_clean') in consistent_symbols:
+                s['is_consistent'] = True
 
-    return render_template("stage2_volar_us.html", stocks=stocks, 
-                           last_processed_time=last_processed_time, 
-                           source_name=source_name, history=history, 
-                           compare_mode=compare_mode)
+    return render_template("stage2_volar_ind.html", stocks=stocks, last_processed_time=last_processed_time, source_name=source_name, history=history_meta, compare_mode=compare_mode)
 
-@volar_us_bp.route("/export-volar-us")
-def export_volar_us():
-    """Timestamped CSV Export"""
+@volar_bp.route("/restore-volar-ind/<snapshot_id>")
+def restore_volar_ind_snapshot(snapshot_id):
+    """🛡️ INFRASTRUCTURE SECURITY RECOVERY ROUTER: Instantly recovers local stock logs out of disk memory"""
+    snapshot_file_path = os.path.join(HISTORY_CACHE_DIR, f"{snapshot_id}.json")
+    meta_history_file = os.path.join(HISTORY_CACHE_DIR, 'meta_history.json')
+    
+    if os.path.exists(snapshot_file_path):
+        with open(snapshot_file_path, 'r') as f:
+            restored_records = json.load(f)
+            
+        restored_time = datetime.now().strftime("%d %b %Y %I:%M %p") + " (Restored Snapshot)"
+        restored_source = "Snapshot"
+        
+        if os.path.exists(meta_history_file):
+            with open(meta_history_file, 'r') as f:
+                meta_list = json.load(f)
+            for m in meta_list:
+                if m.get('snapshot_id') == snapshot_id:
+                    restored_time = m.get('time') + " (Restored Snapshot)"
+                    restored_source = m.get('source')
+                    break
+                    
+        with open(RESULTS_JSON, 'w') as f:
+            json.dump({'stocks': restored_records, 'time': restored_time, 'source': restored_source}, f)
+            
+    return redirect(url_for('volar_ind.volar_process'))
+
+# ... (Keep export_volar, add_favorite_india, view_favorites_india, etc. exactly the same below)
+@volar_bp.route("/export-volar")
+def export_volar():
     if os.path.exists(RESULTS_JSON):
         with open(RESULTS_JSON, 'r') as f:
             data = json.load(f)
@@ -201,17 +233,16 @@ def export_volar_us():
         if stocks:
             df = pd.DataFrame(stocks)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            export_filename = f"US_Volar_Screener_{timestamp}.csv"
-            export_path = os.path.join(UPLOAD_FOLDER, 'temp_export_us.csv')
+            export_filename = f"Volar_Screener_{timestamp}.csv"
+            export_path = os.path.join(UPLOAD_FOLDER, 'temp_export.csv')
             df.to_csv(export_path, index=False)
             return send_file(export_path, as_attachment=True, download_name=export_filename)
-    return "No data", 404
+    return "No data to export", 404
 
-@volar_us_bp.route("/add-favorite-us", methods=["POST"])
-def add_favorite_us():
-    """Saves symbol to favorites_us.json"""
+@volar_bp.route("/add-favorite-india", methods=["POST"])
+def add_favorite_india():
     symbol = request.form.get('symbol')
-    fav_path = os.path.join(UPLOAD_FOLDER, 'favorites_us.json')
+    fav_path = os.path.join(UPLOAD_FOLDER, 'favorites_india.json')
     favorites = []
     if os.path.exists(fav_path):
         with open(fav_path, 'r') as f:
@@ -220,96 +251,84 @@ def add_favorite_us():
         favorites.append(symbol)
         with open(fav_path, 'w') as f:
             json.dump(favorites, f)
-    return {"status": "success", "message": f"{symbol} added to US Watchlist"}
+    return {"status": "success", "message": f"{symbol} added to India Watchlist"}
 
-@volar_us_bp.route("/view-favorites-us")
-def view_favorites_us():
-    """Displays performance of saved US symbols"""
-    fav_path = os.path.join(UPLOAD_FOLDER, 'favorites_us.json')
+@volar_bp.route("/view-favorites-india")
+def view_favorites_india():
+    fav_path = os.path.join(UPLOAD_FOLDER, 'favorites_india.json')
     stocks = []
     if os.path.exists(fav_path):
         with open(fav_path, 'r') as f:
             symbols = json.load(f)
         for sym in symbols:
-            data = is_volar_candidate(sym, index_symbol="^GSPC")
-            if data: stocks.append(data)
-    return render_template("view_favorites.html", stocks=stocks, market="US", currency="$")
+            try:
+                yf_sym = sym if sym.endswith(".NS") else f"{sym}.NS"
+                data = is_volar_candidate(yf_sym)
+                if data:
+                    data['symbol_clean'] = sym
+                    stocks.append(data)
+            except Exception as e:
+                print(f"Error loading favorite {sym}: {e}")
+                continue
+    return render_template("view_favorites.html", stocks=stocks, market="India", currency="₹")
 
-@volar_us_bp.route("/remove-favorite-us", methods=["POST"])
-def remove_favorite_us():
-    """Removes symbol from favorites_us.json"""
+@volar_bp.route("/remove-favorite-india", methods=["POST"])
+def remove_favorite_india():
     symbol = request.form.get('symbol')
-    fav_path = os.path.join(UPLOAD_FOLDER, 'favorites_us.json')
+    fav_path = os.path.join(UPLOAD_FOLDER, 'favorites_india.json')
     if os.path.exists(fav_path):
         with open(fav_path, 'r') as f:
             favorites = json.load(f)
         if symbol in favorites:
-            favorites.remove(symbol)
+            favorites.remove(favorites)
             with open(fav_path, 'w') as f:
                 json.dump(favorites, f)
     return {"status": "success"}
 
-
-@volar_us_bp.route("/add-to-strategy", methods=["POST"])
+@volar_bp.route("/add-to-strategy", methods=["POST"])
 def add_to_strategy():
     symbol = request.form.get('symbol')
-    strategy = request.form.get('strategy')  # e.g., 'Volar Stage 2', 'Swing', 'Breakout'
-    market = request.form.get('market')      # 'india' or 'us'
-    
-    # Determine file path based on market
+    strategy = request.form.get('strategy')
+    market = request.form.get('market')
     folder = UPLOAD_FOLDER if market == 'india' else os.path.join(os.getcwd(), 'uploads', 'volar_us')
     fav_path = os.path.join(folder, f'strategy_{strategy.lower().replace(" ", "_")}.json')
-    
-    # Fetch current price to lock it in as the Entry Price
     yf_sym = symbol if market == 'us' else (symbol if symbol.endswith(".NS") else f"{symbol}.NS")
     ticker = yf.Ticker(yf_sym)
     current_price = ticker.history(period="1d")['Close'].iloc[-1]
-
     new_entry = {
         "symbol": symbol,
         "entry_date": datetime.now().strftime("%Y-%m-%d"),
         "entry_price": round(current_price, 2)
     }
-
     data = []
     if os.path.exists(fav_path):
         with open(fav_path, 'r') as f:
             data = json.load(f)
-    
-    # Avoid duplicates
     if not any(item['symbol'] == symbol for item in data):
         data.append(new_entry)
         with open(fav_path, 'w') as f:
             json.dump(data, f)
-            
     return {"status": "success", "message": f"{symbol} added to {strategy} strategy at ${round(current_price, 2)}"}
 
-@volar_us_bp.route("/view-strategy-us/<name>")
-def view_strategy_us(name):
-    # This specifically looks in the US uploads folder
-    file_path = os.path.join(UPLOAD_FOLDER, f'strategy_{name.lower()}.json')
+@volar_bp.route("/view-strategy/<name>")
+def view_strategy(name):
+    market = request.args.get('market', 'india')
+    folder = UPLOAD_FOLDER if market == 'india' else os.path.join(os.getcwd(), 'uploads', 'volar_us')
+    file_path = os.path.join(folder, f'strategy_{name.lower()}.json')
     performance_data = []
-    
     if os.path.exists(file_path):
         with open(file_path, 'r') as f:
             entries = json.load(f)
-        
         for item in entries:
-            ticker = yf.Ticker(item['symbol'])
-            hist = ticker.history(period="1d")
-            if not hist.empty:
-                current_price = hist['Close'].iloc[-1]
-                ret_pct = ((current_price - item['entry_price']) / item['entry_price']) * 100
-                performance_data.append({
-                    "symbol": item['symbol'],
-                    "entry_date": item['entry_date'],
-                    "entry_price": item['entry_price'],
-                    "current_price": round(current_price, 2),
-                    "return_pct": round(ret_pct, 2)
-                })
-                
-    return render_template("strategy_watchlist.html", 
-                           stocks=performance_data, 
-                           strategy_name=name.upper(),
-                           currency="$", 
-                           market="US")
+            yf_sym = item['symbol'] if market == 'us' else f"{item['symbol']}.NS"
+            ticker = yf.Ticker(yf_sym)
+            current_price = ticker.history(period="1d")['Close'].iloc[-1]
+            ret_pct = ((current_price - item['entry_price']) / item['entry_price']) * 100
+            performance_data.append({
+                "symbol": item['symbol'],
+                "entry_date": item['entry_date'],
+                "entry_price": item['entry_price'],
+                "current_price": round(current_price, 2),
+                "return_pct": round(ret_pct, 2)
+            })
+    return render_template("strategy_watchlist.html", stocks=performance_data, strategy_name=name.upper(), currency="₹" if market == 'india' else "$")
