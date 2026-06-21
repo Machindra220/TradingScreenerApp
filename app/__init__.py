@@ -56,9 +56,11 @@ def create_app():
     from app.routes.gap_volume_us_screener import gap_vol_bp
     from app.routes.gap_volume_india_screener import gap_vol_india_bp
     from app.routes.trendline_screener import trendline_bp
-    from app.routes.ibd_rating_engine import ibd_engine_bp
+    from app.routes.ibd_rating_engine_us import ibd_engine_us_bp
+    from app.routes.ibd_rating_engine_ind import ibd_engine_ind_bp
 
-
+    
+    app.register_blueprint(ibd_engine_ind_bp)
     app.register_blueprint(rs_roc_us_bp)
     app.register_blueprint(rs_roc_bp)
     app.register_blueprint(earnings_bp)
@@ -93,7 +95,7 @@ def create_app():
     app.register_blueprint(gap_vol_bp)
     app.register_blueprint(gap_vol_india_bp)
     app.register_blueprint(trendline_bp)
-    app.register_blueprint(ibd_engine_bp)
+    app.register_blueprint(ibd_engine_us_bp)
 
 
     # Home route
