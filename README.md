@@ -26,6 +26,7 @@ A secure, modular trading journal built with Flask. Track trades, pin resources,
 ## 🚀 Getting Started Steps
 
 Database Schema is placed in /app/db/schema.sql
+
 DB can be created using that schema.sql
 
 ```bash
@@ -35,7 +36,9 @@ pip install -r requirements.txt
 flask run 
 ```
 Install postgreSQL Database (PGAdmin) and create Database, add user with password
+
 Make sure to add secrets to your .env file.
+
 .env file format as below.
 
 ```bash
