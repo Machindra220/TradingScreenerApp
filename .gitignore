@@ -14,7 +14,6 @@ docker-compose.yml
 generate_schema.py
 history_commands.txt
 static/uploads/
-*.txt 
 portfolio-app.tar
 backup.sql
 Errors-while-hosting-on-ec2-ubuntu.txt
@@ -29,3 +28,4 @@ Other-Code-Files/
 my_backup_200226.sql
 docker-compose-for-pulling-portfolio-app-image.yml
 .venv_old
+*.txt

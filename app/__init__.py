@@ -58,6 +58,7 @@ def create_app():
     from app.routes.trendline_screener import trendline_bp
     from app.routes.ibd_rating_engine_us import ibd_engine_us_bp
     from app.routes.ibd_rating_engine_ind import ibd_engine_ind_bp
+    from app.routes.stage2_launchpad_screener import stage2_launchpad_bp
 
     
     app.register_blueprint(ibd_engine_ind_bp)
@@ -96,6 +97,7 @@ def create_app():
     app.register_blueprint(gap_vol_india_bp)
     app.register_blueprint(trendline_bp)
     app.register_blueprint(ibd_engine_us_bp)
+    app.register_blueprint(stage2_launchpad_bp)
 
 
     # Home route
