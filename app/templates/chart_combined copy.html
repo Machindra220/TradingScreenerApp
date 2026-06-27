@@ -1,0 +1,688 @@
+{% extends 'base_authenticated.html' %}
+{% block content %}
+<div id="rs-workspace-root" class="max-w-7xl mx-auto px-4 py-4 space-y-3">
+
+    <div class="bg-gray-900 px-4 py-3 rounded-xl border border-gray-800 flex items-center gap-3 shadow-md">
+        <div class="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></div>
+        <h3 class="text-xs font-black text-gray-200 uppercase tracking-wider">Combined Relative Strength Workspace</h3>
+        <span class="text-[9px] font-bold text-gray-500 uppercase">NSE &amp; US in one chart</span>
+    </div>
+
+    <div id="ohlcv-bar" class="hidden bg-gray-900 border border-gray-800 rounded-xl px-4 py-2 flex flex-wrap gap-5 text-[11px] font-bold uppercase tracking-tight">
+        <span class="text-gray-500">O <span id="tip-open" class="text-gray-200">—</span></span>
+        <span class="text-gray-500">H <span id="tip-high" class="text-green-400">—</span></span>
+        <span class="text-gray-500">L <span id="tip-low" class="text-red-400">—</span></span>
+        <span class="text-gray-500">C <span id="tip-close" class="text-gray-200">—</span></span>
+        <span class="text-gray-500">Vol <span id="tip-vol" class="text-indigo-400">—</span></span>
+        <span class="text-gray-500">RS %tile <span id="tip-rspct" class="text-amber-400">—</span></span>
+    </div>
+
+    <div id="error-banner" class="hidden bg-red-950/60 border border-red-800/60 text-red-300 text-[12px] font-semibold rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+        <span class="flex items-center gap-2"><span class="text-red-400">⚠</span><span id="error-banner-text">Something went wrong.</span></span>
+        <button onclick="document.getElementById('error-banner').classList.add('hidden')" class="text-red-400 hover:text-red-200 font-black px-2">✕</button>
+    </div>
+
+    <div id="chart-shell" class="bg-gray-950 rounded-2xl border border-gray-800 shadow-2xl relative overflow-hidden">
+        <!-- In-shell toolbar: stays visible in fullscreen since it's inside chart-shell -->
+        <div id="shell-toolbar" class="bg-gray-900 px-3 py-2 flex items-center justify-between gap-2 border-b border-gray-800 flex-wrap">
+            <div class="flex items-center gap-2 flex-wrap">
+                <span id="active-ticker-badge" class="text-[11px] bg-indigo-950 text-indigo-300 font-bold px-2 py-1 rounded border border-indigo-800/50 uppercase whitespace-nowrap">
+                    Syncing Data...
+                </span>
+                <div id="market-toggle" class="flex items-center bg-gray-950 border border-gray-800 rounded-lg overflow-hidden">
+                    <button data-market="US" onclick="setMarket('US')" class="market-btn text-[11px] font-black uppercase px-3 py-1.5 text-gray-400 hover:text-gray-200 transition">US</button>
+                    <button data-market="NSE" onclick="setMarket('NSE')" class="market-btn text-[11px] font-black uppercase px-3 py-1.5 text-gray-400 hover:text-gray-200 transition">NSE</button>
+                </div>
+                <input type="text" id="ticker-search" placeholder="Symbol..." value="{{ default_stock }}"
+                       class="bg-gray-950 text-gray-200 text-[12px] font-bold uppercase px-3 py-1.5 rounded-lg border border-gray-800 focus:outline-none focus:border-indigo-500 w-36 transition-all"
+                       onkeypress="if(event.key==='Enter') loadCombinedTelemetry(this.value)">
+                <button onclick="loadCombinedTelemetry(document.getElementById('ticker-search').value)" class="bg-indigo-600 hover:bg-indigo-700 text-white font-black text-[11px] uppercase px-3 py-1.5 rounded-lg transition">
+                    Analyze
+                </button>
+                <div id="range-selector" class="flex items-center bg-gray-950 border border-gray-800 rounded-lg overflow-hidden">
+                    <button data-range="3M" onclick="setRange('3M')" class="range-btn text-[11px] font-black uppercase px-2.5 py-1.5 text-gray-400 hover:text-gray-200 transition">3M</button>
+                    <button data-range="6M" onclick="setRange('6M')" class="range-btn text-[11px] font-black uppercase px-2.5 py-1.5 text-gray-400 hover:text-gray-200 transition">6M</button>
+                    <button data-range="1Y" onclick="setRange('1Y')" class="range-btn text-[11px] font-black uppercase px-2.5 py-1.5 text-gray-400 hover:text-gray-200 transition">1Y</button>
+                    <button data-range="2Y" onclick="setRange('2Y')" class="range-btn text-[11px] font-black uppercase px-2.5 py-1.5 text-gray-400 hover:text-gray-200 transition">2Y</button>
+                </div>
+            </div>
+            <div class="flex items-center gap-2">
+                <button id="export-png-btn" onclick="exportChartPNG()" title="Download PNG snapshot"
+                        class="bg-gray-800 hover:bg-gray-700 text-gray-200 font-black text-[11px] uppercase px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 border border-gray-700">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+                    <span>PNG</span>
+                </button>
+                <button id="share-link-btn" onclick="copyShareLink()" title="Copy shareable link"
+                        class="bg-gray-800 hover:bg-gray-700 text-gray-200 font-black text-[11px] uppercase px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 border border-gray-700">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.07 0l2.83-2.83a5 5 0 0 0-7.07-7.07L11.5 4.5M14 11a5 5 0 0 0-7.07 0L4.1 13.83a5 5 0 0 0 7.07 7.07L12.5 19.5"/></svg>
+                    <span>Share</span>
+                </button>
+                <button id="fullscreen-btn" onclick="toggleChartFullscreen()" title="Toggle fullscreen"
+                        class="bg-gray-800 hover:bg-gray-700 text-gray-200 font-black text-[11px] uppercase px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 border border-gray-700">
+                    <svg id="fs-icon-expand" xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
+                    <svg id="fs-icon-collapse" xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v4a2 2 0 0 1-2 2H3M15 3v4a2 2 0 0 0 2 2h4M9 21v-4a2 2 0 0 0-2-2H3M15 21v-4a2 2 0 0 1 2-2h4"/></svg>
+                    <span id="fs-label">Fullscreen</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Pane 1: Price candles + 5 EMAs -->
+        <div class="pane-wrap relative bg-gray-950">
+            <div id="price-bg-shading" class="absolute inset-0 pointer-events-none"></div>
+            <!-- Skeleton gridlines shown immediately; real chart canvas mounts on top once data arrives -->
+            <div id="price-skeleton" class="skeleton-grid"></div>
+            <div id="price-viewport" class="w-full relative" style="height:380px;"></div>
+            <div id="price-legend" class="pane-legend"></div>
+        </div>
+
+        <div class="border-t border-gray-800/60"></div>
+
+        <!-- Pane 2: RS Ratio (right axis) + Accumulation (left axis) overlaid, divergence phase as background tint -->
+        <div class="pane-wrap relative bg-gray-950">
+            <div id="rs-acc-bg-shading" class="absolute inset-0 pointer-events-none"></div>
+            <div id="rs-acc-skeleton" class="skeleton-grid"></div>
+            <div id="rs-acc-viewport" class="w-full relative" style="height:220px;"></div>
+            <div id="rs-acc-legend" class="pane-legend"></div>
+        </div>
+
+        <div id="chart-spinner" class="hidden absolute inset-0 bg-gray-950/85 backdrop-blur-sm flex items-center justify-center z-50">
+            <div class="flex flex-col items-center gap-2">
+                <span class="animate-spin text-lg">⏳</span>
+                <p class="text-[9px] font-bold text-gray-400 tracking-widest uppercase">Compiling Real-Time Telemetry...</p>
+            </div>
+        </div>
+    </div>
+
+    <style>
+        .pane-wrap { overflow: hidden; }
+        .pane-legend {
+            position: absolute; top: 6px; left: 10px; z-index: 10;
+            display: flex; flex-wrap: wrap; gap: 8px;
+            font-size: 10px; font-weight: 800; text-transform: uppercase;
+            letter-spacing: 0.02em; pointer-events: none;
+        }
+        .pane-legend .leg-item { display: flex; align-items: center; gap: 4px; text-shadow: 0 1px 2px rgba(0,0,0,0.9); }
+        .pane-legend .leg-swatch { width: 10px; height: 2px; border-radius: 2px; display: inline-block; }
+        #price-bg-shading .band, #rs-acc-bg-shading .band { position: absolute; top: 0; bottom: 0; }
+        .range-btn.active, .market-btn.active { background: #4F46E5; color: #fff; }
+
+        /* Loading skeleton: static gridlines + shimmer, visible the instant the page paints,
+           so there is no full-panel blackout while the first fetch is in flight. */
+        .skeleton-grid {
+            position: absolute; inset: 0; z-index: 1;
+            background-image:
+                repeating-linear-gradient(to right, #111827 0, #111827 1px, transparent 1px, transparent 60px),
+                repeating-linear-gradient(to bottom, #111827 0, #111827 1px, transparent 1px, transparent 40px);
+            background-color: #030712;
+            overflow: hidden;
+        }
+        .skeleton-grid::after {
+            content: ''; position: absolute; inset: 0;
+            background: linear-gradient(100deg, transparent 30%, rgba(255,255,255,0.04) 50%, transparent 70%);
+            background-size: 200% 100%;
+            animation: skeleton-shimmer 1.6s ease-in-out infinite;
+        }
+        .skeleton-grid.hidden { display: none; }
+        @keyframes skeleton-shimmer {
+            0%   { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+    </style>
+
+    <div class="flex flex-wrap gap-x-5 gap-y-1.5 text-[10px] font-black uppercase text-gray-400 px-1 pt-1 border-t border-gray-900">
+        <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-[#FACC15] rounded inline-block"></span>EMA 10</span>
+        <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-[#F97316] rounded inline-block"></span>EMA 20</span>
+        <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-[#EC4899] rounded inline-block"></span>EMA 50</span>
+        <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-[#22D3EE] rounded inline-block"></span>EMA 100</span>
+        <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-[#A3A3A3] rounded inline-block"></span>EMA 200</span>
+        <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-[#39C973] rounded inline-block"></span>RS Ratio (right axis)</span>
+        <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-[#06B6D4] rounded inline-block"></span>Accumulation / Distribution (left axis)</span>
+        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 bg-[#3B82F6]/15 rounded-sm inline-block border border-[#3B82F6]/40"></span>Shading: True Alpha Divergence</span>
+        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 bg-[#B91C1C]/15 rounded-sm inline-block border border-[#B91C1C]/40"></span>Shading: Flushing Phase</span>
+        <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-green-500 inline-block"></span>RS rising 4 days (price marker)</span>
+    </div>
+
+    <!-- BUY-CASE SIGNAL PANEL : generated client-side from the fetched series, no invented numbers -->
+    <div id="signal-panel" class="hidden bg-gradient-to-b from-emerald-950/40 to-gray-900 border border-emerald-800/40 rounded-xl px-4 py-3">
+        <div class="flex items-center justify-between mb-2">
+            <h4 class="text-[11px] font-black text-emerald-300 uppercase tracking-wider flex items-center gap-2">
+                ✅ Points Currently In The Bull Case
+            </h4>
+            <span id="signal-score" class="text-[10px] font-bold text-gray-400 uppercase"></span>
+        </div>
+        <ul id="signal-list" class="space-y-1.5 text-[12px] text-gray-300 list-none"></ul>
+        <p id="signal-empty" class="hidden text-[12px] text-gray-500 italic">No bullish conditions are currently confirmed — see the risk flags instead.</p>
+        <div id="risk-block" class="hidden mt-3 pt-3 border-t border-gray-800/60">
+            <h4 class="text-[11px] font-black text-red-300 uppercase tracking-wider mb-2">⚠️ Points Against / Risk Flags</h4>
+            <ul id="risk-list" class="space-y-1.5 text-[12px] text-gray-400 list-none"></ul>
+        </div>
+        <p class="mt-3 text-[10px] text-gray-500 italic">Generated automatically from price/trend/relative-strength/accumulation data on screen. This is a mechanical read of the indicators, not investment advice — always confirm with your own research.</p>
+    </div>
+
+    <!-- WHAT EACH PANE MEANS -->
+    <div class="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
+        <h4 class="text-[11px] font-black text-gray-300 uppercase tracking-wider mb-2">📋 What Each Pane Is Showing</h4>
+        <ul class="space-y-1.5 text-[12px] text-gray-400 list-none">
+            <li><span class="text-gray-200 font-bold">Price + EMAs —</span> Daily OHLC candles with five exponential moving averages (10/20/50/100/200) to read short-, medium-, and long-term trend. The background tint marks divergence-phase extremes (see below) so price action and relative strength can be read together without scanning down to a separate pane.</li>
+            <li><span class="text-gray-200 font-bold">RS Ratio + Accumulation —</span> Two indicators sharing one pane on independent axes. The RS Ratio (right axis, green) is stock price ÷ benchmark price — rising means the stock is gaining ground on the index. The Accumulation/Distribution line (left axis, cyan) is a running total of volume on up-days minus volume on down-days (OBV-style) — rising means net buying pressure, falling means net selling pressure. Reading them together: RS rising with Accumulation rising is the strongest combination — outperformance backed by real buying.</li>
+            <li><span class="text-gray-200 font-bold">Background shading (both panes) —</span> Blue tint = "True Alpha" divergence phase (RS rising while the benchmark falls). Red tint = "Flushing" phase (RS and the benchmark falling together). No tint = a mixed/neutral phase.</li>
+            <li><span class="text-gray-200 font-bold">Green dot markers on price candles —</span> RS Ratio has risen for 4 consecutive sessions — an early relative-strength uptrend tell, placed directly on price so it's never hidden in a collapsed pane.</li>
+        </ul>
+    </div>
+</div>
+
+<!-- LightweightCharts v3.3.0 — stable API for multi-pane + dual price scales -->
+<script src="https://unpkg.com/lightweight-charts@3.3.0/dist/lightweight-charts.standalone.production.js"></script>
+<script>
+let priceChart = null, rsAccChart = null;
+let candleSeries, volSeries, ema10S, ema20S, ema50S, ema100S, ema200S;
+let rsLineS, rsSma10S, rsEma21S, rsSma50S, accLineS;
+let candleMap = {};
+let lastTelemetry = null;
+let currentSymbol = '{{ default_stock }}';
+let currentMarket = '{{ default_market }}';
+let currentRange = '1Y';
+
+const CONFIG = {
+    layout: { background: { type: 'solid', color: 'rgba(0,0,0,0)' }, textColor: '#9CA3AF', fontFamily: 'Inter, sans-serif', fontSize: 12 },
+    grid: { vertLines: { color: '#111827' }, horzLines: { color: '#111827' } },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal, vertLine: { color: '#4B5563', labelBackgroundColor: '#1F2937' }, horzLine: { color: '#4B5563', labelBackgroundColor: '#1F2937' } },
+    rightPriceScale: { borderColor: '#1F2937' },
+    leftPriceScale: { borderColor: '#1F2937', visible: true },
+    timeScale: { borderColor: '#1F2937', timeVisible: true }
+};
+
+const LEGENDS = {
+    price: [
+        { label: 'EMA 10',  color: '#FACC15' },
+        { label: 'EMA 20',  color: '#F97316' },
+        { label: 'EMA 50',  color: '#EC4899' },
+        { label: 'EMA 100', color: '#22D3EE' },
+        { label: 'EMA 200', color: '#A3A3A3' }
+    ],
+    rsAcc: [
+        { label: 'RS Ratio (R)',  color: '#39C973' },
+        { label: '10 SMA',        color: '#3B82F6' },
+        { label: '21 EMA',        color: '#A78BFA' },
+        { label: '50 SMA',        color: '#F59E0B' },
+        { label: 'Accum/Dist (L)', color: '#06B6D4' }
+    ]
+};
+
+function renderLegend(elId, items) {
+    document.getElementById(elId).innerHTML = items.map(it =>
+        `<span class="leg-item" style="color:${it.color}"><span class="leg-swatch"></span>${it.label}</span>`
+    ).join('');
+}
+function renderAllLegends() {
+    renderLegend('price-legend', LEGENDS.price);
+    renderLegend('rs-acc-legend', LEGENDS.rsAcc);
+}
+
+function showError(message) {
+    document.getElementById('error-banner-text').innerText = message;
+    document.getElementById('error-banner').classList.remove('hidden');
+}
+function hideError() {
+    document.getElementById('error-banner').classList.add('hidden');
+}
+
+/* ---------------- Loading skeleton ---------------- */
+// Skeletons are visible by default (no full-panel blackout); they're hidden
+// only once a chart instance exists and real data has actually been set,
+// and re-shown immediately when a new fetch starts.
+function showSkeletons() {
+    document.getElementById('price-skeleton').classList.remove('hidden');
+    document.getElementById('rs-acc-skeleton').classList.remove('hidden');
+}
+function hideSkeletons() {
+    document.getElementById('price-skeleton').classList.add('hidden');
+    document.getElementById('rs-acc-skeleton').classList.add('hidden');
+}
+
+function initCharts() {
+    [priceChart, rsAccChart].forEach(c => { if (c) { try { c.remove(); } catch (e) {} } });
+    candleMap = {};
+
+    const pEl = document.getElementById('price-viewport');
+    const rEl = document.getElementById('rs-acc-viewport');
+    [pEl, rEl].forEach(el => el.innerHTML = '');
+
+    priceChart = LightweightCharts.createChart(pEl, { ...CONFIG, height: pEl.clientHeight || 380 });
+
+    rsAccChart = LightweightCharts.createChart(rEl, {
+        ...CONFIG, height: rEl.clientHeight || 220,
+        localization: { priceFormatter: p => p.toFixed(4) },
+        rightPriceScale: { ...CONFIG.rightPriceScale, precision: 4 }
+    });
+
+    renderAllLegends();
+
+    priceChart.subscribeCrosshairMove(p => {
+        if (p.time) {
+            rsAccChart.setCrosshairPosition(NaN, p.time, rsLineS);
+            if (candleMap[p.time]) updateOHLCVTooltip(candleMap[p.time]);
+        } else {
+            rsAccChart.clearCrosshairPosition();
+        }
+    });
+
+    function bindTimeScale(src, ...targets) {
+        src.timeScale().subscribeVisibleLogicalRangeChange(r => {
+            if (r) targets.forEach(t => t.timeScale().setVisibleLogicalRange(r));
+        });
+    }
+    bindTimeScale(priceChart, rsAccChart);
+    bindTimeScale(rsAccChart, priceChart);
+
+    priceChart.timeScale().subscribeVisibleLogicalRangeChange(() => paintShading('price'));
+    priceChart.timeScale().subscribeVisibleTimeRangeChange(() => paintShading('price'));
+    rsAccChart.timeScale().subscribeVisibleLogicalRangeChange(() => paintShading('rsAcc'));
+    rsAccChart.timeScale().subscribeVisibleTimeRangeChange(() => paintShading('rsAcc'));
+
+    if (window.__combinedResizeObserver) window.__combinedResizeObserver.disconnect();
+    window.__combinedResizeObserver = new ResizeObserver(() => {
+        if (priceChart && pEl.clientWidth > 0) priceChart.resize(pEl.clientWidth, pEl.clientHeight);
+        if (rsAccChart && rEl.clientWidth > 0) rsAccChart.resize(rEl.clientWidth, rEl.clientHeight);
+        paintShading('price');
+        paintShading('rsAcc');
+    });
+    [pEl, rEl].forEach(el => window.__combinedResizeObserver.observe(el));
+}
+
+function updateOHLCVTooltip(c) {
+    document.getElementById('tip-open').innerText  = c.open.toFixed(2);
+    document.getElementById('tip-high').innerText  = c.high.toFixed(2);
+    document.getElementById('tip-low').innerText   = c.low.toFixed(2);
+    document.getElementById('tip-close').innerText = c.close.toFixed(2);
+    document.getElementById('tip-vol').innerText   = c.volume >= 1e6 ? (c.volume/1e6).toFixed(2)+'M' : c.volume;
+    document.getElementById('tip-rspct').innerText = c.rs_pct !== undefined ? c.rs_pct : '—';
+    document.getElementById('ohlcv-bar').classList.remove('hidden');
+}
+
+/* ---------------- Fullscreen (unchanged behavior from the US chart) ---------------- */
+
+function toggleChartFullscreen() {
+    const shell = document.getElementById('chart-shell');
+    if (!document.fullscreenElement) {
+        shell.requestFullscreen ? shell.requestFullscreen() : shell.webkitRequestFullscreen && shell.webkitRequestFullscreen();
+    } else {
+        document.exitFullscreen ? document.exitFullscreen() : document.webkitExitFullscreen && document.webkitExitFullscreen();
+    }
+}
+
+document.addEventListener('fullscreenchange', () => {
+    const isFs = !!document.fullscreenElement;
+    document.getElementById('fs-icon-expand').classList.toggle('hidden', isFs);
+    document.getElementById('fs-icon-collapse').classList.toggle('hidden', !isFs);
+    document.getElementById('fs-label').innerText = isFs ? 'Exit Fullscreen' : 'Fullscreen';
+    const shell = document.getElementById('chart-shell');
+    shell.style.height = isFs ? '100vh' : '';
+    if (isFs) {
+        const toolbarH = document.getElementById('shell-toolbar').offsetHeight;
+        const avail = window.innerHeight - toolbarH;
+        document.getElementById('price-viewport').style.height  = Math.round(avail * 0.62) + 'px';
+        document.getElementById('rs-acc-viewport').style.height = Math.round(avail * 0.38) + 'px';
+    } else {
+        document.getElementById('price-viewport').style.height  = '380px';
+        document.getElementById('rs-acc-viewport').style.height = '220px';
+    }
+    setTimeout(() => { paintShading('price'); paintShading('rsAcc'); }, 60);
+});
+
+/* ---------------- Market + timeframe selectors ---------------- */
+
+function setMarket(market) {
+    currentMarket = market;
+    document.querySelectorAll('.market-btn').forEach(b => b.classList.toggle('active', b.dataset.market === market));
+    const input = document.getElementById('ticker-search');
+    input.placeholder = market === 'NSE' ? 'NSE Symbol (e.g. PRAJIND)...' : 'US Symbol (e.g. NVDA)...';
+    // Swap to a sensible default symbol when switching markets with an empty/unedited box
+    if (!input.value.trim()) input.value = market === 'NSE' ? 'PRAJIND' : 'NVDA';
+    loadCombinedTelemetry(input.value, currentRange, market);
+}
+
+function setRange(range) {
+    currentRange = range;
+    document.querySelectorAll('.range-btn').forEach(b => b.classList.toggle('active', b.dataset.range === range));
+    loadCombinedTelemetry(currentSymbol, range, currentMarket);
+}
+
+function syncToggleButtons(market, range) {
+    document.querySelectorAll('.market-btn').forEach(b => b.classList.toggle('active', b.dataset.market === market));
+    document.querySelectorAll('.range-btn').forEach(b => b.classList.toggle('active', b.dataset.range === range));
+}
+
+/* ---------------- Background shading for divergence phase ---------------- */
+/* Same band-collapsing technique used on both panes, since the same phase
+   series applies whether you're looking at price or RS/Accumulation. */
+
+function paintShading(which) {
+    const isPrice = which === 'price';
+    const hostId = isPrice ? 'price-bg-shading' : 'rs-acc-bg-shading';
+    const viewportId = isPrice ? 'price-viewport' : 'rs-acc-viewport';
+    const chart = isPrice ? priceChart : rsAccChart;
+    const host = document.getElementById(hostId);
+    if (!chart || !lastTelemetry) { host.innerHTML = ''; return; }
+
+    const divHist = lastTelemetry.series.div_hist;
+    const ts = chart.timeScale();
+    const width = document.getElementById(viewportId).clientWidth;
+    if (!width) return;
+
+    const bands = [];
+    let active = null;
+    for (let i = 0; i < divHist.length; i++) {
+        const v = divHist[i].value;
+        const phase = v === 2 ? 'alpha' : (v === -2 ? 'flush' : null);
+        if (phase) {
+            if (active && active.phase === phase) active.endIdx = i;
+            else { if (active) bands.push(active); active = { phase, startIdx: i, endIdx: i }; }
+        } else if (active) { bands.push(active); active = null; }
+    }
+    if (active) bands.push(active);
+
+    const html = bands.map(b => {
+        const x1 = ts.timeToCoordinate(divHist[b.startIdx].time);
+        const x2 = ts.timeToCoordinate(divHist[b.endIdx].time);
+        if (x1 === null || x2 === null) return '';
+        const left = Math.min(x1, x2) - 3;
+        const right = Math.max(x1, x2) + 3;
+        if (right < 0 || left > width) return '';
+        const color = b.phase === 'alpha' ? 'rgba(59,130,246,0.10)' : 'rgba(185,28,28,0.10)';
+        const borderColor = b.phase === 'alpha' ? 'rgba(59,130,246,0.35)' : 'rgba(185,28,28,0.35)';
+        return `<div class="band" style="left:${left}px; width:${right-left}px; background:${color}; border-left:1px solid ${borderColor}; border-right:1px solid ${borderColor};"></div>`;
+    }).join('');
+
+    host.innerHTML = html;
+}
+
+/* ---------------- PNG export ---------------- */
+
+function exportChartPNG() {
+    if (!priceChart || !rsAccChart) return;
+    try {
+        const canvases = [priceChart.takeScreenshot(), rsAccChart.takeScreenshot()];
+        const totalHeight = canvases.reduce((sum, c) => sum + c.height, 0);
+        const width = Math.max(...canvases.map(c => c.width));
+
+        const out = document.createElement('canvas');
+        out.width = width;
+        out.height = totalHeight;
+        const ctx = out.getContext('2d');
+        ctx.fillStyle = '#030712';
+        ctx.fillRect(0, 0, width, totalHeight);
+
+        let y = 0;
+        canvases.forEach(c => { ctx.drawImage(c, 0, y); y += c.height; });
+
+        const link = document.createElement('a');
+        link.download = `${currentMarket}_${currentSymbol}_combined_chart_${currentRange}.png`;
+        link.href = out.toDataURL('image/png');
+        link.click();
+    } catch (e) {
+        showError(`Couldn't generate the PNG snapshot: ${e.message}`);
+    }
+}
+
+/* ---------------- Share link ---------------- */
+
+function copyShareLink() {
+    const url = new URL(window.location.href);
+    url.searchParams.set('symbol', currentSymbol);
+    url.searchParams.set('market', currentMarket);
+    url.searchParams.set('range', currentRange);
+    const shareUrl = url.toString();
+
+    const fallbackCopy = () => {
+        const ta = document.createElement('textarea');
+        ta.value = shareUrl;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); } catch (e) {}
+        document.body.removeChild(ta);
+    };
+    const flashCopied = () => {
+        const btn = document.getElementById('share-link-btn');
+        const span = btn.querySelector('span');
+        const original = span.innerText;
+        span.innerText = 'Copied!';
+        setTimeout(() => { span.innerText = original; }, 1500);
+    };
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(shareUrl).then(flashCopied).catch(() => { fallbackCopy(); flashCopied(); });
+    } else {
+        fallbackCopy();
+        flashCopied();
+    }
+}
+
+/* ---------------- Main load ---------------- */
+
+function loadCombinedTelemetry(symbol, range, market) {
+    if (!symbol || !symbol.trim()) return;
+    symbol = symbol.trim().toUpperCase().replace('.NS', '').replace(/\./g, '-');
+    range = range || currentRange || '1Y';
+    market = market || currentMarket || 'US';
+
+    currentSymbol = symbol;
+    currentRange = range;
+    currentMarket = market;
+    syncToggleButtons(market, range);
+    hideError();
+    showSkeletons();           // skeleton grid is already visible; this just guarantees it on re-fetch
+    initCharts();
+
+    candleSeries = priceChart.addCandlestickSeries({
+        upColor: '#22C55E', downColor: '#EF4444', borderUpColor: '#22C55E', borderDownColor: '#EF4444',
+        wickUpColor: '#22C55E', wickDownColor: '#EF4444'
+    });
+    ema10S  = priceChart.addLineSeries({ color: '#FACC15', lineWidth: 1,   priceLineVisible: false, lastValueVisible: false });
+    ema20S  = priceChart.addLineSeries({ color: '#F97316', lineWidth: 1,   priceLineVisible: false, lastValueVisible: false });
+    ema50S  = priceChart.addLineSeries({ color: '#EC4899', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false });
+    ema100S = priceChart.addLineSeries({ color: '#22D3EE', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false });
+    ema200S = priceChart.addLineSeries({ color: '#A3A3A3', lineWidth: 2,   priceLineVisible: false, lastValueVisible: false });
+    volSeries = priceChart.addHistogramSeries({ priceFormat: { type: 'volume' }, priceScaleId: '', scaleMargins: { top: 0.82, bottom: 0 } });
+
+    // RS Ratio family on the right axis (default), Accumulation on the left axis —
+    // two independent value ranges sharing one pane and one timeline.
+    rsLineS  = rsAccChart.addLineSeries({ color: '#39C973', lineWidth: 2, priceScaleId: 'right', priceLineVisible: false, lastValueVisible: false });
+    rsSma10S = rsAccChart.addLineSeries({ color: '#3B82F6', lineWidth: 1, priceScaleId: 'right', priceLineVisible: false, lastValueVisible: false });
+    rsEma21S = rsAccChart.addLineSeries({ color: '#A78BFA', lineWidth: 1, priceScaleId: 'right', priceLineVisible: false, lastValueVisible: false });
+    rsSma50S = rsAccChart.addLineSeries({ color: '#F59E0B', lineWidth: 2, priceScaleId: 'right', priceLineVisible: false, lastValueVisible: false });
+    accLineS = rsAccChart.addLineSeries({ color: '#06B6D4', lineWidth: 1.5, priceScaleId: 'left', priceLineVisible: false, lastValueVisible: false });
+
+    fetch(`/api/v1/chart-telemetry-combined/${symbol}?market=${market}&range=${range}`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.status === 'error') throw new Error(data.message);
+            lastTelemetry = data;
+
+            document.getElementById('active-ticker-badge').innerText = `${market} · ${data.symbol} · RS %tile: ${data.rs_percentile}`;
+
+            data.series.candles.forEach(c => candleMap[c.time] = c);
+
+            candleSeries.setData(data.series.candles.map(c => ({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close })));
+            volSeries.setData(data.series.candles.map(c => ({ time: c.time, value: c.volume, color: c.close >= c.open ? 'rgba(34,197,94,0.35)' : 'rgba(239,68,68,0.35)' })));
+
+            ema10S.setData(data.series.ema10);
+            ema20S.setData(data.series.ema20);
+            ema50S.setData(data.series.ema50);
+            ema100S.setData(data.series.ema100);
+            ema200S.setData(data.series.ema200);
+
+            rsLineS.setData(data.series.rs_ratio);
+            rsSma10S.setData(data.series.rs_sma10);
+            rsEma21S.setData(data.series.rs_ema21);
+            rsSma50S.setData(data.series.rs_sma50);
+            accLineS.setData(data.series.acc_line);
+
+            // RS-rising-4-days markers placed on the price candles
+            if (data.series.rs_up_markers && data.series.rs_up_markers.length) {
+                candleSeries.setMarkers(data.series.rs_up_markers.map(pt => ({
+                    time: pt.time, position: 'belowBar', color: '#22C55E', shape: 'circle', size: 1, text: ''
+                })));
+            }
+
+            priceChart.timeScale().fitContent();
+            rsAccChart.timeScale().fitContent();
+
+            hideSkeletons();
+            setTimeout(() => { paintShading('price'); paintShading('rsAcc'); }, 30);
+            buildSignalPanel(data);
+        })
+        .catch(err => {
+            hideSkeletons();
+            showError(`Couldn't load ${market} ${symbol}: ${err.message}`);
+        });
+}
+
+/**
+ * Builds the "points in favour / risk flags" panel purely from values
+ * already present in the API response — works for either market since
+ * the combined endpoint returns the same shape for US and NSE.
+ */
+function buildSignalPanel(data) {
+    const s = data.series;
+    const n = s.candles.length;
+    if (n < 2) { document.getElementById('signal-panel').classList.add('hidden'); return; }
+
+    const last = s.candles[n - 1];
+    const close = last.close;
+    const pct = data.rs_percentile;
+
+    const ema = {
+        10:  s.ema10[n - 1].value,
+        20:  s.ema20[n - 1].value,
+        50:  s.ema50[n - 1].value,
+        100: s.ema100[n - 1].value,
+        200: s.ema200[n - 1].value
+    };
+
+    const rsNow   = s.rs_ratio[n - 1].value;
+    const rsSma50 = s.rs_sma50[n - 1].value;
+    const divNow  = s.div_hist[n - 1].value;
+    const accNow  = s.acc_line[n - 1].value;
+
+    const last20 = s.candles.slice(Math.max(0, n - 20));
+    const avgVol20 = last20.reduce((a, c) => a + c.volume, 0) / last20.length;
+
+    const idx1m = n - 21, idx3m = n - 63;
+    const rsAgo1m = idx1m >= 0 ? s.rs_ratio[idx1m].value : null;
+    const rsAgo3m = idx3m >= 0 ? s.rs_ratio[idx3m].value : null;
+    const accAgo1m = idx1m >= 0 ? s.acc_line[idx1m].value : null;
+
+    const ccySymbol = data.market === 'NSE' ? '₹' : '$';
+    const pros = [];
+    const risks = [];
+
+    if (ema[10] > ema[20] && ema[20] > ema[50] && ema[50] > ema[100] && ema[100] > ema[200]) {
+        pros.push(`Full bullish EMA stack — 10 &gt; 20 &gt; 50 &gt; 100 &gt; 200, a clean uptrend structure.`);
+    } else if (ema[10] < ema[20] && ema[20] < ema[50]) {
+        risks.push(`Short-term EMAs (10/20/50) are stacked downward — near-term trend is weak.`);
+    }
+
+    if (close > ema[200]) {
+        pros.push(`Price (${ccySymbol}${close.toFixed(2)}) is above the 200-day EMA (${ccySymbol}${ema[200].toFixed(2)}) — long-term uptrend intact.`);
+    } else {
+        risks.push(`Price (${ccySymbol}${close.toFixed(2)}) is below the 200-day EMA (${ccySymbol}${ema[200].toFixed(2)}) — long-term trend is unfavorable.`);
+    }
+
+    if (close > ema[50]) {
+        pros.push(`Price is holding above the 50-day EMA (${ccySymbol}${ema[50].toFixed(2)}), the standard intermediate-trend line.`);
+    } else {
+        risks.push(`Price has slipped below the 50-day EMA (${ccySymbol}${ema[50].toFixed(2)}).`);
+    }
+
+    if (pct >= 80) {
+        pros.push(`RS percentile is ${pct} — stronger than ~${pct}% of the comparison universe, a leadership reading.`);
+    } else if (pct <= 30) {
+        risks.push(`RS percentile is only ${pct} — lagging most of the comparison universe.`);
+    }
+
+    if (rsNow > rsSma50) {
+        pros.push(`RS ratio is above its 50-day SMA — outperformance vs the benchmark is the established trend, not a blip.`);
+    } else {
+        risks.push(`RS ratio is below its 50-day SMA — the stock has been underperforming the benchmark on a sustained basis.`);
+    }
+
+    if (rsAgo1m !== null && rsAgo3m !== null) {
+        if (rsNow > rsAgo1m && rsNow > rsAgo3m) {
+            pros.push(`RS ratio is higher than it was both 1 month and 3 months ago — relative strength is improving, not fading.`);
+        } else if (rsNow < rsAgo1m && rsNow < rsAgo3m) {
+            risks.push(`RS ratio is lower than 1 month and 3 months ago — relative strength has been deteriorating.`);
+        }
+    }
+
+    if (divNow === 2) {
+        pros.push(`Today's divergence phase is "True Alpha" — RS rising while the benchmark falls, the strongest available signal in this model.`);
+    } else if (divNow === 1) {
+        pros.push(`Today's divergence phase is "Outperformance" — both the stock and benchmark are rising, with the stock moving faster.`);
+    } else if (divNow === -2) {
+        risks.push(`Today's divergence phase is "Flushing" — both RS and the benchmark are falling together.`);
+    } else if (divNow === -1) {
+        risks.push(`Today's divergence phase shows relative weakness — RS is falling while the benchmark rises.`);
+    }
+
+    // Accumulation/Distribution trend
+    if (accAgo1m !== null) {
+        if (accNow > accAgo1m) {
+            pros.push(`Accumulation/Distribution line is higher than 1 month ago — net buying pressure has been building.`);
+        } else {
+            risks.push(`Accumulation/Distribution line is lower than 1 month ago — net selling pressure has been building.`);
+        }
+    }
+
+    if (last.volume > avgVol20 * 1.5 && close >= last.open) {
+        pros.push(`Latest session's volume (${(last.volume/1e6).toFixed(2)}M) ran well above its 20-day average on an up day — signs of real buying interest.`);
+    } else if (last.volume > avgVol20 * 1.5 && close < last.open) {
+        risks.push(`Latest session's volume (${(last.volume/1e6).toFixed(2)}M) spiked above average on a down day — possible distribution.`);
+    }
+
+    const list = document.getElementById('signal-list');
+    const riskList = document.getElementById('risk-list');
+    list.innerHTML = '';
+    riskList.innerHTML = '';
+
+    if (pros.length) {
+        document.getElementById('signal-empty').classList.add('hidden');
+        pros.forEach(p => {
+            const li = document.createElement('li');
+            li.className = 'flex items-start gap-2';
+            li.innerHTML = `<span class="text-emerald-400 mt-0.5">●</span><span>${p}</span>`;
+            list.appendChild(li);
+        });
+    } else {
+        document.getElementById('signal-empty').classList.remove('hidden');
+    }
+
+    if (risks.length) {
+        document.getElementById('risk-block').classList.remove('hidden');
+        risks.forEach(r => {
+            const li = document.createElement('li');
+            li.className = 'flex items-start gap-2';
+            li.innerHTML = `<span class="text-red-400 mt-0.5">●</span><span>${r}</span>`;
+            riskList.appendChild(li);
+        });
+    } else {
+        document.getElementById('risk-block').classList.add('hidden');
+    }
+
+    document.getElementById('signal-score').innerText = `${pros.length} favorable · ${risks.length} risk flag${risks.length === 1 ? '' : 's'}`;
+    document.getElementById('signal-panel').classList.remove('hidden');
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const params = new URLSearchParams(window.location.search);
+    const initSymbol = params.get('symbol') || '{{ default_stock }}';
+    const initMarket = params.get('market') || '{{ default_market }}';
+    const initRange = params.get('range') || '1Y';
+    document.getElementById('ticker-search').value = initSymbol;
+    syncToggleButtons(initMarket, initRange);
+    setTimeout(() => loadCombinedTelemetry(initSymbol, initRange, initMarket), 150);
+});
+</script>
+{% endblock %}
