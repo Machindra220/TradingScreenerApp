@@ -59,8 +59,10 @@ def create_app():
     from app.routes.ibd_rating_engine_us import ibd_engine_us_bp
     from app.routes.ibd_rating_engine_ind import ibd_engine_ind_bp
     from app.routes.stage2_launchpad_screener import stage2_launchpad_bp
+    from app.routes.chart_us import chart_us_bp
 
-    
+
+    app.register_blueprint(chart_us_bp)
     app.register_blueprint(ibd_engine_ind_bp)
     app.register_blueprint(rs_roc_us_bp)
     app.register_blueprint(rs_roc_bp)
