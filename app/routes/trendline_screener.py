@@ -196,7 +196,7 @@ def trendline_scan_process():
                 symbols = pd.read_csv(url)['Symbol'].dropna().tolist()
             else:
                 source_name = "S&P 500 Default"
-                filepath = os.path.abspath(os.path.join(os.getcwd(), 'data', 'sp500.csv'))
+                filepath = os.path.abspath(os.path.join(os.getcwd(), 'data', 'snp500.csv'))
                 df_input = pd.read_csv(filepath)
                 col_name = 'Symbol' if 'Symbol' in df_input.columns else 'symbol'
                 symbols = df_input[col_name].dropna().tolist()

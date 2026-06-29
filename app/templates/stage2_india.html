@@ -3,7 +3,9 @@
 <div class="max-w-7xl mx-auto px-4 py-8">
     <div class="flex justify-between items-center mb-6">
         <h2 class="text-2xl font-black text-gray-900 dark:text-white uppercase tracking-tight">🇮🇳 India Stage 2 Screener</h2>
-        <div class="text-[10px] font-bold text-gray-400 uppercase">Latest File: {{ last_file or 'None' }}</div>
+        <div class="text-[10px] font-bold text-gray-400 uppercase">
+            Active Dataset File: <span class="text-indigo-600 font-black">{{ last_file or 'None Cached' }}</span>
+        </div>
     </div>
 
     <div class="bg-white dark:bg-gray-800 p-6 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm mb-8">
@@ -12,6 +14,11 @@
             <div class="flex-1 w-full">
                 <label class="block text-[10px] font-bold uppercase text-gray-400 mb-2 ml-1">Upload India Stock List (Excel/CSV)</label>
                 <input type="file" name="file" class="w-full text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-[10px] file:font-bold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100">
+                {% if last_file %}
+                <p class="text-[9px] text-emerald-600 font-bold mt-2 uppercase tracking-tight">
+                    🔄 Persistent Cache Active: Clicking run without a new file will reuse: {{ last_file }}
+                </p>
+                {% endif %}
             </div>
             <button type="submit" onclick="document.getElementById('spinner').classList.remove('hidden')" class="w-full md:w-auto px-8 py-3 bg-indigo-600 text-white text-xs font-black uppercase rounded-xl hover:bg-indigo-700 transition flex items-center justify-center gap-2">
                 <span>🚀 Run India Stage 2 Screener</span>
@@ -43,26 +50,28 @@
                     {% for stock in stocks %}
                     <tr class="hover:bg-gray-50/50 transition-colors">
                         <td class="px-4 py-4 text-xs font-bold text-gray-400">{{ loop.index }}</td>
-                        <td class="px-4 py-4 font-black text-indigo-600 text-sm">{{ stock.symbol }}</td>
+                        <td class="px-4 py-4 font-black text-indigo-600 text-sm">
+                            <a href="/analytics-chart?symbol={{ stock.symbol }}" class="hover:underline">{{ stock.symbol }}</a>
+                        </td>
                         <td class="px-4 py-4 text-[10px] font-bold text-gray-500 uppercase">{{ stock.sector }}</td>
                         <td class="px-4 py-4 text-xs font-bold text-gray-900 dark:text-white">₹{{ stock.price }}</td>
-                        <td class="px-4 py-4 text-xs font-bold text-red-500">-{{ stock.retracement }}%</td>
+                        <td class="px-4 py-4 text-xs font-bold text-red-500 dark:text-red-400">-{{ stock.retracement }}%</td>
                         <td class="px-4 py-4">
                             <div class="flex items-center gap-2">
-                                <span class="text-xs font-bold">{{ (stock.volume / 1000000)|round(1) }}M</span>
+                                <span class="text-xs font-bold dark:text-gray-300">{{ (stock.volume / 1000000)|round(1) }}M</span>
                                 {% if stock.vol_status == "🔥" %}
-                                    <span class="text-[10px] bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded font-black">HIGH VOL</span>
+                                    <span class="text-[10px] bg-orange-100 dark:bg-orange-950/40 text-orange-600 dark:text-orange-400 px-1.5 py-0.5 rounded font-black">HIGH VOL</span>
                                 {% endif %}
                             </div>
                         </td>
-                        <td class="px-4 py-4 text-xs font-bold text-blue-600">{{ stock.rs }}</td>
+                        <td class="px-4 py-4 text-xs font-bold text-blue-600 dark:text-blue-400">{{ stock.rs }}</td>
                         <td class="px-4 py-4">
-                            <span class="px-2 py-1 rounded-md text-[10px] font-bold bg-gray-100 text-gray-600">{{ stock.persistence }}</span>
+                            <span class="px-2 py-1 rounded-md text-[10px] font-bold bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">{{ stock.persistence }}</span>
                         </td>
                     </tr>
                     {% else %}
                     <tr>
-                        <td colspan="8" class="px-6 py-12 text-center text-gray-400 text-xs italic">Click the run button to begin screening the Indian market.</td>
+                        <td colspan="8" class="px-6 py-12 text-center text-gray-400 text-xs italic bg-gray-50/10">Click the run button to begin screening the Indian market.</td>
                     </tr>
                     {% endfor %}
                 </tbody>

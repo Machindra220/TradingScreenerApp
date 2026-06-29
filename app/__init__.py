@@ -61,8 +61,10 @@ def create_app():
     from app.routes.stage2_launchpad_screener import stage2_launchpad_bp
     from app.routes.chart_us import chart_us_bp
     from app.routes.chart_combined import chart_combined_bp
+    from app.routes.adaptive_rs_4d_screener import adaptive_4d_bp
 
 
+    app.register_blueprint(adaptive_4d_bp)
     app.register_blueprint(chart_combined_bp)
     app.register_blueprint(chart_us_bp)
     app.register_blueprint(ibd_engine_ind_bp)
