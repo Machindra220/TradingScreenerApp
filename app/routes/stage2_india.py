@@ -3,7 +3,7 @@ import glob
 import json
 import pandas as pd
 import yfinance as yf
-from flask import Blueprint, render_template, request, session
+from flask import Blueprint, render_template, request
 from werkzeug.utils import secure_filename
 from datetime import datetime, date, timedelta
 from app.extensions import db
@@ -19,13 +19,13 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 def get_latest_file(directory):
     list_of_files = glob.glob(os.path.join(directory, '*'))
-    # Filter out your JSON state cache to prevent scanning it as a spreadsheet
     valid_files = [f for f in list_of_files if not f.endswith('.json')]
     return max(valid_files, key=os.path.getmtime) if valid_files else None
 
 def is_minervini_stage2_india(symbol):
     try:
-        yf_symbol = symbol if symbol.endswith(".NS") else f"{symbol}.NS"
+        clean_symbol = symbol.strip().upper().replace('.NS', '')
+        yf_symbol = f"{clean_symbol}.NS"
         ticker = yf.Ticker(yf_symbol)
         df = ticker.history(period="2y")
         
@@ -56,7 +56,7 @@ def is_minervini_stage2_india(symbol):
         low_52wk = float(df['Low'].tail(252).min())
         high_52wk = float(df['High'].tail(252).max())
 
-        # Stage 2 Criteria
+        # Minervini Stage 2 Trend Template Rules
         cond_1 = curr_price > curr_ma150 and curr_price > curr_ma200
         cond_2 = curr_ma150 > curr_ma200
         cond_3 = curr_ma200 > ma200_20d_ago
@@ -66,105 +66,143 @@ def is_minervini_stage2_india(symbol):
 
         if all([cond_1, cond_2, cond_3, cond_4, cond_5, cond_6]):
             rs_score = round(curr_price / curr_ma200, 2)
+            
+            # Calculate 20-Day RS Trend Momentum
+            price_20d_ago = float(close.iloc[-20])
+            ma200_20d = float(ma200.iloc[-20])
+            rs_20d_ago = round(price_20d_ago / ma200_20d, 2)
+            rs_change = round(((rs_score - rs_20d_ago) / rs_20d_ago) * 100, 1)
+
+            if rs_change > 3.0:
+                rs_trend = "🚀 Accelerating"
+            elif rs_change >= 0:
+                rs_trend = "🟢 Steady"
+            else:
+                rs_trend = "⚠️ Fading"
+
             retracement = round(((high_52wk - curr_price) / high_52wk) * 100, 2)
             
             return {
-                "symbol": symbol.replace(".NS", ""),
+                "symbol": clean_symbol,
+                "yf_symbol": yf_symbol,
                 "sector": sector,
                 "price": round(curr_price, 2),
                 "retracement": retracement,
                 "volume": curr_vol,
                 "vol_avg": curr_vol_avg,
-                "vol_status": "🔥" if curr_vol > curr_vol_avg else "正常",
+                "vol_status": "🔥" if curr_vol > curr_vol_avg else "Normal",
                 "rs": rs_score,
+                "rs_trend": rs_trend,
+                "rs_change": rs_change,
                 "ma50": round(curr_ma50, 2),
                 "ma200": round(curr_ma200, 2)
             }
     except Exception as e:
-        print(f"Error screening {symbol}: {e}")
+        print(f"Error screening NSE Stock {symbol}: {e}")
     return None
 
 @screener_india_bp.route("/stage2-india", methods=["GET", "POST"])
 def stage2_india_view():
     stocks = []
     summary_message = None
-    last_file = session.get('stage2_last_uploaded_filename_ind')
+    last_file = None
+    last_run_time = None
     
-    # Check if a persistent database layout slice already exists on disk cache
-    if os.path.exists(RESULTS_JSON):
-        with open(RESULTS_JSON, 'r') as f:
-            try:
-                cache = json.load(f)
-                stocks = cache.get('stocks', [])
-                summary_message = cache.get('summary_message')
-                if not last_file:
-                    last_file = cache.get('last_file')
-            except Exception:
-                pass
+    latest_file_path = get_latest_file(UPLOAD_FOLDER)
+    if latest_file_path:
+        last_file = os.path.basename(latest_file_path)
 
     if request.method == "POST":
         file = request.files.get('file')
-        filepath = session.get('stage2_last_uploaded_path_ind')
+        filepath = latest_file_path 
         
-        # Save file to server if a new attachment is uploaded
         if file and file.filename != '':
             filename = secure_filename(file.filename)
             filepath = os.path.join(UPLOAD_FOLDER, filename)
             file.save(filepath)
             last_file = filename
-            session['stage2_last_uploaded_path_ind'] = filepath
-            session['stage2_last_uploaded_filename_ind'] = filename
-            session.modified = True
-        elif not filepath or not os.path.exists(filepath):
-            # Fallback to verify directory layout directly if your session cleared
-            latest_file_path = get_latest_file(UPLOAD_FOLDER)
-            if latest_file_path:
-                filepath = latest_file_path
-                last_file = os.path.basename(latest_file_path)
 
         if filepath and os.path.exists(filepath):
             try:
-                # Initialize working environment rows
-                stocks = []
-                df_input = pd.read_excel(filepath) if filepath.endswith('.xlsx') else pd.read_csv(filepath)
+                df_input = pd.read_excel(filepath) if (filepath.endswith('.xlsx') or filepath.endswith('.xls')) else pd.read_csv(filepath)
                 df_input.columns = df_input.columns.str.strip().str.lower()
                 
                 if 'symbol' in df_input.columns:
                     raw_symbols = df_input['symbol'].dropna().unique().tolist()
                     
                     cutoff = date.today() - timedelta(days=30)
-                    counts = db.session.query(
-                        Stage2Stock.symbol, 
-                        func.count(Stage2Stock.date)
-                    ).filter(Stage2Stock.date >= cutoff).group_by(Stage2Stock.symbol).all()
+                    counts = db.session.query(Stage2Stock.symbol, func.count(Stage2Stock.date)).filter(Stage2Stock.date >= cutoff).group_by(Stage2Stock.symbol).all()
                     presence_map = {s: c for s, c in counts}
 
                     for s in raw_symbols:
-                        res = is_minervini_stage2_india(str(s).strip().upper())
+                        res = is_minervini_stage2_india(str(s))
                         if res:
-                            db_symbol = f"{res['symbol']}.NS"
+                            db_symbol = res['yf_symbol']
                             days = presence_map.get(db_symbol, 0)
                             res['persistence'] = f"{days}D"
                             stocks.append(res)
                     
                     stocks.sort(key=lambda x: x['rs'], reverse=True)
+                    last_run_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     summary_message = f"✅ Analysis Complete. Found {len(stocks)} Indian Stage 2 stocks."
                     
-                    # 💾 THE DISK STATE PERSISTENCE LAYER CACHE SAVE
+                    # Cache payload to JSON
                     with open(RESULTS_JSON, 'w') as f:
                         json.dump({
                             'stocks': stocks, 
                             'summary_message': summary_message,
-                            'last_file': last_file
+                            'last_file': last_file,
+                            'last_run_time': last_run_time
                         }, f)
                 else:
-                    summary_message = "❌ Error: Column layout missing 'symbol' identification metric."
+                    summary_message = "❌ Error: Column layout missing 'symbol' column."
             except Exception as e:
-                summary_message = f"❌ Error: {str(e)}"
+                summary_message = f"❌ Error processing file: {str(e)}"
         else:
-            summary_message = "⚠️ No file loaded. Please attach a CSV tracking matrix spreadsheet file first."
+            summary_message = "⚠️ No stock file found. Please upload a CSV/Excel file."
+    else:
+        if os.path.exists(RESULTS_JSON):
+            with open(RESULTS_JSON, 'r') as f:
+                cached_data = json.load(f)
+                stocks = cached_data.get('stocks', [])
+                last_file = cached_data.get('last_file', last_file)
+                last_run_time = cached_data.get('last_run_time', 'N/A')
+            summary_message = "Showing results from last run."
+
+    # Top 5 Sectors Dynamic Visualizer Logic
+    sector_counts = {}
+    for s in stocks:
+        sec = s.get('sector', 'N/A')
+        sector_counts[sec] = sector_counts.get(sec, 0) + 1
+
+    sorted_sectors = sorted(sector_counts.items(), key=lambda x: x[1], reverse=True)
+    top_5 = [s[0] for s in sorted_sectors[:5] if s[0] != 'N/A']
+
+    color_palette = [
+        {"bg": "#d1fae5", "text": "#065f46", "badge": "#10b981", "border": "#a7f3d0"},
+        {"bg": "#dbeafe", "text": "#1e40af", "badge": "#3b82f6", "border": "#bfdbfe"},
+        {"bg": "#f3e8ff", "text": "#6b21a8", "badge": "#a855f7", "border": "#e9d5ff"},
+        {"bg": "#fef3c7", "text": "#92400e", "badge": "#f59e0b", "border": "#fde68a"},
+        {"bg": "#ffe4e6", "text": "#9f1239", "badge": "#f43f5e", "border": "#fecdd3"}
+    ]
+
+    top_sectors_meta = []
+    sector_color_map = {}
+
+    for idx, sec in enumerate(top_5):
+        theme = color_palette[idx]
+        count = sector_counts[sec]
+        sector_color_map[sec] = theme
+        top_sectors_meta.append({
+            "name": sec,
+            "count": count,
+            "theme": theme
+        })
 
     return render_template("stage2_india.html", 
                            stocks=stocks, 
                            last_file=last_file, 
+                           last_run_time=last_run_time,
+                           top_sectors=top_sectors_meta,
+                           sector_color_map=sector_color_map,
                            summary_message=summary_message)

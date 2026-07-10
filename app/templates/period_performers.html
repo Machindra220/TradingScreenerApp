@@ -1,230 +1,117 @@
 {% extends "base_authenticated.html" %}
 {% block content %}
-<div class="p-4">
-  <h1 class="text-3xl font-bold mb-6 text-blue-800">📊 Period Performers</h1>
+<div class="max-w-7xl mx-auto px-4 py-8">
+    
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-gray-100 dark:border-gray-800 pb-6 mb-8">
+        <div>
+            <h1 class="text-2xl font-black tracking-tight text-slate-900 dark:text-white uppercase">📊 Cross-Sectional Period Performers</h1>
+            <p class="text-[10px] font-black text-gray-400 uppercase tracking-widest mt-1">
+                Last Run Parameter Snapshot: <span class="text-indigo-600 font-black" id="lastRunTime">{{ last_processed_time or 'N/A' }}</span>
+            </p>
+        </div>
+        <div class="flex items-center gap-3">
+            <form method="post" action="{{ url_for('period_performers.period_performers_run') }}" id="periodScreenerForm">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" id="runPeriodScreenerButton" class="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black uppercase shadow-lg shadow-indigo-100 flex items-center gap-2 transition">
+                    <span>🚀 Execute Multi-Index Scans</span>
+                    <span id="periodScreenerSpinner" class="hidden animate-spin">⏳</span>
+                </button>
+            </form>
+            {% if last_processed_time %}
+            <a class="bg-gray-900 hover:bg-black text-white px-5 py-2.5 rounded-xl text-xs font-black uppercase shadow-md transition"
+               href="{{ url_for('performers.export_all_excel') }}">
+               📥 Export Tables (Excel)
+            </a>
+            {% endif %}
+        </div>
+    </div>
 
-  {% with messages = get_flashed_messages(with_categories=true) %}
-    {% if messages %}
-      <div class="mb-4 space-y-2">
-        {% for category, message in messages %}
-          <div class="px-4 py-2 rounded text-sm font-medium
-                      {% if category == 'error' %}bg-red-100 text-red-800{% else %}bg-blue-100 text-blue-800{% endif %}">
-            {{ message }}
-          </div>
-        {% endfor %}
-      </div>
+    {% if summary_message %}
+        <div class="mb-6 p-3 bg-green-50 border border-green-100 text-green-700 text-xs font-bold rounded-xl shadow-sm">{{ summary_message }}</div>
     {% endif %}
-  {% endwith %}
 
-  <!-- Run Screener Form -->
-  <form method="post" action="{{ url_for('period_performers.period_performers_run') }}" id="periodScreenerForm" class="mb-6">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <button type="submit" id="runPeriodScreenerButton"
-            class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
-      🚀 Run 6-Month, 3-Month & 1-Month Screeners
-    </button>
-    <span id="periodScreenerSpinner" class="ml-3 hidden text-green-600 animate-spin">⏳</span>
-  </form>
-
-  {% if summary_message %}
-    <p data-summary-message class="text-green-700 bg-green-100 border border-green-300 rounded px-4 py-2 mb-4">
-      {{ summary_message }}
-    </p>
-  {% endif %}
-
-  <!-- Export All Button -->
-  <div class="mb-6">
-    <a class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-       href="{{ url_for('period_performers.export_all_excel') }}">
-       📥 Export All Indexes (Excel)
-    </a>
-  </div>
-
-  <!-- Loading Message -->
-  <div id="loading" class="text-center text-blue-600 font-semibold text-lg my-8">
-    🔄 Processing stock returns... please wait.
-  </div>
-
-  {% if last_processed_time %}
-    <p class="text-sm text-gray-600 mb-4">
-        Last updated: {{ last_processed_time.strftime('%d %b %Y, %H:%M') }}
-    </p>
-  {% endif %}
-
-  <div id="tables" class="hidden">
-
-    <!-- 6-Month Top Performers -->
-    <h2 class="text-2xl font-semibold mb-4 text-blue-700">📈 6-Month Top Performers (Top 25)</h2>
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      {% for dataset, title in [(nifty_200_6m, "Nifty 200"), (nifty_500_6m, "Nifty 500"), (bse_200_6m, "BSE 200")] %}
-      <div>
-        <h3 class="text-lg font-semibold mb-2 text-blue-600">{{ title }}</h3>
-        <div class="overflow-x-auto rounded shadow">
-          <table class="min-w-full bg-white border border-gray-300 text-sm">
-            <thead class="bg-blue-100 text-blue-900">
-              <tr>
-                <th class="px-3 py-2">#</th>
-                <th class="px-3 py-2">Stock</th>
-                <th class="px-3 py-2">Start Price</th>
-                <th class="px-3 py-2">End Price</th>
-                <th class="px-3 py-2">Return %</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for stock in dataset %}
-                <tr class="hover:bg-gray-50">
-                  <td class="px-3 py-2">{{ stock.rank }}</td>
-                  <td class="px-3 py-2">{{ stock.symbol }}</td>
-                  <td class="px-3 py-2">₹{{ stock.start_price }}</td>
-                  <td class="px-3 py-2">₹{{ stock.end_price }}</td>
-                  <td class="px-3 py-2">{{ stock.return_pct }}%</td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </div>
-      {% endfor %}
+    <div id="loading" class="hidden text-center text-indigo-600 font-bold text-sm my-16 animate-pulse">
+        🔄 Accessing broad market historical layers... Processing returns.
     </div>
 
-    <!-- 3-Month Top Performers -->
-    <h2 class="text-2xl font-semibold mt-12 mb-4 text-blue-700">📉 3-Month Top Performers (Top 20)</h2>
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      {% for dataset, title in [(nifty_200_3m, "Nifty 200"), (nifty_500_3m, "Nifty 500"), (bse_200_3m, "BSE 200")] %}
-      <div>
-        <h3 class="text-lg font-semibold mb-2 text-blue-600">{{ title }}</h3>
-        <div class="overflow-x-auto rounded shadow">
-          <table class="min-w-full bg-white border border-gray-300 text-sm">
-            <thead class="bg-blue-100 text-blue-900">
-              <tr>
-                <th class="px-3 py-2">#</th>
-                <th class="px-3 py-2">Stock</th>
-                <th class="px-3 py-2">Start Price</th>
-                <th class="px-3 py-2">End Price</th>
-                <th class="px-3 py-2">Return %</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for stock in dataset %}
-                <tr class="hover:bg-gray-50">
-                  <td class="px-3 py-2">{{ stock.rank }}</td>
-                  <td class="px-3 py-2">{{ stock.symbol }}</td>
-                  <td class="px-3 py-2">₹{{ stock.start_price }}</td>
-                  <td class="px-3 py-2">₹{{ stock.end_price }}</td>
-                  <td class="px-3 py-2">{{ stock.return_pct }}%</td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
+    <div id="tables-container" class="space-y-16">
+        
+        {% macro render_index_section(title, subtitle, list_1m, list_3m, list_6m) %}
+        <div class="bg-white dark:bg-gray-900 p-6 rounded-3xl border border-gray-100 dark:border-gray-800 shadow-sm">
+            <div class="mb-4">
+                <h2 class="text-xl font-black text-slate-800 dark:text-white uppercase tracking-tight">{{ title }}</h2>
+                <p class="text-[9px] font-bold text-gray-400 uppercase tracking-wider">{{ subtitle }}</p>
+            </div>
+            
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div>
+                    <h4 class="text-xs font-black text-emerald-600 uppercase mb-2 px-1">⚡ Short Term (1-Month Top 35)</h4>
+                    {{ render_performer_table(list_1m) }}
+                </div>
+                <div>
+                    <h4 class="text-xs font-black text-blue-600 uppercase mb-2 px-1">📊 Medium Term (3-Month Top 35)</h4>
+                    {{ render_performer_table(list_3m) }}
+                </div>
+                <div>
+                    <h4 class="text-xs font-black text-purple-600 uppercase mb-2 px-1">📈 Long Term (6-Month Top 35)</h4>
+                    {{ render_performer_table(list_6m) }}
+                </div>
+            </div>
         </div>
-      </div>
-      {% endfor %}
-    </div>
+        {% endmacro %}
 
-    <!-- 1-Month Top Performers -->
-    <h2 class="text-2xl font-semibold mt-12 mb-4 text-blue-700">📊 1-Month Top Performers (Top 15)</h2>
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      {% for dataset, title in [(nifty_200_1m, "Nifty 200"), (nifty_500_1m, "Nifty 500"), (bse_200_1m, "BSE 200")] %}
-      <div>
-        <h3 class="text-lg font-semibold mb-2 text-blue-600">{{ title }}</h3>
-        <div class="overflow-x-auto rounded shadow">
-          <table class="min-w-full bg-white border border-gray-300 text-sm">
-            <thead class="bg-blue-100 text-blue-900">
-              <tr>
-                <th class="px-3 py-2">#</th>
-                <th class="px-3 py-2">Stock</th>
-                <th class="px-3 py-2">Start Price</th>
-                <th class="px-3 py-2">End Price</th>
-                <th class="px-3 py-2">Return %</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for stock in dataset %}
-                <tr class="hover:bg-gray-50">
-                  <td class="px-3 py-2">{{ stock.rank }}</td>
-                  <td class="px-3 py-2">{{ stock.symbol }}</td>
-                  <td class="px-3 py-2">₹{{ stock.start_price }}</td>
-                  <td class="px-3 py-2">₹{{ stock.end_price }}</td>
-                  <td class="px-3 py-2">{{ stock.return_pct }}%</td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
+        {% macro render_performer_table(dataset) %}
+        <div class="overflow-y-auto rounded-xl border border-gray-100 dark:border-gray-800 max-h-96 shadow-inner text-[11px]">
+            <table class="min-w-full bg-white dark:bg-gray-900">
+                <thead class="bg-gray-50 dark:bg-gray-950 sticky top-0 border-b border-gray-100 dark:border-gray-800">
+                    <tr>
+                        <th class="px-3 py-2 text-center text-gray-400 w-10">Pos</th>
+                        <th class="px-3 py-2 text-center w-20">Delta</th>
+                        <th class="px-3 py-2">Symbol</th>
+                        <th class="px-3 py-2 text-right">Return %</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-50 dark:divide-gray-800">
+                    {% for stock in dataset %}
+                    <tr class="hover:bg-slate-50/60 dark:hover:bg-gray-800/40 transition-colors">
+                        <td class="px-3 py-2 text-center font-bold text-gray-300">#{{ stock.rank }}</td>
+                        <td class="px-3 py-2 text-center text-[9px] font-semibold">
+                            <span class="{{ stock.rank_change_class }}">{{ stock.rank_change_text }}</span>
+                        </td>
+                        <td class="px-3 py-2 font-black text-indigo-700 dark:text-indigo-400">
+                            <a href="/analytics-chart?symbol={{ stock.symbol }}" class="hover:underline">{{ stock.symbol }}</a>
+                            <button onclick="navigator.clipboard.writeText('{{ stock.symbol }}')" class="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded opacity-40 group-hover:opacity-100 transition-opacity focus:opacity-100" title="Copy Ticker">
+                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0A2.25 2.25 0 0113.5 4.5h-3a2.25 2.25 0 01-2.166-1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.75c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 011.927-.184"></path></svg>
+                            </button>
+                        </td>
+                        <td class="px-3 py-2 text-right font-black {% if stock.return_pct >= 0 %}text-green-600{% else %}text-red-500{% endif %}">
+                            {{ stock.return_pct }}%
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="4" class="px-3 py-6 text-center text-gray-400 italic">No computed indices.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
-      </div>
-      {% endfor %}
+        {% endmacro %}
+
+        {{ render_index_section("🇮🇳 Nifty 200 Universe", "NSE India Medium-Large Cap Index", nifty_200_1m, nifty_200_3m, nifty_200_6m) }}
+        {{ render_index_section("🌍 Nifty 500 Universe", "NSE India Broad-Market Cap Index", nifty_500_1m, nifty_500_3m, nifty_500_6m) }}
+        {{ render_index_section("🏛️ BSE 200 Universe", "Bombay Stock Exchange Mid-Large Roster", bse_200_1m, bse_200_3m, bse_200_6m) }}
+        {{ render_index_section("🦅 BSE 500 Universe", "Bombay Stock Exchange Aggregated Roster", bse_500_1m, bse_500_3m, bse_500_6m) }}
+
     </div>
-
-    <!-- Overlap Summary -->
-    <h2 class="text-2xl font-semibold mt-12 mb-4 text-purple-700">🔗 Overlapping Stocks (1M ∩ 3M ∩ 6M)</h2>
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <div>
-    <h3 class="text-lg font-semibold mb-2 text-blue-600">Nifty 200 Overlaps</h3>
-        {% if overlap_nifty_200 %}
-          <ul class="list-disc list-inside text-sm text-gray-700">
-            {% for symbol in overlap_nifty_200 %}
-              <li>{{ symbol }}</li>
-            {% endfor %}
-          </ul>
-        {% else %}
-          <p class="text-gray-500 text-sm">No overlaps found</p>
-        {% endif %}
-      </div>
-
-      <div>
-        <h3 class="text-lg font-semibold mb-2 text-blue-600">Nifty 500 Overlaps</h3>
-        {% if overlap_nifty_500 %}
-          <ul class="list-disc list-inside text-sm text-gray-700">
-            {% for symbol in overlap_nifty_500 %}
-              <li>{{ symbol }}</li>
-            {% endfor %}
-          </ul>
-        {% else %}
-          <p class="text-gray-500 text-sm">No overlaps found</p>
-        {% endif %}
-      </div>
-
-      <div>
-        <h3 class="text-lg font-semibold mb-2 text-blue-600">BSE 200 Overlaps</h3>
-        {% if overlap_bse_200 %}
-          <ul class="list-disc list-inside text-sm text-gray-700">
-            {% for symbol in overlap_bse_200 %}
-              <li>{{ symbol }}</li>
-            {% endfor %}
-          </ul>
-        {% else %}
-          <p class="text-gray-500 text-sm">No overlaps found</p>
-        {% endif %}
-      </div>
-    </div> <!-- end of overlap grid -->
-  </div> <!-- end of tables -->
-</div> <!-- end of container -->
+</div>
 
 <script>
-  // Show loading until tables are ready
-  window.addEventListener("load", () => {
-    document.getElementById("loading").classList.add("hidden");
-    document.getElementById("tables").classList.remove("hidden");
-  });
-
   document.getElementById("periodScreenerForm")?.addEventListener("submit", function(e) {
-    const btn = document.getElementById("runPeriodScreenerButton");
-    const spinner = document.getElementById("periodScreenerSpinner");
-
-    btn.disabled = true;
-    btn.textContent = "Processing...";
-    spinner.classList.remove("hidden");
-  });
-
-  window.addEventListener("load", function() {
-    const message = document.querySelector("[data-summary-message]")?.textContent;
-    if (message) {
-      const toast = document.createElement("div");
-      toast.textContent = message;
-      toast.className = "fixed bottom-4 right-4 bg-green-600 text-white px-4 py-2 rounded shadow-lg z-50";
-      document.body.appendChild(toast);
-      setTimeout(() => toast.remove(), 4000);
-    }
+    document.getElementById("runPeriodScreenerButton").disabled = true;
+    document.getElementById("periodScreenerSpinner").classList.remove("hidden");
+    document.getElementById("loading").classList.remove("hidden");
+    document.getElementById("tables-container").classList.add("opacity-40");
   });
 </script>
 {% endblock %}
