@@ -66,7 +66,7 @@
                 <div class="w-full lg:w-auto shrink-0">
                     <button type="submit" 
                             onclick="document.getElementById('spinner').classList.remove('hidden')" 
-                            class="h-11 lg:h-10 w-full lg:w-auto px-6 bg-slate-900 dark:bg-slate-100 hover:bg-slate-800 dark:hover:bg-white text-white dark:text-slate-900 text-xs font-semibold rounded-xl shadow-xs transition duration-150 flex items-center justify-center gap-2 focus:outline-none">
+                            class="h-11 lg:h-10 w-full lg:w-auto px-6 bg-slate-900 dark:bg-slate-100 hover:bg-slate-800 dark:hover:bg-white text-black dark:text-slate-900 text-xs font-semibold rounded-xl shadow-xs transition duration-150 flex items-center justify-center gap-2 focus:outline-none">
                         <span>Run Screener</span>
                         <span id="spinner" class="hidden animate-spin">
                             <svg class="w-3.5 h-3.5 text-current" fill="none" viewBox="0 0 24 24">
@@ -144,7 +144,7 @@
                         <th class="px-4 py-2.5 text-[11px] font-medium uppercase tracking-wider text-slate-400 dark:text-slate-500">Symbol</th>
                         <th class="px-4 py-2.5 text-[11px] font-medium uppercase tracking-wider text-slate-400 dark:text-slate-500">Sector</th>
                         <th onclick="sortTable(3, true)" class="px-4 py-2.5 text-[11px] font-medium uppercase tracking-wider text-slate-400 dark:text-slate-500 text-right cursor-pointer hover:bg-slate-100/50 dark:hover:bg-slate-800 select-none">Price (₹) <span class="text-[9px] text-slate-400 ml-0.5">↕</span></th>
-                        <th onclick="sortTable(4, true)" class="px-4 py-2.5 text-[11px] font-medium uppercase tracking-wider text-slate-400 dark:text-slate-500 text-center cursor-pointer hover:bg-slate-100/50 dark:hover:bg-slate-800 select-none">Retracement <span class="text-[9px] text-slate-400 ml-0.5">↕</span></th>
+                        <th onclick="sortTable(4, true)" class="px-4 py-2.5 text-[11px] font-medium uppercase tracking-wider text-slate-400 dark:text-slate-500 text-center cursor-pointer hover:bg-slate-100/50 dark:hover:bg-slate-800 select-none">Retrace <span class="text-[9px] text-slate-400 ml-0.5">↕</span></th>
                         <th onclick="sortTable(5, true)" class="px-4 py-2.5 text-[11px] font-medium uppercase tracking-wider text-slate-400 dark:text-slate-500 cursor-pointer hover:bg-slate-100/50 dark:hover:bg-slate-800 select-none">Volume <span class="text-[9px] text-slate-400 ml-0.5">↕</span></th>
                         <th onclick="sortTable(6, true)" class="px-4 py-2.5 text-[11px] font-medium uppercase tracking-wider text-slate-400 dark:text-slate-500 text-center cursor-pointer hover:bg-slate-100/50 dark:hover:bg-slate-800 select-none">Rel Str <span class="text-[9px] text-slate-400 ml-0.5">↕</span></th>
                         <th onclick="sortTable(7, true)" class="px-4 py-2.5 text-[11px] font-medium uppercase tracking-wider text-slate-400 dark:text-slate-500 text-center cursor-pointer hover:bg-slate-100/50 dark:hover:bg-slate-800 select-none">RS Trend (20D) <span class="text-[9px] text-slate-400 ml-0.5">↕</span></th>

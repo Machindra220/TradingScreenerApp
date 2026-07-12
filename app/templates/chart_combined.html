@@ -61,7 +61,7 @@
                         class="bg-gray-800 hover:bg-gray-700 text-gray-200 font-black text-[9px] uppercase px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 border border-gray-700">
                     <svg id="fs-icon-expand" xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
                     <svg id="fs-icon-collapse" xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v4a2 2 0 0 1-2 2H3M15 3v4a2 2 0 0 0 2 2h4M9 21v-4a2 2 0 0 0-2-2H3M15 21v-4a2 2 0 0 1 2-2h4"/></svg>
-                    <span id="fs-label">F-Screen</span>
+                    <span id="fs-label">Full</span>
                 </button>
             </div>
         </div>
@@ -349,7 +349,7 @@ document.addEventListener('fullscreenchange', () => {
     const isFs = !!document.fullscreenElement;
     document.getElementById('fs-icon-expand').classList.toggle('hidden', isFs);
     document.getElementById('fs-icon-collapse').classList.toggle('hidden', !isFs);
-    document.getElementById('fs-label').innerText = isFs ? 'Exit Screen' : 'F-Screen';
+    document.getElementById('fs-label').innerText = isFs ? 'Exit' : 'Full';
     const shell = document.getElementById('chart-shell');
     shell.style.height = isFs ? '100vh' : '';
     if (isFs) {
