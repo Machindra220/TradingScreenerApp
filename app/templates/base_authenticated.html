@@ -13,10 +13,25 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>{% block title %}Portfolio App{% endblock %}</title>
   <link rel="icon" href="{{ url_for('static', filename='favicon.png') }}" type="image/x-icon">
-  
-  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+
+  <!-- FIX (dark mode): the old build was a pre-compiled, version-pinned
+       stylesheet (tailwindcss@2.2.19/dist/tailwind.min.css). A static build
+       like that ships with darkMode defaulting to the 'media' strategy,
+       which reacts to the OS/browser color-scheme setting — NOT to the
+       ".dark" class Alpine toggles on <html> here. That mismatch is why
+       clicking the moon/sun button did nothing. The Play CDN below compiles
+       on the fly in the browser and is explicitly configured for the
+       'class' strategy, so it matches how this page actually toggles dark
+       mode. -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class'
+    }
+  </script>
+
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  
+
   <script src="https://cdn.jsdelivr.net/npm/@alpinejs/collapse@3.x.x/dist/cdn.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
 
@@ -25,7 +40,29 @@
     [x-cloak] { display: none !important; }
     .custom-scrollbar::-webkit-scrollbar { width: 4px; }
     .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-    .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+    .dark .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+
+    /* FIX (hover text invisible): don't rely solely on Tailwind's
+       hover:bg-slate-800 / hover:text-white utilities resolving correctly —
+       force both colors explicitly with !important so a nav link's label is
+       always legible on hover regardless of any competing/late-loading
+       stylesheet. Active (current page) links get the same explicit
+       treatment so they never blend into the sidebar either.
+
+       This is plain CSS (not a Tailwind dark: utility), so light/dark each
+       need their own rule here — scoped off the same ".dark" class Alpine
+       toggles on <html>, matching the Tailwind config above. */
+    .side-navlink { color: #475569; }
+    .dark .side-navlink { color: #cbd5e1; }
+
+    .side-navlink:hover { background-color: #f1f5f9 !important; color: #0f172a !important; }
+    .dark .side-navlink:hover { background-color: #1e293b !important; color: #ffffff !important; }
+    .side-navlink:hover .side-navlink-icon { color: #0f172a !important; }
+    .dark .side-navlink:hover .side-navlink-icon { color: #ffffff !important; }
+
+    .side-navlink-active { background-color: #2563eb !important; color: #ffffff !important; }
+    .side-navlink-active .side-navlink-icon { color: #ffffff !important; }
   </style>
 </head>
 
@@ -33,133 +70,227 @@
 
 <div class="flex min-h-screen">
   <aside :class="sidebarOpen ? 'w-64' : 'w-20'" 
-         class="bg-slate-900 text-slate-300 transition-all duration-300 flex flex-col border-r border-slate-800 shadow-xl fixed inset-y-0 left-0 z-50 lg:relative">
+         class="bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 transition-all duration-300 flex flex-col border-r border-slate-200 dark:border-slate-800 shadow-xl fixed inset-y-0 left-0 z-50 lg:relative">
     
-    <div class="flex items-center justify-between px-4 py-6 border-b border-slate-800/50">
-      <a href="{{ url_for('trades.dashboard') }}" class="flex items-center gap-3 overflow-hidden">
-        <div class="bg-blue-600 p-1.5 rounded-lg flex-shrink-0">
-            <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo" class="h-6 w-6 object-contain">
+    <div class="flex items-center justify-between px-4 py-6 border-b border-slate-200 dark:border-slate-800/50">
+      <a href="{{ url_for('trades.dashboard') }}" class="flex items-center gap-3 overflow-hidden min-w-0">
+        <!-- FIX (logo): fixed square box with overflow-hidden so the image
+             can never spill outside the sidebar regardless of the source
+             file's native dimensions; object-contain + max-h/w-full keeps
+             it fully visible and centered instead of being cropped by a
+             tight, mismatched aspect ratio. Neutral slate background
+             (instead of a hardcoded blue box) so the logo doesn't risk
+             blending into a same-toned background. -->
+        <div class="bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700/70 p-1 rounded-lg flex-shrink-0 w-9 h-9 flex items-center justify-center overflow-hidden">
+            <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo" class="max-h-full max-w-full object-contain">
         </div>
-        <span x-show="sidebarOpen" x-transition.opacity class="font-bold text-lg tracking-tight text-white whitespace-nowrap">Portfolio.io</span>
+        <span x-show="sidebarOpen" x-transition.opacity class="font-bold text-lg tracking-tight text-slate-900 dark:text-white whitespace-nowrap">Portfolio.io</span>
       </a>
-      <button @click="sidebarOpen = !sidebarOpen" class="text-slate-400 hover:text-white p-1 rounded-md hover:bg-slate-800 transition-colors">
+      <button @click="sidebarOpen = !sidebarOpen" class="text-slate-400 hover:text-slate-900 dark:hover:text-white p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex-shrink-0">
         <svg x-show="sidebarOpen" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"/></svg>
         <svg x-show="!sidebarOpen" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg>
       </button>
     </div>
 
     <nav class="flex-1 px-3 py-4 space-y-4 overflow-y-auto custom-scrollbar">
-      
-      {% macro navlink(endpoint, label, icon) %}
+
+      <!-- Hand-drawn outline icons (same 24x24 stroke style already used by
+           the collapse/dropdown/logout icons elsewhere on this page) mapped
+           to each page's actual purpose, instead of the generic emoji set.
+           Self-contained inline SVG — no external icon-font/API dependency. -->
+      {% macro navicon(key) %}
+        {%- if key == 'home' -%}
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1h3a1 1 0 001-1V10M9 21h6"/></svg>
+        {%- elif key == 'plus-circle' -%}
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v8m-4-4h8M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        {%- elif key == 'heart' -%}
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/></svg>
+        {%- elif key == 'list' -%}
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h7"/></svg>
+        {%- elif key == 'wrench' -%}
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M20 7h-4V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2H4a1 1 0 00-1 1v3h18V8a1 1 0 00-1-1zM10 5h4v2h-4V5zM3 13v6a1 1 0 001 1h16a1 1 0 001-1v-6H3z"/></svg>
+        {%- elif key == 'document-text' -%}
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+        {%- elif key == 'robot' -%}
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 8h16v10a2 2 0 01-2 2H6a2 2 0 01-2-2V8zm4-4h8v4H8V4zM9 12h.01M15 12h.01M8 16h8"/></svg>
+        {%- elif key == 'trending-up' -%}
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 17l6-6 4 4 8-8M14 7h7v7"/></svg>
+        {%- elif key == 'trending-down' -%}
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 7l6 6 4-4 8 8M21 10V3h-7"/></svg>
+        {%- elif key == 'lightning-bolt' -%}
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+        {%- elif key == 'paper-airplane' -%}
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 12L3.269 3.126A59.77 59.77 0 0121.485 12 59.77 59.77 0 013.27 20.874L5.999 12zm0 0h7.5"/></svg>
+        {%- elif key == 'certificate' -%}
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        {%- elif key == 'truck' -%}
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16V6a1 1 0 011-1h6a1 1 0 011 1v10m-8 0h8m-8 0a2 2 0 11-4 0 2 2 0 014 0zm8 0a2 2 0 104 0 2 2 0 00-4 0zm4 0h2v-4l-3-4h-3"/></svg>
+        {%- elif key == 'ruler' -%}
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 6v4m16-4v4M4 14h16M4 14v4m16-4v4"/></svg>
+        {%- elif key == 'globe' -%}
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3a9 9 0 100 18 9 9 0 000-18zM3 12h18M12 3c2.5 2.5 2.5 15.5 0 18M12 3c-2.5 2.5-2.5 15.5 0 18"/></svg>
+        {%- elif key == 'carousel' -%}
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h4v12H4V6zm6 2h4v8h-4V8zm6-2h4v12h-4V6z"/></svg>
+        {%- elif key == 'chart-pie' -%}
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055zM20.488 9H15V3.512A9.024 9.024 0 0120.488 9z"/></svg>
+        {%- elif key == 'trophy' -%}
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 21h8M12 17v4M17 4H7v4a5 5 0 0010 0V4zM7 5H4v1a4 4 0 004 4M17 5h3v1a4 4 0 01-4 4"/></svg>
+        {%- elif key == 'filter' -%}
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 4h18l-7 8v6l-4 2v-8L3 4z"/></svg>
+        {%- elif key == 'speedometer' -%}
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 21a9 9 0 100-18 9 9 0 000 18zM12 12l4-4M12 8v1"/></svg>
+        {%- elif key == 'currency' -%}
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8v1m0 7v1M12 3a9 9 0 100 18 9 9 0 000-18z"/></svg>
+        {%- elif key == 'chart-box' -%}
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-2v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z"/></svg>
+        {%- elif key == 'swap-horizontal' -%}
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4M16 17H4m0 0l4 4m-4-4l4-4"/></svg>
+        {%- elif key == 'archive' -%}
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 7h18M5 7v12a2 2 0 002 2h10a2 2 0 002-2V7M9 11h6"/></svg>
+        {%- elif key == 'triangle-outline' -%}
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4l9 16H3L12 4z"/></svg>
+        {%- elif key == 'notebook' -%}
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 4h9a1 1 0 011 1v14a1 1 0 01-1 1H9m0-16H6a1 1 0 00-1 1v14a1 1 0 001 1h3m0-16v16m3-12h3m-3 4h3"/></svg>
+        {%- elif key == 'calendar' -%}
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2zM3 11h18"/></svg>
+        {%- endif -%}
+      {% endmacro %}
+
+      {% macro navlink(endpoint, label, icon_key, icon_color='text-slate-500 dark:text-slate-400') %}
         {% set is_active = request.endpoint == endpoint %}
         <a href="{{ url_for(endpoint) }}"
            title="{{ label }}"
-           class="flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 group
-           {{ 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' if is_active else 'hover:bg-slate-800 hover:text-white' }}">
-          <span class="text-lg opacity-80 group-hover:opacity-100 transition-opacity">{{ icon }}</span>
+           class="side-navlink flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 group
+           {{ 'side-navlink-active shadow-lg shadow-blue-900/20' if is_active else '' }}">
+          <span class="side-navlink-icon flex-shrink-0 {{ 'text-white' if is_active else icon_color }} transition-colors">{{ navicon(icon_key) }}</span>
           <span x-show="sidebarOpen" x-cloak class="text-sm font-medium">{{ label }}</span>
         </a>
       {% endmacro %}
 
       <div class="space-y-1">
-        <!-- <div x-show="sidebarOpen" class="px-3 text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">Core</div> -->
-                <button @click="openSection = openSection === 'Core' ? '' : 'Core'" 
-                class="w-full flex items-center justify-between px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-slate-500 hover:text-slate-300">
+        <button @click="openSection = openSection === 'Core' ? '' : 'Core'" 
+                class="w-full flex items-center justify-between px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">
             <span x-show="sidebarOpen">Core Tools</span>
             <span x-show="!sidebarOpen">---</span>
             <svg x-show="sidebarOpen" :class="openSection === 'Core' ? 'rotate-180' : ''" class="w-3 h-3 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
         </button>
         
         <div x-show="openSection === 'Core' || !sidebarOpen" x-collapse class="space-y-1">
-        {{ navlink('trades.dashboard', 'Dashboard', '🏠') }}
-        {{ navlink('trades.add_trade', 'Add Trade', '➕') }}
-        {{ navlink('volar_ind.view_favorites_india', 'India Watchlist', '🧡') }}
-        {{ navlink('volar_us.view_favorites_us', 'US Watchlist', '💙') }}
-        {{ navlink('watchlist.add', 'Manual Watchlist', '📈') }}
-      {{ navlink('resources.show_resources', 'Resources', '🧰') }}
-        {{ navlink('trades.trade_history', 'Trade History', '📜') }}
-        {{ navlink('ai_analyst.ai_chat', 'AI Analyst', '🤖') }}
+        {{ navlink('trades.dashboard', 'Dashboard', 'home') }}
+        {{ navlink('trades.add_trade', 'Add Trade', 'plus-circle') }}
+        {{ navlink('volar_ind.view_favorites_india', 'India Watchlist', 'heart', 'text-orange-500 dark:text-orange-400') }}
+        {{ navlink('volar_us.view_favorites_us', 'US Watchlist', 'heart', 'text-blue-500 dark:text-blue-400') }}
+        {{ navlink('watchlist.add', 'Manual Watchlist', 'list') }}
+        {{ navlink('resources.show_resources', 'Resources', 'wrench') }}
+        {{ navlink('trades.trade_history', 'Trade History', 'document-text') }}
+        {{ navlink('ai_analyst.ai_chat', 'AI Analyst', 'robot') }}
       </div>
       
 
       <div class="space-y-1">
-        <button @click="openSection = openSection === 'analysis' ? '' : 'analysis'" 
-                class="w-full flex items-center justify-between px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-slate-500 hover:text-slate-300">
-            <span x-show="sidebarOpen">Analysis Tools</span>
+        <button @click="openSection = openSection === 'US' ? '' : 'US'" 
+                class="w-full flex items-center justify-between px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">
+            <span x-show="sidebarOpen">US Screeners</span>
             <span x-show="!sidebarOpen">---</span>
-            <svg x-show="sidebarOpen" :class="openSection === 'analysis' ? 'rotate-180' : ''" class="w-3 h-3 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
+            <svg x-show="sidebarOpen" :class="openSection === 'US' ? 'rotate-180' : ''" class="w-3 h-3 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
         </button>
-        
-        <div x-show="openSection === 'analysis' || !sidebarOpen" x-collapse class="space-y-1">
-        {{ navlink('volar_us.volar_us_process', 'US Volar Stage2', '📈') }}
-        {{ navlink('volar_us_adaptive_bp.volar_us_process', 'US Adaptive RS', '⚡') }}
-        {{ navlink('rs_roc_us.rs_roc_us_momentum_process', 'US RS-ROC', '🚀') }}
-        {{ navlink('gap_volume.gap_volume_scan_process', 'US Gap & Volume', '⚡') }}
-			  {{ navlink('volar_ind.volar_process', 'IND Volar Stage2', '📈') }}
-        {{ navlink('volar_ind_adaptive_bp.volar_ind_process', 'IND Adaptive RS', '⚡') }}
-        {{ navlink('rs_roc.rs_roc_momentum_process', 'IND RS-ROC', '🚀') }}
-        {{ navlink('gap_volume_india.gap_volume_india_process', 'IND Gap & Volume', '⚡') }}
-        {{ navlink('stage2_screener_us.stage2_us_view', 'US Stage2 Screener', '📈') }}
-        {{ navlink('stage2_india.stage2_india_view', 'IND Stage2 Screener', '📈') }} 
-        {{ navlink('trendline_screener.trendline_scan_process', 'Trendline Breakouts', '📐') }}
-        {{ navlink('chart_engine_combined.analytics-chart-combined', 'Combined Chart (NSE + US)', '📈') }}
-			  {{ navlink('screener.sector_analysis_view', 'Sector Analysis', '📊') }}
-			  {{ navlink('performers.top_performers_view', 'Performers', '📈') }}
-			  {{ navlink('screener.stage2_view', 'Stage 2 Screener', '📊') }}
-			  {{ navlink('delivery.delivery_surge_view', 'Delivery Surge', '🚀') }}
-			  {{ navlink('stage2_delivery.stage2_delivery_screener_view', 'Stage 2 Delivery', '🚚') }}
-			  {{ navlink('momentum.momentum_rebalance_view', 'Momentum Strategy', '📊') }}
-			  {{ navlink('eps.eps_screener_view', 'EPS Surge Screener', '📈') }}
-        {{ navlink('hh_hl_india.hh_hl_view', 'Stage2 HH HL Screener', '📈') }}
-        {{ navlink('ll_lh_india.ll_lh_view', 'Stage3 LL LH Screener', '📈') }} 
-        {{ navlink('chart_engine.chart_dashboard', 'Charts', '📊') }}
-        {{ navlink('chart_engine_us.chart_us_dashboard', 'US RS Telemetry Chart', '📈') }}
-        {{ navlink('adaptive_4d.adaptive_4d_process', 'Adaptive RS (NSE + US)', '📈') }}
-        {{ navlink('ibd_engine_us.ibd_us_scan_process', 'US IBD SmartSelect Grader', '🦅') }}
-        {{ navlink('ibd_engine_ind.ibd_india_scan_process', 'India IBD SmartSelect', '🦅') }}
-        {{ navlink('stage2_launchpad.launchpad_scan_process', 'Stage2 Launchpad', '📈') }}
+
+        <div x-show="openSection === 'US' || !sidebarOpen" x-collapse class="space-y-1">
+        {{ navlink('volar_us.volar_us_process', 'US Volar Stage2', 'trending-up') }}
+        {{ navlink('volar_us_adaptive_bp.volar_us_process', 'US Adaptive RS', 'lightning-bolt') }}
+        {{ navlink('rs_roc_us.rs_roc_us_momentum_process', 'US RS-ROC', 'paper-airplane') }}
+        {{ navlink('gap_volume.gap_volume_scan_process', 'US Gap & Volume', 'lightning-bolt') }}
+        {{ navlink('stage2_screener_us.stage2_us_view', 'US Stage2 Screener', 'trending-up') }}
+        {{ navlink('chart_engine_us.chart_us_dashboard', 'US RS Telemetry Chart', 'chart-box') }}
+        {{ navlink('ibd_engine_us.ibd_us_scan_process', 'US IBD SmartSelect Grader', 'certificate') }}
+        </div>
+      </div>
+
+      <div class="space-y-1">
+        <button @click="openSection = openSection === 'IND' ? '' : 'IND'" 
+                class="w-full flex items-center justify-between px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">
+            <span x-show="sidebarOpen">NSE / India Screeners</span>
+            <span x-show="!sidebarOpen">---</span>
+            <svg x-show="sidebarOpen" :class="openSection === 'IND' ? 'rotate-180' : ''" class="w-3 h-3 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
+        </button>
+
+        <div x-show="openSection === 'IND' || !sidebarOpen" x-collapse class="space-y-1">
+        {{ navlink('volar_ind.volar_process', 'IND Volar Stage2', 'trending-up') }}
+        {{ navlink('volar_ind_adaptive_bp.volar_ind_process', 'IND Adaptive RS', 'lightning-bolt') }}
+        {{ navlink('rs_roc.rs_roc_momentum_process', 'IND RS-ROC', 'paper-airplane') }}
+        {{ navlink('gap_volume_india.gap_volume_india_process', 'IND Gap & Volume', 'lightning-bolt') }}
+        {{ navlink('stage2_india.stage2_india_view', 'IND Stage2 Screener', 'trending-up') }}
+        {{ navlink('hh_hl_india.hh_hl_view', 'Stage2 HH HL Screener', 'trending-up') }}
+        {{ navlink('ibd_engine_ind.ibd_india_scan_process', 'India IBD SmartSelect', 'certificate') }}
+        {{ navlink('ll_lh_india.ll_lh_view', 'Stage3 LL LH Screener', 'trending-down') }}
+        {{ navlink('delivery.delivery_surge_view', 'Delivery Surge', 'truck') }}
+        {{ navlink('stage2_delivery.stage2_delivery_screener_view', 'Stage 2 Delivery', 'truck') }}
+        </div>
+      </div>
+
+      <div class="space-y-1">
+        <button @click="openSection = openSection === 'General' ? '' : 'General'" 
+                class="w-full flex items-center justify-between px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">
+            <span x-show="sidebarOpen">General / Multi-Market</span>
+            <span x-show="!sidebarOpen">---</span>
+            <svg x-show="sidebarOpen" :class="openSection === 'General' ? 'rotate-180' : ''" class="w-3 h-3 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
+        </button>
+
+        <div x-show="openSection === 'General' || !sidebarOpen" x-collapse class="space-y-1">
+        {{ navlink('trendline_screener.trendline_scan_process', 'Trendline Breakouts', 'ruler') }}
+        {{ navlink('chart_engine_combined.analytics-chart-combined', 'Combined Chart (NSE + US)', 'globe') }}
+        {{ navlink('chart_carousel.carousel_dashboard', 'Chart carousel', 'carousel') }}
+        {{ navlink('chart_weinstein.weinstein_dashboard', 'Weinstein Stage Analysis', 'trending-up') }}
+        {{ navlink('screener.sector_analysis_view', 'Sector Analysis', 'chart-pie') }}
+        {{ navlink('performers.top_performers_view', 'Performers', 'trophy') }}
+        {{ navlink('screener.stage2_view', 'Stage 2 Screener', 'filter') }}
+        {{ navlink('momentum.momentum_rebalance_view', 'Momentum Strategy', 'speedometer') }}
+        {{ navlink('eps.eps_screener_view', 'EPS Surge Screener', 'currency') }}
+        {{ navlink('chart_engine.chart_dashboard', 'Charts', 'chart-box') }}
+        {{ navlink('adaptive_4d.adaptive_4d_process', 'Adaptive RS (NSE + US)', 'swap-horizontal') }}
+        {{ navlink('stage2_launchpad.launchpad_scan_process', 'Stage2 Launchpad', 'paper-airplane') }}
         </div>
       </div>
 
             <div class="space-y-1">
         <button @click="openSection = openSection === 'History' ? '' : 'History'" 
-                class="w-full flex items-center justify-between px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-slate-500 hover:text-slate-300">
+                class="w-full flex items-center justify-between px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">
             <span x-show="sidebarOpen">Data History</span>
             <span x-show="!sidebarOpen">---</span>
             <svg x-show="sidebarOpen" :class="openSection === 'History' ? 'rotate-180' : ''" class="w-3 h-3 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
         </button>
         
         <div x-show="openSection === 'History' || !sidebarOpen" x-collapse class="space-y-1">
-			  {{ navlink('screener.stage2_saved', 'Stage 2 History', '📦') }}
-			  {{ navlink('delivery.delivery_history', 'Delivery Surge History', '📦') }}
-			  {{ navlink('stage2_delivery.stage2_delivery_history', 'Stage 2 Delivery History', '📦') }}
-			  {{ navlink('eps.eps_screener_history', 'EPS Surge History', '📜') }}
-			  {{ navlink('momentum.momentum_history', 'Momentum History', '📜') }}
-			  {{ navlink('vcp.vcp_view', 'VCP Screener', '📉') }}
-			  {{ navlink('notes.notes_page', 'Notes', '📝') }}
-			  {{ navlink('stats.stats_dashboard', 'Stats', '📊') }}
-			  {{ navlink('calendar.calendar_view', 'Calendar', '📅') }}
-			  {{ navlink('period_performers.period_performers_view', 'Period Performers', '📊') }}
+			  {{ navlink('screener.stage2_saved', 'Stage 2 History', 'archive') }}
+			  {{ navlink('delivery.delivery_history', 'Delivery Surge History', 'archive') }}
+			  {{ navlink('stage2_delivery.stage2_delivery_history', 'Stage 2 Delivery History', 'archive') }}
+			  {{ navlink('eps.eps_screener_history', 'EPS Surge History', 'document-text') }}
+			  {{ navlink('momentum.momentum_history', 'Momentum History', 'document-text') }}
+			  {{ navlink('vcp.vcp_view', 'VCP Screener', 'triangle-outline') }}
+			  {{ navlink('notes.notes_page', 'Notes', 'notebook') }}
+			  {{ navlink('stats.stats_dashboard', 'Stats', 'chart-box') }}
+			  {{ navlink('calendar.calendar_view', 'Calendar', 'calendar') }}
+			  {{ navlink('period_performers.period_performers_view', 'Period Performers', 'trophy') }}
         </div>
       </div>
 
       <div class="space-y-1 pt-2 border-t border-slate-800">
-        {{ navlink('stats.stats_dashboard', 'Statistics', '📊') }}
-        {{ navlink('calendar.calendar_view', 'Calendar', '📅') }}
-        {{ navlink('notes.notes_page', 'Research Notes', '📝') }}
+        {{ navlink('stats.stats_dashboard', 'Statistics', 'chart-box') }}
+        {{ navlink('calendar.calendar_view', 'Calendar', 'calendar') }}
+        {{ navlink('notes.notes_page', 'Research Notes', 'notebook') }}
       </div>
     </nav>
 
-    <div class="p-4 border-t border-slate-800 bg-slate-900/50 space-y-3">
+    <div class="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 space-y-3">
       <div class="flex items-center justify-between px-2">
-        <span x-show="sidebarOpen" class="text-xs font-medium text-slate-400">Appearance</span>
-        <button @click="darkMode = !darkMode" class="p-1.5 rounded-md hover:bg-slate-800 transition-colors">
+        <span x-show="sidebarOpen" class="text-xs font-medium text-slate-500 dark:text-slate-400">Appearance</span>
+        <button @click="darkMode = !darkMode" class="p-1.5 rounded-md hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors">
             <span x-show="!darkMode">🌙</span>
             <span x-show="darkMode">☀️</span>
         </button>
       </div>
       <a href="{{ url_for('auth.logout') }}"
-         class="flex items-center gap-3 px-3 py-2 rounded-lg text-red-400 hover:bg-red-500/10 transition-colors">
+         class="flex items-center gap-3 px-3 py-2 rounded-lg text-red-500 dark:text-red-400 hover:bg-red-500/10 transition-colors">
         <span>🚪</span>
         <span x-show="sidebarOpen" class="text-sm font-semibold">Logout</span>
       </a>

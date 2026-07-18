@@ -8,16 +8,19 @@
         <div>
             <h2 class="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight">📈 HH-HL Trend Screener</h2>
             <div class="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
-                <p>ACTIVE FILE: <span class="text-blue-500 dark:text-blue-400 font-bold">{{ last_file }}</span></p>
+                <p>ACTIVE SCANNER CONTEXT: <span class="text-blue-500 dark:text-blue-400 font-bold">{% if last_file != 'None' %}{{ last_file }}{% else %}Nifty 500 Index (Default yfinance){% endif %}</span></p>
                 <span>•</span>
                 <div class="flex items-center gap-1">
                     ⏱️ Last Scan Time: <span class="text-indigo-600 dark:text-indigo-400 font-bold">{{ last_run_time or 'Never' }}</span>
                 </div>
             </div>
         </div>
-        <div class="flex items-center gap-2 w-full sm:w-auto">
+        <div class="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+            <button id="strategyRuleBtn" onclick="toggleStrategyRuleFilter()" class="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold uppercase rounded-lg shadow-md transition-all flex items-center gap-1.5">
+                <span id="strategyRuleBtnText">🎯 Filter Winning Stocks</span>
+            </button>
             {% if stocks %}
-            <a href="{{ url_for('hh_hl_india.export_hhhl') }}" class="w-full sm:w-auto text-center px-4 py-2 bg-blue-500 hover:bg-emerald-500 text-white text-xs font-bold uppercase rounded-lg shadow-md transition-all flex items-center justify-center gap-1.5">
+            <a href="{{ url_for('hh_hl_india.export_hhhl') }}" class="px-3.5 py-2 bg-indigo-500 hover:bg-emerald-600 border border-emerald-500 text-white text-xs font-bold uppercase rounded-lg shadow-md transition-all flex items-center justify-center gap-1.5">
                 <span>📥 Export CSV</span>
             </a>
             {% endif %}
@@ -29,7 +32,7 @@
         <form method="POST" enctype="multipart/form-data" class="flex flex-col md:flex-row items-end gap-6">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <div class="flex-1 w-full">
-                <label class="block text-[10px] font-bold uppercase text-slate-400 mb-2 ml-1">Change Ticker List (Optional)</label>
+                <label class="block text-[10px] font-bold uppercase text-slate-400 mb-2 ml-1">Upload Ticker List (Optional CSV)</label>
                 <input type="file" name="file" class="w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-[10px] file:font-bold file:bg-blue-500/10 file:text-blue-400 hover:file:bg-blue-500/20 transition-all">
             </div>
             <button type="submit" onclick="document.getElementById('spinner').classList.remove('hidden')" class="w-full md:w-auto px-8 py-3 bg-blue-600 hover:bg-blue-500 text-white text-xs font-black uppercase rounded-xl shadow-lg shadow-blue-500/20 transition-all flex items-center justify-center gap-2">
@@ -46,10 +49,13 @@
     <!-- Top Dominant Sectors Presentation Dynamic Array Section Layout Block -->
     {% if top_sectors %}
     <div class="mb-6 backdrop-blur-md bg-white/5 dark:bg-slate-950/20 border border-white/10 dark:border-slate-800/30 p-4 rounded-2xl">
-        <h3 class="text-xs font-black uppercase text-slate-400 mb-3 tracking-wider">🔥 Top Dominant Sectors</h3>
+        <div class="flex items-center justify-between mb-3">
+            <h3 class="text-xs font-black uppercase text-slate-400 tracking-wider">🔥 Top Dominant Sectors (Click Card to Filter)</h3>
+            <button id="clearSectorFilterBtn" onclick="clearSectorFilter()" class="hidden text-[10px] font-bold uppercase text-amber-500 hover:text-amber-400 transition-colors">✕ Clear Sector Filter</button>
+        </div>
         <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
             {% for sec in top_sectors %}
-            <div style="background-color: {{ sec.theme.bg }}; border-color: {{ sec.theme.border }};" class="p-3 rounded-xl border flex items-center justify-between shadow-sm transition-transform hover:scale-[1.02]">
+            <div onclick="toggleSectorFilter('{{ sec.name }}', this)" style="background-color: {{ sec.theme.bg }}; border-color: {{ sec.theme.border }};" class="sector-card cursor-pointer p-3 rounded-xl border flex items-center justify-between shadow-sm transition-all hover:scale-[1.02] border-white/15">
                 <div class="truncate">
                     <span class="block text-[9px] font-black uppercase opacity-60" style="color: {{ sec.theme.text }};">Rank #{{ loop.index }}</span>
                     <span class="text-xs font-black truncate block" style="color: {{ sec.theme.text }};" title="{{ sec.name }}">{{ sec.name }}</span>
@@ -66,68 +72,72 @@
     <!-- Central Interactive Main Datatable Glass Panel Wrapper Layout -->
     <div class="backdrop-blur-md bg-white/10 dark:bg-slate-950/40 border border-white/20 dark:border-slate-800/50 rounded-2xl shadow-2xl overflow-hidden mb-8">
         <div class="overflow-x-auto">
-            <table class="min-w-full text-left id="trendTable">
+            <table class="min-w-full text-left" id="trendTable">
                 <thead class="bg-slate-100/50 dark:bg-slate-900/40 border-b border-white/10 dark:border-slate-800/50">
                     <tr>
-                        <th class="px-4 py-4 text-[9px] font-bold uppercase text-slate-400 w-12">Sr.</th>
-                        <th class="px-6 py-4 text-[9px] font-bold uppercase text-slate-400">Symbol</th>
-                        <th class="px-6 py-4 text-[9px] font-bold uppercase text-slate-400">Sector</th>
-                        <th class="px-6 py-4 text-[9px] font-bold uppercase text-slate-400">Price</th>
-                        <th class="px-6 py-4 text-[9px] font-bold uppercase text-slate-400">Swing Low</th>
-                        <th class="px-6 py-4 text-[9px] font-bold uppercase text-slate-400 cursor-pointer hover:text-blue-500 transition-colors" onclick="sortTable(5)">
-                            SL % ↕
-                        </th>
-                        <th class="px-6 py-4 text-[9px] font-bold uppercase text-slate-400">52W Retrace</th>
-                        <th class="px-6 py-4 text-[9px] font-bold uppercase text-slate-400">RS Score</th>
-                        <th class="px-6 py-4 text-[9px] font-bold uppercase text-slate-400">RS Trend (20D)</th>
+                        <th class="px-4 py-4 text-[8px] font-bold uppercase text-slate-400 w-12">Sr.</th>
+                        <th class="px-6 py-4 text-[8px] font-bold uppercase text-slate-400">Symbol</th>
+                        <th class="px-4 py-4 text-[8px] font-bold uppercase text-slate-400 cursor-pointer hover:text-blue-500 transition-colors" onclick="sortTable(2)">Sector ↕</th>
+                        <th class="px-6 py-4 text-[8px] font-bold uppercase text-slate-400">Price</th>
+                        <th class="px-6 py-4 text-[8px] font-bold uppercase text-slate-400">Swing Low</th>
+                        <th class="px-6 py-4 text-[8px] font-bold uppercase text-slate-400 cursor-pointer hover:text-blue-500 transition-colors" onclick="sortTable(5)">SL % ↕</th>
+                        <th class="px-6 py-4 text-[8px] font-bold uppercase text-slate-400">52W Retrace</th>
+                        <th class="px-6 py-4 text-[8px] font-bold uppercase text-slate-400">RS Score</th>
+                        <th class="px-6 py-4 text-[8px] font-bold uppercase text-slate-400 cursor-pointer hover:text-blue-500 transition-colors" onclick="sortTable(8)">RS Trend ↕</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-white/5 dark:divide-slate-800/50">
                     {% for stock in stocks %}
                     {% set sec_theme = sector_color_map.get(stock.sector) %}
-                    <tr class="hover:bg-white/10 dark:hover:bg-slate-800/30 transition-colors group">
-                        <td class="px-4 py-4 text-[10px] text-slate-400 font-medium">{{ loop.index }}</td>
+                    <tr class="stock-row hover:bg-white/10 dark:hover:bg-slate-800/30 transition-colors group"
+                        data-sector="{{ stock.sector }}"
+                        data-sl="{{ stock.sl_percent }}"
+                        data-rs="{{ stock.rs }}"
+                        data-retrace="{{ stock.retracement }}"
+                        data-trend="{{ stock.rs_trend }}">
+                        <td class="px-4 py-4 text-[8px] text-slate-400 font-xs row-number">{{ loop.index }}</td>
                         <td class="px-6 py-4 font-black text-blue-500 dark:text-blue-400 text-sm">
                             <div class="flex items-center gap-2">
                                 {{ stock.symbol }}
-                                <button onclick="navigator.clipboard.writeText('{{ stock.symbol }}')" class="p-1 text-slate-500 hover:text-blue-400 rounded opacity-0 group-hover:opacity-100 transition-opacity focus:opacity-100" title="Copy Ticker">
+                                <button type="button" onclick="navigator.clipboard.writeText('{{ stock.symbol }}')" class="p-1 text-slate-500 hover:text-blue-400 rounded opacity-0 group-hover:opacity-100 transition-opacity focus:opacity-100" title="Copy Ticker">
                                     <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0A2.25 2.25 0 0113.5 4.5h-3a2.25 2.25 0 01-2.166-1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.75c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 011.927-.184"></path></svg>
                                 </button>
                             </div>
                         </td>
-                        <td class="px-4 py-2 text-xs font-bold uppercase">
+                        <!-- Small 10px text and tracking constraints applied to keep rows perfectly unified -->
+                        <td class="px-2 py-2 whitespace-nowrap text-[8px] tracking-tighter">
                             {% if sec_theme %}
-                                <span style="background-color: {{ sec_theme.bg }}; color: {{ sec_theme.text }}; border-color: {{ sec_theme.border }};" class="px-2.5 py-1 rounded-md border font-black tracking-wide">
+                                <span style="background-color: {{ sec_theme.bg }}; color: {{ sec_theme.text }}; border-color: {{ sec_theme.border }}; font-size: 12px;" class="px-2 py-0.5 rounded border font-black block text-center uppercase">
                                     {{ stock.sector }}
                                 </span>
                             {% else %}
-                                <span class="text-slate-400 opacity-80">{{ stock.sector or 'N/A' }}</span>
+                                <span style="font-size: 12px;" class="text-slate-400 opacity-80 block text-left uppercase">{{ stock.sector or 'N/A' }}</span>
                             {% endif %}
                         </td>
                         <td class="px-6 py-4 text-xs font-bold text-slate-900 dark:text-white">₹{{ stock.price }}</td>
                         <td class="px-6 py-4 text-xs text-slate-500 dark:text-slate-400">₹{{ stock.last_swing_low }}</td>
                         <td class="px-6 py-4 text-xs font-black text-orange-500">{{ stock.sl_percent }}%</td>
                         <td class="px-6 py-4 text-xs font-bold text-red-500">-{{ stock.retracement }}%</td>
-                        <td class="px-6 py-4 text-xs font-black text-green-500 dark:text-green-400">{{ stock.rs }}</td>
-                        <td class="px-6 py-4 text-xs font-bold">
+                        <td class="px-4 py-2 text-xs font-black text-green-500 dark:text-green-400">{{ stock.rs }}</td>
+                        <td class="px-4 py-2 whitespace-nowrap text-[8px] tracking-tighter">
                             {% if 'Accelerating' in stock.rs_trend %}
-                                <span class="px-2 py-1 rounded-md text-[10px] font-black bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                                    {{ stock.rs_trend }} (+{{ stock.rs_change }}%)
+                                <span class="px-1.5 py-0.5 rounded font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 block text-center">
+                                    🚀 Rising (+{{ stock.rs_change }}%)
                                 </span>
                             {% elif 'Steady' in stock.rs_trend %}
-                                <span class="px-2 py-1 rounded-md text-[10px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20">
-                                    {{ stock.rs_trend }} ({{ stock.rs_change }}%)
+                                <span class="px-1.5 py-0.5 rounded font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20 block text-center">
+                                    🟢 Steady ({{ stock.rs_change }}%)
                                 </span>
                             {% else %}
-                                <span class="px-2 py-1 rounded-md text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                                    {{ stock.rs_trend }} ({{ stock.rs_change }}%)
+                                <span class="px-1.5 py-0.5 rounded font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20 block text-center">
+                                    ⚠️ Fading ({{ stock.rs_change }}%)
                                 </span>
                             {% endif %}
                         </td>
                     </tr>
                     {% else %}
                     <tr>
-                        <td colspan="9" class="px-6 py-12 text-center text-slate-400 text-xs italic">No cached scan items located. Exert execution logic array to generate dashboard statistics.</td>
+                        <td colspan="9" class="px-6 py-12 text-center text-slate-400 text-xs italic">No cached scan items located.</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -152,7 +162,7 @@
             <div class="bg-slate-900/60 border border-slate-700/50 p-4 rounded-xl">
                 <h4 style="color: #93c5fd;" class="font-bold text-sm mb-2">2. Relative Strength Confirmation Vector</h4>
                 <p class="leading-relaxed opacity-90">
-                    Cross-reference the **RS Score** alongside the **20D RS Trend**. Prioritize setups showing an **🚀 Accelerating RS Trend** context. This verifies that the underlying stock is expanding structural alpha outperformance velocity relative to the broader Nifty index structure.
+                    Cross-reference the **RS Score** alongside the **20D RS Trend**. Prioritize setups showing an **🚀 Rising / Accelerating RS Trend** context. This verifies that the underlying stock is expanding structural alpha outperformance velocity relative to the broader Nifty index structure.
                 </p>
             </div>
 
@@ -176,6 +186,89 @@
 </div>
 
 <script>
+let activeSectorFilter = null;
+let strategyFilterApplied = false;
+
+function toggleSectorFilter(sectorName, element) {
+    const cards = document.querySelectorAll('.sector-card');
+    const clearBtn = document.getElementById('clearSectorFilterBtn');
+    
+    if (activeSectorFilter === sectorName) {
+        clearSectorFilter();
+        return;
+    }
+    
+    activeSectorFilter = sectorName;
+    clearBtn.classList.remove('hidden');
+    
+    cards.forEach(card => {
+        card.style.opacity = "0.4";
+        card.style.borderColor = "rgba(255,255,255,0.05)";
+    });
+    element.style.opacity = "1";
+    element.style.borderColor = "#6366f1";
+    
+    applyCombinedFilters();
+}
+
+function clearSectorFilter() {
+    const cards = document.querySelectorAll('.sector-card');
+    const clearBtn = document.getElementById('clearSectorFilterBtn');
+    
+    activeSectorFilter = null;
+    clearBtn.classList.add('hidden');
+    
+    cards.forEach(card => {
+        card.style.opacity = "1";
+        card.style.borderColor = "rgba(255,255,255,0.15)";
+    });
+    
+    applyCombinedFilters();
+}
+
+function toggleStrategyRuleFilter() {
+    const btn = document.getElementById('strategyRuleBtn');
+    const btnText = document.getElementById('strategyRuleBtnText');
+    
+    strategyFilterApplied = !strategyFilterApplied;
+    
+    if (strategyFilterApplied) {
+        btnText.innerText = "🔄 Show All Clean Stocks";
+        btn.classList.remove('bg-indigo-600', 'hover:bg-indigo-500');
+        btn.classList.add('bg-amber-600', 'hover:bg-amber-500');
+    } else {
+        btnText.innerText = "🎯 Filter Strategy Guide Rules";
+        btn.classList.remove('bg-amber-600', 'hover:bg-amber-500');
+        btn.classList.add('bg-indigo-600', 'hover:bg-indigo-500');
+    }
+    
+    applyCombinedFilters();
+}
+
+function applyCombinedFilters() {
+    const rows = document.querySelectorAll('.stock-row');
+    let visibleIndex = 1;
+    
+    rows.forEach(row => {
+        const rowSector = row.getAttribute('data-sector');
+        const sl = parseFloat(row.getAttribute('data-sl')) || 0;
+        const rs = parseFloat(row.getAttribute('data-rs')) || 0;
+        const retrace = parseFloat(row.getAttribute('data-retrace')) || 0;
+        const trend = row.getAttribute('data-trend');
+        
+        let matchesSector = !activeSectorFilter || (rowSector === activeSectorFilter);
+        // Supports both 'Accelerating' from database logs and 'Rising' keyword variations seamlessly
+        let matchesStrategy = !strategyFilterApplied || (rs >= 1.15 && (trend.includes('Accelerating') || trend.includes('Rising')) && sl <= 8.0 && retrace <= 12.0);
+        
+        if (matchesSector && matchesStrategy) {
+            row.style.display = "";
+            row.querySelector('.row-number').innerText = visibleIndex++;
+        } else {
+            row.style.display = "none";
+        }
+    });
+}
+
 function sortTable(columnIndex) {
     const table = document.getElementById("trendTable");
     const tbody = table.tBodies[0];
@@ -186,11 +279,11 @@ function sortTable(columnIndex) {
     table.setAttribute('data-order', isAscending ? 'desc' : 'asc');
 
     rows.sort((a, b) => {
-        const textA = a.cells[columnIndex].innerText.replace('%', '').trim();
-        const textB = b.cells[columnIndex].innerText.replace('%', '').trim();
+        let textA = a.cells[columnIndex].innerText.replace(/%|₹/g, '').trim();
+        let textB = b.cells[columnIndex].innerText.replace(/%|₹/g, '').trim();
         
-        const valA = parseFloat(textA);
-        const valB = parseFloat(textB);
+        let valA = parseFloat(textA);
+        let valB = parseFloat(textB);
         
         if (!isNaN(valA) && !isNaN(valB)) {
             return isAscending ? valA - valB : valB - valA;

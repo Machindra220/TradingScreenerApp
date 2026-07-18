@@ -1,0 +1,1119 @@
+{% extends 'base_authenticated.html' %}
+{% block title %}Fast-Review Ticker Carousel Workspace{% endblock %}
+{% block content %}
+<!-- CSRF token for the state-changing fetch() calls on this page (currently
+     just the symbol-list upload) — same convention as add_trade.html's form,
+     just not inside a <form> since this page has no server-rendered form. -->
+<input type="hidden" id="csrfTokenValue" name="csrf_token" value="{{ csrf_token }}">
+<div id="carousel-root-workspace" class="w-full max-w-[1900px] mx-auto px-3 py-4 space-y-3">
+
+    <!-- Header Glass Block Configuration -->
+    <div class="backdrop-blur-md bg-white/10 dark:bg-slate-950/40 border border-white/20 dark:border-slate-800/50 px-4 py-3 rounded-xl flex items-center justify-between shadow-md flex-wrap gap-2">
+        <div class="flex items-center gap-3 flex-wrap">
+            <div class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+            <h3 class="text-xs font-black text-slate-900 dark:text-gray-200 uppercase tracking-wider">⚡ Chart Fast-Review Carousel</h3>
+            <!-- Screener Selection Dropdown Object -->
+            <select id="screenerStrategyDropdown" onchange="onScreenerStrategyChanged(this.value)" class="bg-slate-900 text-slate-200 text-[11px] font-bold border border-slate-700/60 rounded-md px-2.5 py-1 focus:outline-none focus:border-indigo-500 cursor-pointer">
+                <!-- Dropdown array items are populated contextually client-side based on active index channel -->
+            </select>
+            <button id="earlyRisersBtn" onclick="toggleEarlyRisersScan()" title="Scan the current screener list for stocks that just started rising"
+                    class="bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-700/50 font-black text-[10px] uppercase px-3 py-1.5 rounded-lg transition flex items-center gap-1.5">
+                🚀 <span id="earlyRisersLabel">Scan Early Risers</span>
+            </button>
+            <label for="symbolFileUpload" title="Load a CSV/Excel file with a 'Symbol' column and browse it with ◀ ▶"
+                   class="bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-300 border border-cyan-700/50 font-black text-[10px] uppercase px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 cursor-pointer">
+                📄 <span id="uploadSymbolsLabel">Upload Symbols</span>
+            </label>
+            <input type="file" id="symbolFileUpload" accept=".csv,.xlsx,.xls" class="hidden" onchange="handleSymbolFileUpload(this.files[0])">
+            <span id="customListBadge" class="hidden items-center gap-2 text-[10px] font-black bg-cyan-950 text-cyan-300 px-2.5 py-1.5 rounded-md border border-cyan-800/50">
+                📄 <span id="customListName"></span>
+                <button onclick="clearCustomSymbolList()" title="Clear custom list, go back to screener" class="text-cyan-400 hover:text-cyan-100 font-black">✕</button>
+            </span>
+        </div>
+        <div id="carouselIndexDisplay" class="text-[10px] font-black bg-indigo-950 text-indigo-400 px-3 py-1 rounded-md tracking-widest border border-indigo-800/50">
+            [ 0 / 0 ]
+        </div>
+    </div>
+
+    <!-- Early Risers Results Strip (hidden until a scan runs) -->
+    <div id="earlyRisersPanel" class="hidden bg-amber-950/20 border border-amber-800/40 rounded-xl px-4 py-3">
+        <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
+            <h4 class="text-[11px] font-black text-amber-300 uppercase tracking-wider">🚀 Fresh Momentum Candidates</h4>
+            <span id="earlyRisersSummary" class="text-[10px] font-bold text-gray-400 uppercase"></span>
+        </div>
+        <div id="earlyRisersList" class="flex flex-wrap gap-2"></div>
+        <p class="mt-2 text-[10px] text-gray-500 italic">A stock qualifies when price has just crossed back above its 20-day EMA (within the last ~week) plus at least 2 of: EMA10 confirming the turn, price not yet extended more than 10% past EMA50, and above-average volume. Mechanical screen only — always confirm with your own research.</p>
+    </div>
+
+    <div id="chartWorkspaceShell" class="bg-slate-950 rounded-2xl border border-slate-800 shadow-2xl relative overflow-hidden">
+
+        <!-- Operations Control Panel Strip Row (lives INSIDE the shell so it — and everything below — stays visible in fullscreen) -->
+        <div id="shellToolbar" class="bg-slate-900 px-3 py-2 flex items-center justify-between gap-2 border-b border-slate-800 flex-wrap">
+            <div class="flex items-center gap-2 flex-wrap">
+                <button onclick="changeCarouselItem(-1)" class="bg-slate-800 hover:bg-slate-700 text-white font-black text-xs px-3 py-1.5 rounded-lg border border-slate-700 transition" title="Previous (Left Arrow Key)">◀</button>
+                <span id="activeTickerBadgeMeta" class="text-[10px] bg-indigo-600 font-bold px-2.5 py-1.5 rounded text-white uppercase tracking-wider whitespace-nowrap">SYNC...</span>
+                <button onclick="changeCarouselItem(1)" class="bg-slate-800 hover:bg-slate-700 text-white font-black text-xs px-3 py-1.5 rounded-lg border border-slate-700 transition mr-2" title="Next (Right Arrow Key)">▶</button>
+
+                <div id="marketStateToggle" class="flex items-center bg-slate-950 border border-slate-800 rounded-lg overflow-hidden">
+                    <button data-m="US" onclick="updateMarketChannel('US')" class="m-btn text-[9px] font-black uppercase px-3 py-1.5 text-slate-400 hover:text-white transition">US</button>
+                    <button data-m="NSE" onclick="updateMarketChannel('NSE')" class="m-btn text-[9px] font-black uppercase px-3 py-1.5 text-slate-400 hover:text-white transition">NSE</button>
+                </div>
+
+                <input type="text" id="manualSearchInput" placeholder="Ticker..." value="{{ default_stock }}"
+                       class="manual-search-input bg-slate-950 text-white text-[12px] font-bold uppercase px-3 py-1.5 rounded-lg border border-slate-800 focus:outline-none focus:border-indigo-500 w-28 transition-all"
+                       onfocus="this.select()"
+                       onkeypress="if(event.key==='Enter') triggerDirectSymbolLoad(this.value)">
+
+                <div id="timeframeSelector" class="flex items-center bg-slate-950 border border-slate-800 rounded-lg overflow-hidden">
+                    <button data-r="3M" onclick="updateTimeframe('3M')" class="r-btn text-[9px] font-black uppercase px-2.5 py-1.5 text-slate-400 hover:text-white transition">3M</button>
+                    <button data-r="6M" onclick="updateTimeframe('6M')" class="r-btn text-[9px] font-black uppercase px-2.5 py-1.5 text-slate-400 hover:text-white transition">6M</button>
+                    <button data-r="1Y" onclick="updateTimeframe('1Y')" class="r-btn text-[9px] font-black uppercase px-2.5 py-1.5 text-slate-400 hover:text-white transition">1Y</button>
+                    <button data-r="2Y" onclick="updateTimeframe('2Y')" class="r-btn text-[9px] font-black uppercase px-2.5 py-1.5 text-slate-400 hover:text-white transition">2Y</button>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-2 flex-wrap">
+                <!-- Mechanical Strategy Scoring System Badge Tracker Block -->
+                <div id="strategyScoreBadge" class="text-[10px] font-black px-2.5 py-1.5 rounded border uppercase transition-colors duration-200 whitespace-nowrap">
+                    Score: —
+                </div>
+                <button id="pngExporterBtn" onclick="exportCarouselPNGSnapshot()" title="Download PNG Snapshot"
+                        class="bg-slate-800 hover:bg-slate-700 text-slate-200 font-black text-[9px] uppercase px-3 py-1.5 rounded-lg transition border border-slate-700 flex items-center gap-1 whitespace-nowrap">
+                    <span>📥 PNG</span>
+                </button>
+                <button id="shareLinkBtn" onclick="copyCarouselShareLink()" title="Copy shareable link"
+                        class="bg-slate-800 hover:bg-slate-700 text-slate-200 font-black text-[9px] uppercase px-3 py-1.5 rounded-lg transition border border-slate-700 flex items-center gap-1 whitespace-nowrap">
+                    <span>🔗 Share</span>
+                </button>
+                <button id="fullscreenToggleBtn" onclick="toggleFullscreenView()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 font-black text-[9px] uppercase px-3 py-1.5 rounded-lg transition border border-slate-700 whitespace-nowrap">
+                    <span id="fsBtnLabel">⛶ FULLSCREEN</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- OHLCV bar moved INSIDE the shell, directly under the toolbar, so it never
+             disappears when the shell is put into fullscreen (previously it lived
+             outside the fullscreened element and vanished entirely). -->
+        <div id="ohlcvBarMetrics" class="bg-slate-900/80 border-b border-slate-800 px-4 py-2 flex flex-wrap gap-5 text-[11px] font-bold uppercase tracking-tight text-slate-400">
+            <span>O <span id="openMetric" style="color:#e0e7ff;">—</span></span>
+            <span>H <span id="highMetric" class="text-emerald-400">—</span></span>
+            <span>L <span id="lowMetric" class="text-rose-400">—</span></span>
+            <span>C <span id="closeMetric" style="color:#e0e7ff;">—</span></span>
+            <span>Vol <span id="volMetric" class="text-indigo-400">—</span></span>
+            <span>RS %tile <span id="rsPctMetric" class="text-amber-400">—</span></span>
+        </div>
+
+        <!-- Render Target Viewports -->
+        <div class="pane-wrap relative bg-slate-950 overflow-hidden">
+            <div id="shadePaneA" class="absolute inset-0 pointer-events-none z-10"></div>
+            <div id="skeletonA" class="skeleton-grid"></div>
+            <div id="vPaneA" class="w-full relative" style="height:420px;"></div>
+            <div id="lPaneA" class="pane-legend"></div>
+        </div>
+        <div class="border-t border-slate-800"></div>
+        <div class="pane-wrap relative bg-slate-950 overflow-hidden">
+            <div id="shadePaneB" class="absolute inset-0 pointer-events-none z-10"></div>
+            <div id="skeletonB" class="skeleton-grid"></div>
+            <div id="vPaneB" class="w-full relative" style="height:240px;"></div>
+            <div id="lPaneB" class="pane-legend"></div>
+        </div>
+
+        <div id="carouselErrorBanner" class="hidden bg-red-950/80 border-t border-red-800/60 text-red-300 text-[12px] font-semibold px-4 py-2 flex items-center justify-between gap-3">
+            <span class="flex items-center gap-2"><span class="text-red-400">⚠</span><span id="carouselErrorText">Something went wrong.</span></span>
+            <button onclick="document.getElementById('carouselErrorBanner').classList.add('hidden')" class="text-red-400 hover:text-red-200 font-black px-2">✕</button>
+        </div>
+    </div>
+
+    <!-- Bull Case / Risk Flags Panel — mirrors the combined chart's signal panel so both pages score tickers the same way -->
+    <div id="signalPanel" class="hidden bg-gradient-to-b from-emerald-950/40 to-slate-900 border border-emerald-800/40 rounded-xl px-4 py-3">
+        <div class="flex items-center justify-between mb-2 flex-wrap gap-1">
+            <h4 class="text-[11px] font-black text-emerald-300 uppercase tracking-wider flex items-center gap-2">
+                ✅ Points Currently In The Bull Case
+            </h4>
+            <span id="signalScore" class="text-[10px] font-bold text-gray-400 uppercase"></span>
+        </div>
+        <ul id="signalList" class="space-y-1.5 text-[12px] text-gray-300 list-none"></ul>
+        <p id="signalEmpty" class="hidden text-[12px] text-gray-500 italic">No bullish conditions are currently confirmed — see the risk flags instead.</p>
+        <div id="riskBlock" class="hidden mt-3 pt-3 border-t border-gray-800/60">
+            <h4 class="text-[11px] font-black text-red-300 uppercase tracking-wider mb-2">⚠️ Points Against / Risk Flags</h4>
+            <ul id="riskList" class="space-y-1.5 text-[12px] text-gray-400 list-none"></ul>
+        </div>
+        <p class="mt-3 text-[10px] text-gray-500 italic">Generated automatically from price/trend/relative-strength/accumulation data on screen. This is a mechanical read of the indicators, not investment advice — always confirm with your own research.</p>
+    </div>
+
+    <!-- Legend Footer Blocks Panel -->
+    <div class="flex flex-wrap gap-x-5 gap-y-1.5 text-[10px] font-black uppercase text-gray-400 px-1 pt-1 border-t border-gray-900">
+        <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-[#FACC15] rounded inline-block"></span>EMA 10</span>
+        <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-[#F97316] rounded inline-block"></span>EMA 20</span>
+        <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-[#ec4899] rounded inline-block"></span>EMA 50</span>
+        <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-[#22D3EE] rounded inline-block"></span>EMA 100</span>
+        <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-[#a3a3a3] rounded inline-block"></span>EMA 200</span>
+        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 bg-[#64748b] rounded-sm inline-block"></span>Volume (Bottom Strip)</span>
+        <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-[#39c973] rounded inline-block"></span>RS Ratio (Right Scale)</span>
+        <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-[#f59e0b] rounded inline-block"></span>RS SMA 50</span>
+        <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-[#c084fc] rounded inline-block"></span>RS 21 EMA</span>
+        <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-[#94a3b8] rounded inline-block"></span>Benchmark Index (Left Scale)</span>
+        <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-[#06b6d4] rounded inline-block"></span>Accumulation / Distribution (Bottom Strip)</span>
+        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 bg-[#3B82F6]/15 rounded-sm inline-block border border-[#3B82F6]/40"></span>Shading: True Alpha</span>
+        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 bg-[#B91C1C]/15 rounded-sm inline-block border border-[#B91C1C]/40"></span>Shading: Flushing</span>
+    </div>
+</div>
+
+<style>
+    .pane-wrap { overflow: hidden; }
+    .pane-legend {
+        position: absolute; top: 6px; left: 10px; z-index: 10;
+        display: flex; flex-wrap: wrap; gap: 8px;
+        font-size: 10px; font-weight: 800; text-transform: uppercase;
+        letter-spacing: 0.02em; pointer-events: none;
+        text-shadow: 0 1px 2px rgba(0,0,0,0.9);
+    }
+    .b-sh { position: absolute; top: 0; bottom: 0; }
+    .m-btn.active, .r-btn.active { background: #4F46E5; color: #fff; }
+
+    /* Same fix as the combined chart: autofill forces a light background +
+       unreadable text on the ticker input unless painted over explicitly. */
+    .manual-search-input:-webkit-autofill,
+    .manual-search-input:-webkit-autofill:hover,
+    .manual-search-input:-webkit-autofill:focus,
+    .manual-search-input:-webkit-autofill:active {
+        -webkit-box-shadow: 0 0 0 1000px #020617 inset;
+        box-shadow: 0 0 0 1000px #020617 inset;
+        -webkit-text-fill-color: #ffffff;
+        caret-color: #ffffff;
+    }
+
+    /* Loading skeleton replaces the old full-shell blackout spinner — it only
+       covers each chart pane, so the toolbar/buttons above stay usable while
+       new data streams in instead of being hidden behind an overlay. */
+    .skeleton-grid {
+        position: absolute; inset: 0; z-index: 1;
+        background-image:
+            repeating-linear-gradient(to right, #111827 0, #111827 1px, transparent 1px, transparent 60px),
+            repeating-linear-gradient(to bottom, #111827 0, #111827 1px, transparent 1px, transparent 40px);
+        background-color: #020617;
+        overflow: hidden;
+    }
+    .skeleton-grid::after {
+        content: ''; position: absolute; inset: 0;
+        background: linear-gradient(100deg, transparent 30%, rgba(255,255,255,0.05) 50%, transparent 70%);
+        background-size: 200% 100%;
+        animation: skeleton-shimmer 1.6s ease-in-out infinite;
+    }
+    .skeleton-grid.hidden { display: none; }
+    @keyframes skeleton-shimmer {
+        0%   { background-position: 200% 0; }
+        100% { background-position: -200% 0; }
+    }
+
+    /* Fullscreen: the shell fills the viewport and panes are resized in JS,
+       but this guarantees the shell itself and its scroll behavior cooperate. */
+    #chartWorkspaceShell:fullscreen { display: flex; flex-direction: column; }
+    #chartWorkspaceShell:-webkit-full-screen { display: flex; flex-direction: column; }
+
+    /* ================================================================
+       FULLSCREEN HARDENING
+       In fullscreen, the toolbar's <button>/<input>/<select> elements
+       were rendering with a blank white background and invisible
+       white-on-white text (plain <div> badges were unaffected) — almost
+       certainly some global page style resetting native form-control
+       backgrounds once an element enters the Fullscreen API's top-layer.
+       Rather than depend on identifying that exact rule, every toolbar
+       control's colors are re-asserted here with !important, scoped to
+       BOTH the native :fullscreen pseudo-class and a JS-toggled
+       ".cw-fs-active" fallback class, so this holds regardless of which
+       mechanism actually cascades in this environment. -->
+    #chartWorkspaceShell.cw-fs-active,
+    #chartWorkspaceShell:fullscreen,
+    #chartWorkspaceShell:-webkit-full-screen {
+        background-color: #020617 !important;
+    }
+    #chartWorkspaceShell.cw-fs-active #shellToolbar,
+    #chartWorkspaceShell:fullscreen #shellToolbar,
+    #chartWorkspaceShell:-webkit-full-screen #shellToolbar,
+    #chartWorkspaceShell.cw-fs-active #ohlcvBarMetrics,
+    #chartWorkspaceShell:fullscreen #ohlcvBarMetrics,
+    #chartWorkspaceShell:-webkit-full-screen #ohlcvBarMetrics {
+        background-color: #0f172a !important;
+    }
+    #chartWorkspaceShell.cw-fs-active #shellToolbar button,
+    #chartWorkspaceShell:fullscreen #shellToolbar button,
+    #chartWorkspaceShell:-webkit-full-screen #shellToolbar button,
+    #chartWorkspaceShell.cw-fs-active #shellToolbar input,
+    #chartWorkspaceShell:fullscreen #shellToolbar input,
+    #chartWorkspaceShell:-webkit-full-screen #shellToolbar input,
+    #chartWorkspaceShell.cw-fs-active #shellToolbar select,
+    #chartWorkspaceShell:fullscreen #shellToolbar select,
+    #chartWorkspaceShell:-webkit-full-screen #shellToolbar select {
+        appearance: none !important;
+        -webkit-appearance: none !important;
+        background-color: #1e293b !important;
+        color: #e2e8f0 !important;
+        border-color: #334155 !important;
+    }
+    #chartWorkspaceShell.cw-fs-active #shellToolbar .m-btn.active,
+    #chartWorkspaceShell:fullscreen #shellToolbar .m-btn.active,
+    #chartWorkspaceShell:-webkit-full-screen #shellToolbar .m-btn.active,
+    #chartWorkspaceShell.cw-fs-active #shellToolbar .r-btn.active,
+    #chartWorkspaceShell:fullscreen #shellToolbar .r-btn.active,
+    #chartWorkspaceShell:-webkit-full-screen #shellToolbar .r-btn.active {
+        background-color: #4f46e5 !important;
+        color: #ffffff !important;
+    }
+    #chartWorkspaceShell.cw-fs-active #shellToolbar #activeTickerBadgeMeta,
+    #chartWorkspaceShell:fullscreen #shellToolbar #activeTickerBadgeMeta,
+    #chartWorkspaceShell:-webkit-full-screen #shellToolbar #activeTickerBadgeMeta {
+        background-color: #4338ca !important;
+        color: #ffffff !important;
+    }
+    #chartWorkspaceShell.cw-fs-active #shellToolbar #manualSearchInput,
+    #chartWorkspaceShell:fullscreen #shellToolbar #manualSearchInput,
+    #chartWorkspaceShell:-webkit-full-screen #shellToolbar #manualSearchInput {
+        background-color: #020617 !important;
+        color: #ffffff !important;
+    }
+    /* strategyScoreBadge cycles between 3 states in JS; score-good/mid/bad
+       marker classes (added alongside the existing Tailwind classes) give
+       this block something stable to hook into regardless of state. */
+    #chartWorkspaceShell.cw-fs-active #strategyScoreBadge.score-good,
+    #chartWorkspaceShell:fullscreen #strategyScoreBadge.score-good,
+    #chartWorkspaceShell:-webkit-full-screen #strategyScoreBadge.score-good {
+        background-color: rgba(16,185,129,0.15) !important; color:#34d399 !important; border-color: rgba(16,185,129,0.4) !important;
+    }
+    #chartWorkspaceShell.cw-fs-active #strategyScoreBadge.score-bad,
+    #chartWorkspaceShell:fullscreen #strategyScoreBadge.score-bad,
+    #chartWorkspaceShell:-webkit-full-screen #strategyScoreBadge.score-bad {
+        background-color: rgba(244,63,94,0.15) !important; color:#fb7185 !important; border-color: rgba(244,63,94,0.4) !important;
+    }
+    #chartWorkspaceShell.cw-fs-active #strategyScoreBadge.score-mid,
+    #chartWorkspaceShell:fullscreen #strategyScoreBadge.score-mid,
+    #chartWorkspaceShell:-webkit-full-screen #strategyScoreBadge.score-mid {
+        background-color: rgba(245,158,11,0.15) !important; color:#fbbf24 !important; border-color: rgba(245,158,11,0.4) !important;
+    }
+    #chartWorkspaceShell.cw-fs-active #shellToolbar #pngExporterBtn,
+    #chartWorkspaceShell:fullscreen #shellToolbar #pngExporterBtn,
+    #chartWorkspaceShell:-webkit-full-screen #shellToolbar #pngExporterBtn,
+    #chartWorkspaceShell.cw-fs-active #shellToolbar #shareLinkBtn,
+    #chartWorkspaceShell:fullscreen #shellToolbar #shareLinkBtn,
+    #chartWorkspaceShell:-webkit-full-screen #shellToolbar #shareLinkBtn,
+    #chartWorkspaceShell.cw-fs-active #shellToolbar #fullscreenToggleBtn,
+    #chartWorkspaceShell:fullscreen #shellToolbar #fullscreenToggleBtn,
+    #chartWorkspaceShell:-webkit-full-screen #shellToolbar #fullscreenToggleBtn {
+        background-color: #1e293b !important;
+        color: #e2e8f0 !important;
+        border-color: #334155 !important;
+    }
+    #chartWorkspaceShell.cw-fs-active #ohlcvBarMetrics span,
+    #chartWorkspaceShell:fullscreen #ohlcvBarMetrics span,
+    #chartWorkspaceShell:-webkit-full-screen #ohlcvBarMetrics span {
+        color: #94a3b8;
+    }
+</style>
+
+<!-- Pinned to an exact version, not @latest: unpkg's unversioned URL has previously
+     served v5 (which removes addCandlestickSeries/addLineSeries entirely) during
+     outages/redirects. v4.2.3 keeps the v3-style add*Series() API working while
+     adding setCrosshairPosition and price-scale minimumWidth, both used below.
+     This matches the combined chart's pinned version so both pages behave identically. -->
+<script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
+<script>
+let cA = null, cB = null, sCandle, sEma10, sEma20, sEma50, sEma100, sEma200, sRs, sRsSma, sRsEma21, sBench, sAccVolumeOverlay, sVolume;
+let lookupMap = {}, activePayload = null;
+let cSym = '{{ default_stock }}', cMkt = '{{ default_market }}', cRng = '1Y';
+let tickerCollection = [], fullTickerCollection = [], carouselPointer = -1;
+let currentScreener = '';
+let earlyRisersModeActive = false;
+let customListActive = false;
+
+const SW = 70;
+const BASE_CFG = {
+    layout: { background: { type: 'solid', color: 'transparent' }, textColor: '#9ca3af', fontFamily: 'Inter, sans-serif', fontSize: 11 },
+    grid: { vertLines: { color: '#1e293b' }, horzLines: { color: '#1e293b' } },
+    crosshair: { mode: 0, vertLine: { color: '#64748b' }, horzLine: { color: '#64748b' } },
+    rightPriceScale: { borderColor: '#334155', minimumWidth: SW },
+    leftPriceScale: { borderColor: '#334155', visible: true, minimumWidth: SW },
+    timeScale: { borderColor: '#334155', timeVisible: true }
+};
+
+const STRATEGY_DROPDOWN_MAP = {
+    "NSE": [
+        { value: "HH_HL_Screener", label: "Structural HH-HL Trend Screener" },
+        { value: "Adaptive_RS", label: "Volar Adaptive Alpha RS" },
+        { value: "RS_ROC_Momentum", label: "Cross-Sectional RS-ROC Momentum" },
+        { value: "Gap_Volume", label: "Breakout Gap & Volume Scanner" }
+    ],
+    "US": [
+        { value: "Stage2_Screener", label: "Minervini Stage 2 Base Screener" },
+        { value: "Adaptive_RS", label: "Volar Adaptive Alpha RS" },
+        { value: "Gap_Volume", label: "Breakout Gap & Volume Scanner" }
+    ]
+};
+
+function populateScreenerDropdownOptions(market, autoSelectValue = null) {
+    const selector = document.getElementById('screenerStrategyDropdown');
+    selector.innerHTML = '';
+
+    const optionSet = STRATEGY_DROPDOWN_MAP[market] || [];
+    optionSet.forEach(opt => {
+        const node = document.createElement('option');
+        node.value = opt.value;
+        node.innerText = opt.label;
+        selector.appendChild(node);
+    });
+
+    if(autoSelectValue) {
+        selector.value = autoSelectValue;
+    }
+    currentScreener = selector.value;
+}
+
+// FIX: previously this passed the *current* search box value through as the
+// symbol to focus on, so switching screeners only jumped to the first ticker
+// when the old symbol happened not to exist in the new list. Now a screener
+// change always resets to the new list's first ticker, as requested.
+function onScreenerStrategyChanged(screenerKey) {
+    exitEarlyRisersMode(false);
+    clearCustomListSilently();
+    fetchCarouselTickers(cMkt, null, screenerKey);
+}
+
+function fetchCarouselTickers(market, focusSymbol = null, activeScreener = null) {
+    populateScreenerDropdownOptions(market, activeScreener);
+    const selectedScreener = activeScreener || document.getElementById('screenerStrategyDropdown').value || "";
+    currentScreener = selectedScreener;
+
+    fetch(`/api/v1/carousel-ticker-payload?market=${market}&screener=${selectedScreener}`)
+        .then(r => r.json())
+        .then(d => {
+            if(d.status === "success" && d.tickers.length > 0) {
+                tickerCollection = d.tickers;
+                fullTickerCollection = d.tickers;
+                carouselPointer = focusSymbol ? tickerCollection.indexOf(focusSymbol.toUpperCase()) : 0;
+                if(carouselPointer === -1) carouselPointer = 0;
+                updateIndexUI();
+                executeTelemetryLoad(tickerCollection[carouselPointer], cRng, cMkt, false);
+            } else {
+                tickerCollection = []; fullTickerCollection = []; carouselPointer = -1;
+                document.getElementById('carouselIndexDisplay').innerText = "[ 0 / 0 ]";
+                // If cache empty fallback cleanly onto searching manually
+                if(focusSymbol) executeTelemetryLoad(focusSymbol, cRng, cMkt, false);
+            }
+        });
+}
+
+function updateIndexUI() {
+    if(carouselPointer !== -1) {
+        document.getElementById('carouselIndexDisplay').innerText = `[ ${carouselPointer + 1} / ${tickerCollection.length} ]`;
+    } else {
+        document.getElementById('carouselIndexDisplay').innerText = "[ 0 / 0 ]";
+    }
+}
+
+function changeCarouselItem(step) {
+    if(tickerCollection.length === 0) return;
+    carouselPointer += step;
+    if(carouselPointer >= tickerCollection.length) carouselPointer = 0;
+    if(carouselPointer < 0) carouselPointer = tickerCollection.length - 1;
+
+    const ticker = tickerCollection[carouselPointer];
+    document.getElementById('manualSearchInput').value = ticker;
+    updateIndexUI();
+    executeTelemetryLoad(ticker, cRng, cMkt, false);
+}
+
+function triggerDirectSymbolLoad(val) {
+    if(!val) return;
+    executeTelemetryLoad(val, cRng, cMkt, true);
+}
+
+function updateMarketChannel(m) {
+    cMkt = m;
+    exitEarlyRisersMode(false);
+    clearCustomListSilently();
+    document.querySelectorAll('.m-btn').forEach(b => b.classList.toggle('active', b.dataset.m === m));
+    const val = m === 'NSE' ? 'PRAJIND' : 'NVDA';
+    document.getElementById('manualSearchInput').value = val;
+    fetchCarouselTickers(m, null);
+}
+
+function updateTimeframe(r) {
+    cRng = r;
+    document.querySelectorAll('.r-btn').forEach(b => b.classList.toggle('active', b.dataset.r === r));
+    executeTelemetryLoad(cSym, r, cMkt, false);
+}
+
+/* ---------------- Fullscreen ----------------
+   Fix: buttons/controls previously lived correctly inside the shell, but
+   nothing resized the chart panes or the underlying chart canvases when the
+   shell's on-screen size changed — so entering fullscreen just stretched an
+   unchanged-size canvas inside a bigger box, leaving blank space and making
+   parts of the layout look broken/clipped. A ResizeObserver now keeps both
+   chart instances' pixel dimensions in sync with their containers at all
+   times, and the fullscreen handler explicitly re-splits the available
+   vertical space between the two panes (62/38), matching the combined chart. */
+function toggleFullscreenView() {
+    const el = document.getElementById('chartWorkspaceShell');
+    if (!document.fullscreenElement) {
+        (el.requestFullscreen || el.webkitRequestFullscreen || function(){}).call(el);
+    } else {
+        (document.exitFullscreen || document.webkitExitFullscreen || function(){}).call(document);
+    }
+}
+
+document.addEventListener('fullscreenchange', handleFullscreenChange);
+document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+
+function handleFullscreenChange() {
+    const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+    const shell = document.getElementById('chartWorkspaceShell');
+    shell.classList.toggle('cw-fs-active', isFs);
+    document.getElementById('fsBtnLabel').innerText = isFs ? '⛶ EXIT FULLSCREEN' : '⛶ FULLSCREEN';
+    shell.style.height = isFs ? '100vh' : '';
+
+    if (isFs) {
+        const toolbarH = document.getElementById('shellToolbar').offsetHeight;
+        const ohlcvH = document.getElementById('ohlcvBarMetrics').offsetHeight;
+        const avail = window.innerHeight - toolbarH - ohlcvH;
+        document.getElementById('vPaneA').style.height = Math.round(avail * 0.62) + 'px';
+        document.getElementById('vPaneB').style.height = Math.round(avail * 0.38) + 'px';
+    } else {
+        document.getElementById('vPaneA').style.height = '420px';
+        document.getElementById('vPaneB').style.height = '240px';
+    }
+
+    // Give layout a tick to settle, then force both charts to resize to their
+    // (possibly changed) container size and redraw shading at the new scale.
+    setTimeout(() => {
+        const pA = document.getElementById('vPaneA'), pB = document.getElementById('vPaneB');
+        if (cA && pA.clientWidth > 0) cA.resize(pA.clientWidth, pA.clientHeight);
+        if (cB && pB.clientWidth > 0) cB.resize(pB.clientWidth, pB.clientHeight);
+        drawShading('A'); drawShading('B');
+    }, 60);
+}
+
+function drawShading(paneKey) {
+    const isA = paneKey === 'A';
+    const host = document.getElementById(isA ? 'shadePaneA' : 'shadePaneB');
+    const chart = isA ? cA : cB;
+    if(!chart || !activePayload) { host.innerHTML = ''; return; }
+
+    const hist = activePayload.series.div_hist;
+    const ts = chart.timeScale();
+    const w = document.getElementById(isA ? 'vPaneA' : 'vPaneB').clientWidth;
+
+    host.innerHTML = hist.map((row, i) => {
+        if(row.value === 0) return '';
+        const x = ts.timeToCoordinate(row.time);
+        if(x === null || x < 0 || x > w) return '';
+        return `<div class="b-sh" style="left:${x-2}px; width:4px; background:${row.color};"></div>`;
+    }).join('');
+}
+
+function evaluateMechanicalStrategyScoring(series, n) {
+    let satisfiedPoints = 0;
+    let totalPointsEvaluated = 5;
+
+    const lastCandle = series.candles[n - 1];
+    const closePrice = lastCandle.close;
+
+    const e50 = series.ema50[n - 1].value;
+    const e200 = series.ema200[n - 1].value;
+    const rsNow = series.rs_ratio[n - 1].value;
+    const rsSma = series.rs_sma50[n - 1].value;
+    const divState = series.div_hist[n - 1].value;
+    const accNow = series.acc_line[n - 1].value;
+    const accAgo = series.acc_line[Math.max(0, n - 20)].value;
+
+    if (series.ema10[n-1].value > series.ema20[n-1].value && series.ema20[n-1].value > e50) satisfiedPoints++;
+    if (closePrice > e200) satisfiedPoints++;
+    if (closePrice > e50) satisfiedPoints++;
+    if (rsNow > rsSma) satisfiedPoints++;
+    if (divState > 0 || accNow > accAgo) satisfiedPoints++;
+
+    const scoringRatio = (satisfiedPoints / totalPointsEvaluated) * 100;
+    const badge = document.getElementById('strategyScoreBadge');
+    badge.innerText = `SCORE: ${scoringRatio.toFixed(0)}% (${satisfiedPoints}/${totalPointsEvaluated})`;
+
+    if(scoringRatio >= 60.0) {
+        badge.className = "text-[10px] font-black px-2.5 py-1.5 rounded border border-emerald-500/40 bg-emerald-500/10 text-emerald-400 uppercase tracking-wider whitespace-nowrap score-good";
+    } else if(scoringRatio < 50.0) {
+        badge.className = "text-[10px] font-black px-2.5 py-1.5 rounded border border-rose-500/40 bg-rose-500/10 text-rose-400 uppercase tracking-wider whitespace-nowrap score-bad";
+    } else {
+        badge.className = "text-[10px] font-black px-2.5 py-1.5 rounded border border-amber-500/40 bg-amber-500/10 text-amber-400 uppercase tracking-wider whitespace-nowrap score-mid";
+    }
+}
+
+/**
+ * Bull-case / risk-flags panel — ported directly from the combined chart's
+ * buildSignalPanel() so both pages agree on the same criteria and wording.
+ * Every line here traces to a value already present in the fetched series;
+ * nothing is invented.
+ */
+function buildSignalPanel(data) {
+    const s = data.series;
+    const n = s.candles.length;
+    if (n < 2) { document.getElementById('signalPanel').classList.add('hidden'); return; }
+
+    const last = s.candles[n - 1];
+    const close = last.close;
+    const pct = data.rs_percentile;
+
+    const ema = {
+        10:  s.ema10[n - 1].value,
+        20:  s.ema20[n - 1].value,
+        50:  s.ema50[n - 1].value,
+        100: s.ema100[n - 1].value,
+        200: s.ema200[n - 1].value
+    };
+
+    const rsNow   = s.rs_ratio[n - 1].value;
+    const rsSma50 = s.rs_sma50[n - 1].value;
+    const divNow  = s.div_hist[n - 1].value;
+    const accNow  = s.acc_line[n - 1].value;
+
+    const last20 = s.candles.slice(Math.max(0, n - 20));
+    const avgVol20 = last20.reduce((a, c) => a + c.volume, 0) / last20.length;
+
+    const idx1m = n - 21, idx3m = n - 63;
+    const rsAgo1m = idx1m >= 0 ? s.rs_ratio[idx1m].value : null;
+    const rsAgo3m = idx3m >= 0 ? s.rs_ratio[idx3m].value : null;
+    const accAgo1m = idx1m >= 0 ? s.acc_line[idx1m].value : null;
+
+    const ccySymbol = data.market === 'NSE' ? '₹' : '$';
+    const pros = [];
+    const risks = [];
+
+    if (ema[10] > ema[20] && ema[20] > ema[50] && ema[50] > ema[100] && ema[100] > ema[200]) {
+        pros.push(`Full bullish EMA stack — 10 &gt; 20 &gt; 50 &gt; 100 &gt; 200, a clean uptrend structure.`);
+    } else if (ema[10] < ema[20] && ema[20] < ema[50]) {
+        risks.push(`Short-term EMAs (10/20/50) are stacked downward — near-term trend is weak.`);
+    }
+
+    if (close > ema[200]) {
+        pros.push(`Price (${ccySymbol}${close.toFixed(2)}) is above the 200-day EMA (${ccySymbol}${ema[200].toFixed(2)}) — long-term uptrend intact.`);
+    } else {
+        risks.push(`Price (${ccySymbol}${close.toFixed(2)}) is below the 200-day EMA (${ccySymbol}${ema[200].toFixed(2)}) — long-term trend is unfavorable.`);
+    }
+
+    if (close > ema[50]) {
+        pros.push(`Price is holding above the 50-day EMA (${ccySymbol}${ema[50].toFixed(2)}), the standard intermediate-trend line.`);
+    } else {
+        risks.push(`Price has slipped below the 50-day EMA (${ccySymbol}${ema[50].toFixed(2)}).`);
+    }
+
+    if (pct >= 80) {
+        pros.push(`RS percentile is ${pct} — stronger than ~${pct}% of the comparison universe, a leadership reading.`);
+    } else if (pct <= 30) {
+        risks.push(`RS percentile is only ${pct} — lagging most of the comparison universe.`);
+    }
+
+    if (rsNow > rsSma50) {
+        pros.push(`RS ratio is above its 50-day SMA — outperformance vs the benchmark is the established trend, not a blip.`);
+    } else {
+        risks.push(`RS ratio is below its 50-day SMA — the stock has been underperforming the benchmark on a sustained basis.`);
+    }
+
+    if (rsAgo1m !== null && rsAgo3m !== null) {
+        if (rsNow > rsAgo1m && rsNow > rsAgo3m) {
+            pros.push(`RS ratio is higher than it was both 1 month and 3 months ago — relative strength is improving, not fading.`);
+        } else if (rsNow < rsAgo1m && rsNow < rsAgo3m) {
+            risks.push(`RS ratio is lower than 1 month and 3 months ago — relative strength has been deteriorating.`);
+        }
+    }
+
+    if (divNow === 2) {
+        pros.push(`Today's divergence phase is "True Alpha" — RS rising while the benchmark falls, the strongest available signal in this model.`);
+    } else if (divNow === 1) {
+        pros.push(`Today's divergence phase is "Outperformance" — both the stock and benchmark are rising, with the stock moving faster.`);
+    } else if (divNow === -2) {
+        risks.push(`Today's divergence phase is "Flushing" — both RS and the benchmark are falling together.`);
+    } else if (divNow === -1) {
+        risks.push(`Today's divergence phase shows relative weakness — RS is falling while the benchmark rises.`);
+    }
+
+    if (accAgo1m !== null) {
+        if (accNow > accAgo1m) {
+            pros.push(`Accumulation/Distribution line is higher than 1 month ago — net buying pressure has been building.`);
+        } else {
+            risks.push(`Accumulation/Distribution line is lower than 1 month ago — net selling pressure has been building.`);
+        }
+    }
+
+    if (last.volume > avgVol20 * 1.5 && close >= last.open) {
+        pros.push(`Latest session's volume (${(last.volume/1e6).toFixed(2)}M) ran well above its 20-day average on an up day — signs of real buying interest.`);
+    } else if (last.volume > avgVol20 * 1.5 && close < last.open) {
+        risks.push(`Latest session's volume (${(last.volume/1e6).toFixed(2)}M) spiked above average on a down day — possible distribution.`);
+    }
+
+    const list = document.getElementById('signalList');
+    const riskList = document.getElementById('riskList');
+    list.innerHTML = '';
+    riskList.innerHTML = '';
+
+    if (pros.length) {
+        document.getElementById('signalEmpty').classList.add('hidden');
+        pros.forEach(p => {
+            const li = document.createElement('li');
+            li.className = 'flex items-start gap-2';
+            li.innerHTML = `<span class="text-emerald-400 mt-0.5">●</span><span>${p}</span>`;
+            list.appendChild(li);
+        });
+    } else {
+        document.getElementById('signalEmpty').classList.remove('hidden');
+    }
+
+    if (risks.length) {
+        document.getElementById('riskBlock').classList.remove('hidden');
+        risks.forEach(r => {
+            const li = document.createElement('li');
+            li.className = 'flex items-start gap-2';
+            li.innerHTML = `<span class="text-red-400 mt-0.5">●</span><span>${r}</span>`;
+            riskList.appendChild(li);
+        });
+    } else {
+        document.getElementById('riskBlock').classList.add('hidden');
+    }
+
+    document.getElementById('signalScore').innerText = `${pros.length} favorable · ${risks.length} risk flag${risks.length === 1 ? '' : 's'}`;
+    document.getElementById('signalPanel').classList.remove('hidden');
+}
+
+function exportCarouselPNGSnapshot() {
+    if (!cA || !cB) return;
+    try {
+        const screenshotA = cA.takeScreenshot();
+        const screenshotB = cB.takeScreenshot();
+
+        const outputCanvas = document.createElement('canvas');
+        outputCanvas.width = Math.max(screenshotA.width, screenshotB.width);
+        outputCanvas.height = screenshotA.height + screenshotB.height;
+
+        const ctx = outputCanvas.getContext('2d');
+        ctx.fillStyle = '#020617';
+        ctx.fillRect(0, 0, outputCanvas.width, outputCanvas.height);
+
+        ctx.drawImage(screenshotA, 0, 0);
+        ctx.drawImage(screenshotB, 0, screenshotA.height);
+
+        const anchor = document.createElement('a');
+        anchor.download = `Carousel_Snapshot_${cMkt}_${cSym}_${cRng}.png`;
+        anchor.href = outputCanvas.toDataURL('image/png');
+        anchor.click();
+    } catch (err) {
+        console.error("Failed to compile canvas print payload stream: ", err);
+    }
+}
+
+function copyCarouselShareLink() {
+    const url = new URL(window.location.href);
+    url.searchParams.set('symbol', cSym);
+    url.searchParams.set('market', cMkt);
+    url.searchParams.set('range', cRng);
+    const shareUrl = url.toString();
+
+    const flashCopied = () => {
+        const btn = document.getElementById('shareLinkBtn');
+        const span = btn.querySelector('span');
+        const original = span.innerText;
+        span.innerText = '✅ Copied!';
+        setTimeout(() => { span.innerText = original; }, 1500);
+    };
+    const fallbackCopy = () => {
+        const ta = document.createElement('textarea');
+        ta.value = shareUrl;
+        ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        try { document.execCommand('copy'); } catch (e) {}
+        document.body.removeChild(ta);
+    };
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(shareUrl).then(flashCopied).catch(() => { fallbackCopy(); flashCopied(); });
+    } else {
+        fallbackCopy(); flashCopied();
+    }
+}
+
+/* ---------------- Early risers scanner ---------------- */
+
+function toggleEarlyRisersScan() {
+    if (customListActive) {
+        showCarouselError("The early-riser scan works against a screener list — clear the uploaded custom list first.");
+        return;
+    }
+    if (earlyRisersModeActive) {
+        exitEarlyRisersMode(true);
+        return;
+    }
+    runEarlyRisersScan();
+}
+
+/* ---------------- Custom symbol-list upload (CSV / Excel) ----------------
+   Lets the user browse an arbitrary file of tickers with the same ◀ ▶
+   controls used for screener lists. Requires a "Symbol" column (checked
+   server-side, case-insensitive). Fully additive — leaves the default
+   screener-driven flow untouched when no file has been uploaded. */
+
+function handleSymbolFileUpload(file) {
+    if (!file) return;
+    exitEarlyRisersMode(false);
+
+    const label = document.getElementById('uploadSymbolsLabel');
+    const originalLabel = label.innerText;
+    label.innerText = 'Uploading...';
+
+    const formData = new FormData();
+    formData.append('file', file);
+    const csrfField = document.getElementById('csrfTokenValue');
+    if (csrfField && csrfField.value) formData.append('csrf_token', csrfField.value);
+
+    fetch('/api/v1/carousel-upload-symbols', {
+        method: 'POST',
+        headers: buildCsrfHeaders(),
+        body: formData
+    })
+        .then(r => r.text().then(bodyText => ({ ok: r.ok, status: r.status, bodyText })))
+        .then(({ ok, status, bodyText }) => {
+            label.innerText = originalLabel;
+
+            let d;
+            try {
+                d = JSON.parse(bodyText);
+            } catch (parseErr) {
+                // Server sent back something that isn't JSON at all — almost
+                // always an HTML error page (404 = route not live on this
+                // server yet / needs a restart with the updated backend;
+                // 400/403 = a CSRF or auth check rejecting the request
+                // before it reaches our handler). Surface the real status
+                // and a snippet instead of a bare "not valid JSON" crash.
+                const snippet = bodyText.replace(/\s+/g, ' ').trim().slice(0, 140);
+                showCarouselError(
+                    `Upload endpoint returned HTTP ${status} instead of JSON — the server likely needs restarting with the updated backend, or something (e.g. CSRF/auth) is blocking the request before it reaches the route. Response started with: "${snippet}"`
+                );
+                return;
+            }
+
+            if (!ok || d.status !== 'success') {
+                showCarouselError(d.message || `Upload failed (HTTP ${status}).`);
+                return;
+            }
+
+            tickerCollection = d.tickers;
+            fullTickerCollection = d.tickers;
+            customListActive = true;
+            carouselPointer = 0;
+            updateIndexUI();
+
+            const badge = document.getElementById('customListBadge');
+            badge.classList.remove('hidden');
+            badge.classList.add('flex');
+            document.getElementById('customListName').innerText = `${d.filename} (${d.count})`;
+
+            executeTelemetryLoad(tickerCollection[0], cRng, cMkt, false);
+        })
+        .catch(err => {
+            label.innerText = originalLabel;
+            showCarouselError('Upload failed: ' + err.message);
+        })
+        .finally(() => { document.getElementById('symbolFileUpload').value = ''; });
+}
+
+// Best-effort CSRF token pickup so this still works on apps that enforce
+// CSRF protection on POST requests (a very common reason a POST silently
+// comes back as an HTML error page instead of JSON). Looks for the usual
+// Flask-WTF / Django-style conventions; if none are found, no header is
+// added and behavior is unchanged from before.
+function buildCsrfHeaders() {
+    const headers = {};
+    let token = null;
+
+    const explicitField = document.getElementById('csrfTokenValue');
+    if (explicitField && explicitField.value) token = explicitField.value;
+
+    if (!token) {
+        const meta = document.querySelector('meta[name="csrf-token"]') || document.querySelector('meta[name="csrf_token"]');
+        if (meta) token = meta.getAttribute('content');
+    }
+    if (!token) {
+        const hidden = document.querySelector('input[name="csrf_token"]');
+        if (hidden) token = hidden.value;
+    }
+    if (!token) {
+        const match = document.cookie.match(/(?:^|;\s*)(csrf_token|XSRF-TOKEN|csrftoken)=([^;]+)/);
+        if (match) token = decodeURIComponent(match[2]);
+    }
+    if (token) {
+        headers['X-CSRFToken'] = token;
+        headers['X-CSRF-Token'] = token;
+    }
+    return headers;
+}
+
+function clearCustomSymbolList() {
+    if (!customListActive) return;
+    clearCustomListSilently();
+    // Re-fetch the currently selected screener's list, same as a fresh load.
+    fetchCarouselTickers(cMkt, null, currentScreener);
+}
+
+// Resets custom-list UI/state without triggering a re-fetch itself — used
+// when something else (screener change, market change) is about to load
+// its own list right after, so we don't fetch twice.
+function clearCustomListSilently() {
+    if (!customListActive) return;
+    customListActive = false;
+    const badge = document.getElementById('customListBadge');
+    badge.classList.add('hidden');
+    badge.classList.remove('flex');
+}
+
+function runEarlyRisersScan() {
+    const btn = document.getElementById('earlyRisersBtn');
+    const label = document.getElementById('earlyRisersLabel');
+    label.innerText = 'Scanning...';
+    btn.disabled = true;
+
+    fetch(`/api/v1/carousel-early-risers?market=${cMkt}&screener=${currentScreener}`)
+        .then(r => r.json())
+        .then(d => {
+            btn.disabled = false;
+            if (d.status !== 'success') {
+                label.innerText = 'Scan Early Risers';
+                showCarouselError(d.message || 'Early-riser scan failed.');
+                return;
+            }
+            renderEarlyRisersResults(d);
+        })
+        .catch(err => {
+            btn.disabled = false;
+            label.innerText = 'Scan Early Risers';
+            showCarouselError('Early-riser scan failed: ' + err.message);
+        });
+}
+
+function renderEarlyRisersResults(d) {
+    const panel = document.getElementById('earlyRisersPanel');
+    const list = document.getElementById('earlyRisersList');
+    const summary = document.getElementById('earlyRisersSummary');
+    const label = document.getElementById('earlyRisersLabel');
+    const btn = document.getElementById('earlyRisersBtn');
+
+    list.innerHTML = '';
+    summary.innerText = `${d.count} of ${d.scanned} scanned`;
+    panel.classList.remove('hidden');
+
+    if (d.count === 0) {
+        list.innerHTML = '<span class="text-[11px] text-gray-500 italic">No fresh EMA20 crosses found in the current list right now.</span>';
+        label.innerText = 'Scan Early Risers';
+        earlyRisersModeActive = false;
+        btn.classList.remove('bg-amber-600/40');
+        return;
+    }
+
+    d.risers.forEach(r => {
+        const chip = document.createElement('button');
+        chip.className = 'bg-slate-900 hover:bg-slate-800 border border-amber-700/40 text-amber-200 text-[11px] font-bold px-2.5 py-1.5 rounded-lg transition flex items-center gap-1.5';
+        chip.title = r.reasons.join(' · ');
+        chip.innerHTML = `${r.symbol} <span class="text-emerald-400">+${r.pct_above_ema20}%</span> <span class="text-slate-500">(${r.score}/4)</span>`;
+        chip.onclick = () => {
+            document.getElementById('manualSearchInput').value = r.symbol;
+            executeTelemetryLoad(r.symbol, cRng, cMkt, false);
+            carouselPointer = tickerCollection.indexOf(r.symbol);
+            updateIndexUI();
+        };
+        list.appendChild(chip);
+    });
+
+    // Swap the active carousel list to just the risers so the ◀ ▶ arrows browse them
+    tickerCollection = d.risers.map(r => r.symbol);
+    carouselPointer = 0;
+    updateIndexUI();
+    executeTelemetryLoad(tickerCollection[0], cRng, cMkt, false);
+
+    earlyRisersModeActive = true;
+    label.innerText = 'Exit Riser Mode';
+    btn.classList.add('bg-amber-600/40');
+}
+
+function exitEarlyRisersMode(reloadFirst) {
+    if (!earlyRisersModeActive) return;
+    earlyRisersModeActive = false;
+    document.getElementById('earlyRisersLabel').innerText = 'Scan Early Risers';
+    document.getElementById('earlyRisersBtn').classList.remove('bg-amber-600/40');
+    document.getElementById('earlyRisersPanel').classList.add('hidden');
+    tickerCollection = fullTickerCollection;
+    if (reloadFirst && tickerCollection.length > 0) {
+        carouselPointer = 0;
+        updateIndexUI();
+        executeTelemetryLoad(tickerCollection[0], cRng, cMkt, false);
+    }
+}
+
+function showCarouselError(msg) {
+    document.getElementById('carouselErrorText').innerText = msg;
+    document.getElementById('carouselErrorBanner').classList.remove('hidden');
+}
+
+/* ---------------- Skeletons ---------------- */
+function showCarouselSkeletons() {
+    document.getElementById('skeletonA').classList.remove('hidden');
+    document.getElementById('skeletonB').classList.remove('hidden');
+}
+function hideCarouselSkeletons() {
+    document.getElementById('skeletonA').classList.add('hidden');
+    document.getElementById('skeletonB').classList.add('hidden');
+}
+
+/* ---------------- Resize handling ----------------
+   Keeps both chart canvases pixel-accurate to their containers at all times
+   (window resizes, fullscreen toggles, sidebar collapses, etc.) — this was
+   entirely missing before, which is the root cause of charts/controls
+   looking broken whenever the container size changed. */
+let carouselResizeObserver = null;
+function attachResizeObserver() {
+    if (carouselResizeObserver) carouselResizeObserver.disconnect();
+    const pA = document.getElementById('vPaneA');
+    const pB = document.getElementById('vPaneB');
+    carouselResizeObserver = new ResizeObserver(() => {
+        if (cA && pA.clientWidth > 0) cA.resize(pA.clientWidth, pA.clientHeight);
+        if (cB && pB.clientWidth > 0) cB.resize(pB.clientWidth, pB.clientHeight);
+        drawShading('A'); drawShading('B');
+    });
+    carouselResizeObserver.observe(pA);
+    carouselResizeObserver.observe(pB);
+}
+
+function executeTelemetryLoad(sym, rng, mkt, syncIndex = true) {
+    sym = sym.trim().toUpperCase().replace('.NS','');
+    cSym = sym; cRng = rng; cMkt = mkt;
+    hideCarouselError();
+    showCarouselSkeletons();
+
+    if(syncIndex && tickerCollection.length > 0) {
+        carouselPointer = tickerCollection.indexOf(sym);
+        updateIndexUI();
+    }
+
+    const pA = document.getElementById('vPaneA');
+    const pB = document.getElementById('vPaneB');
+    pA.innerHTML = ''; pB.innerHTML = ''; lookupMap = {};
+
+    cA = LightweightCharts.createChart(pA, { ...BASE_CFG, height: pA.clientHeight || 420 });
+    cB = LightweightCharts.createChart(pB, { ...BASE_CFG, height: pB.clientHeight || 240, localization: { priceFormatter: v=>v.toFixed(4) } });
+    attachResizeObserver();
+
+    document.getElementById('lPaneA').innerHTML = '<span style="color:#FACC15">● EMA 10</span> <span style="color:#F97316; margin-left:8px;">● EMA 20</span> <span style="color:#ec4899; margin-left:8px;">● EMA 50</span> <span style="color:#22D3EE; margin-left:8px;">● EMA 100</span> <span style="color:#a3a3a3; margin-left:8px;">● EMA 200</span> <span style="color:#64748b; margin-left:8px;">▮ Volume</span>';
+    document.getElementById('lPaneB').innerHTML = `<span style="color:#39c973">● RS Ratio (R)</span> <span style="color:#f59e0b; margin-left:8px;">● RS SMA50 (R)</span> <span style="color:#c084fc; margin-left:8px;">● RS 21 EMA (R)</span> <span style="color:#94a3b8; margin-left:8px;">● ${mkt==='NSE'?'Nifty 500':'S&P 500'} (L)</span> <span style="color:#06b6d4; margin-left:8px;">● Accum/Dist</span>`;
+
+    sCandle  = cA.addCandlestickSeries({ upColor: '#22c55e', downColor: '#ef4444', borderUpColor: '#22c55e', borderDownColor: '#ef4444', wickUpColor: '#22c55e', wickDownColor: '#ef4444' });
+    sEma10   = cA.addLineSeries({ color: '#FACC15', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+    sEma20   = cA.addLineSeries({ color: '#F97316', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+    sEma50   = cA.addLineSeries({ color: '#ec4899', lineWidth: 1.5, priceLineVisible:false, lastValueVisible: false });
+    sEma100  = cA.addLineSeries({ color: '#22D3EE', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false });
+    sEma200  = cA.addLineSeries({ color: '#a3a3a3', lineWidth: 2, priceLineVisible:false, lastValueVisible: false });
+
+    // Volume bars — own overlay scale pinned to the bottom ~18% of pane A so
+    // they sit under the candles like a standard volume strip, without
+    // disturbing the candle/EMA right price scale.
+    sVolume = cA.addHistogramSeries({ priceScaleId: 'volumeScale', priceFormat: { type: 'volume' }, priceLineVisible: false, lastValueVisible: false });
+    cA.priceScale('volumeScale').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+
+    sRs      = cB.addLineSeries({ color: '#39c973', lineWidth: 2, priceScaleId:'right', priceLineVisible:false, lastValueVisible: false });
+    sRsSma   = cB.addLineSeries({ color: '#f59e0b', lineWidth: 1.5, priceScaleId:'right', priceLineVisible:false, lastValueVisible: false });
+    sRsEma21 = cB.addLineSeries({ color: '#c084fc', lineWidth: 1.5, priceScaleId:'right', priceLineVisible:false, lastValueVisible: false });
+    sBench   = cB.addLineSeries({ color: '#94a3b8', lineWidth: 1.5, priceScaleId:'left', priceLineVisible:false, lastValueVisible: false });
+
+    sAccVolumeOverlay = cB.addLineSeries({ color: '#06b6d4', lineWidth: 1.5, priceScaleId: '', priceLineVisible: false, lastValueVisible: false });
+    cB.priceScale('').applyOptions({ scaleMargins: { top: 0.80, bottom: 0 } });
+
+    cA.subscribeCrosshairMove(p => {
+        if(p.time) {
+            cB.setCrosshairPosition(NaN, p.time, sRs);
+            if(lookupMap[p.time]) {
+                const c = lookupMap[p.time];
+                document.getElementById('openMetric').innerText = c.open.toFixed(2);
+                document.getElementById('highMetric').innerText = c.high.toFixed(2);
+                document.getElementById('lowMetric').innerText = c.low.toFixed(2);
+                document.getElementById('closeMetric').innerText = c.close.toFixed(2);
+                document.getElementById('volMetric').innerText = c.volume >= 1e6 ? (c.volume/1e6).toFixed(2)+'M' : c.volume;
+                document.getElementById('rsPctMetric').innerText = c.rs_pct !== undefined ? c.rs_pct : '—';
+            }
+        } else { cB.clearCrosshairPosition(); }
+    });
+
+    cA.timeScale().subscribeVisibleLogicalRangeChange(r => { if(r) cB.timeScale().setVisibleLogicalRange(r); });
+    cB.timeScale().subscribeVisibleLogicalRangeChange(r => { if(r) cA.timeScale().setVisibleLogicalRange(r); });
+    cA.timeScale().subscribeVisibleLogicalRangeChange(() => { drawShading('A'); drawShading('B'); });
+
+    fetch(`/api/v1/carousel-telemetry-data/${sym}?market=${mkt}&range=${rng}&screener=${currentScreener}`)
+        .then(r => r.json())
+        .then(d => {
+            hideCarouselSkeletons();
+            if(d.status === 'error') { showCarouselError(`Couldn't load ${mkt} ${sym}: ${d.message}`); return; }
+            activePayload = d;
+
+            document.getElementById('activeTickerBadgeMeta').innerText = `${mkt} · ${d.symbol} · RS %tile: ${d.rs_percentile}`;
+            d.series.candles.forEach(c => lookupMap[c.time] = c);
+
+            sCandle.setData(d.series.candles);
+            sEma10.setData(d.series.ema10); sEma20.setData(d.series.ema20);
+            sEma50.setData(d.series.ema50); sEma200.setData(d.series.ema200);
+            sEma100.setData(d.series.ema100);
+
+            sVolume.setData(d.series.candles.map(c => ({
+                time: c.time,
+                value: c.volume,
+                color: c.close >= c.open ? 'rgba(34,197,94,0.5)' : 'rgba(239,68,68,0.5)'
+            })));
+
+            sRs.setData(d.series.rs_ratio); sRsSma.setData(d.series.rs_sma50);
+            sRsEma21.setData(d.series.rs_ema21);
+            sBench.setData(d.series.bench_line);
+            sAccVolumeOverlay.setData(d.series.acc_line);
+
+            if (d.series.rs_up_markers && d.series.rs_up_markers.length) {
+                sCandle.setMarkers(d.series.rs_up_markers.map(pt => ({
+                    time: pt.time, position: 'belowBar', color: '#22C55E', shape: 'circle', size: 1, text: ''
+                })));
+            }
+
+            cA.timeScale().fitContent();
+            const r = cA.timeScale().getVisibleLogicalRange();
+            if(r) cB.timeScale().setVisibleLogicalRange(r);
+
+            evaluateMechanicalStrategyScoring(d.series, d.series.candles.length);
+            buildSignalPanel(d);
+            setTimeout(() => { drawShading('A'); drawShading('B'); }, 40);
+        }).catch(err => {
+            hideCarouselSkeletons();
+            showCarouselError(`Couldn't load ${mkt} ${sym}: ${err.message}`);
+        });
+}
+
+function hideCarouselError() {
+    document.getElementById('carouselErrorBanner').classList.add('hidden');
+}
+
+document.addEventListener('keydown', e => {
+    if(document.activeElement.tagName === 'INPUT') return;
+    if(e.key === 'ArrowRight') changeCarouselItem(1);
+    if(e.key === 'ArrowLeft') changeCarouselItem(-1);
+});
+
+document.addEventListener('DOMContentLoaded', () => {
+    const params = new URLSearchParams(window.location.search);
+    const paramSymbol = params.get('symbol');
+    const paramMarket = params.get('market');
+    const paramRange = params.get('range');
+    if (paramMarket && MARKET_BENCHMARKS_CLIENT.includes(paramMarket)) cMkt = paramMarket;
+    if (paramRange) cRng = paramRange;
+    if (paramSymbol) { cSym = paramSymbol; document.getElementById('manualSearchInput').value = paramSymbol; }
+
+    document.querySelectorAll('.m-btn').forEach(b => b.classList.toggle('active', b.dataset.m === cMkt));
+    document.querySelectorAll('.r-btn').forEach(b => b.classList.toggle('active', b.dataset.r === cRng));
+    fetchCarouselTickers(cMkt, paramSymbol || cSym);
+});
+
+const MARKET_BENCHMARKS_CLIENT = ['US', 'NSE'];
+</script>
+{% endblock %}

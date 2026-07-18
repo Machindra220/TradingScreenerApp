@@ -1,0 +1,780 @@
+{% extends 'base_authenticated.html' %}
+{% block title %}Weinstein Stage Analysis{% endblock %}
+{% block content %}
+<!-- CSRF token — same convention as add_trade.html's form and the carousel
+     page: a hidden input rendered from {{ csrf_token }}, read by JS and sent
+     both in the upload's form body and as a header, plus reused directly by
+     the "Add to Trade List" form at the bottom of this page. -->
+<input type="hidden" id="csrfTokenValue" name="csrf_token" value="{{ csrf_token }}">
+
+<div id="weinstein-root-workspace" class="w-full max-w-[1900px] mx-auto px-3 py-4 space-y-3">
+
+    <!-- Header Glass Block -->
+    <div class="backdrop-blur-md bg-white/10 dark:bg-slate-950/40 border border-white/20 dark:border-slate-800/50 px-4 py-3 rounded-xl flex items-center justify-between shadow-md flex-wrap gap-2">
+        <div class="flex items-center gap-3 flex-wrap">
+            <div class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+            <h3 class="text-xs font-black text-slate-900 dark:text-gray-200 uppercase tracking-wider">📈 Weinstein Stage Analysis</h3>
+            <select id="screenerStrategyDropdown" onchange="onScreenerStrategyChanged(this.value)" class="bg-slate-900 text-slate-200 text-[11px] font-bold border border-slate-700/60 rounded-md px-2.5 py-1 focus:outline-none focus:border-indigo-500 cursor-pointer">
+                <!-- populated client-side based on the active market -->
+            </select>
+            <label for="symbolFileUpload" title="Load a CSV/Excel file with a 'Symbol' column and browse it with ◀ ▶"
+                   class="bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-300 border border-cyan-700/50 font-black text-[10px] uppercase px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 cursor-pointer">
+                📄 <span id="uploadSymbolsLabel">Upload Symbols</span>
+            </label>
+            <input type="file" id="symbolFileUpload" accept=".csv,.xlsx,.xls" class="hidden" onchange="handleSymbolFileUpload(this.files[0])">
+            <span id="customListBadge" class="hidden items-center gap-2 text-[10px] font-black bg-cyan-950 text-cyan-300 px-2.5 py-1.5 rounded-md border border-cyan-800/50">
+                📄 <span id="customListName"></span>
+                <button onclick="clearCustomSymbolList()" title="Clear custom list, go back to screener" class="text-cyan-400 hover:text-cyan-100 font-black">✕</button>
+            </span>
+        </div>
+        <div id="carouselIndexDisplay" class="text-[10px] font-black bg-indigo-950 text-indigo-400 px-3 py-1 rounded-md tracking-widest border border-indigo-800/50">
+            [ 0 / 0 ]
+        </div>
+    </div>
+
+    <div id="chartWorkspaceShell" class="bg-slate-950 rounded-2xl border border-slate-800 shadow-2xl relative overflow-hidden">
+
+        <!-- Toolbar lives inside the shell so it (and everything below it)
+             stays visible when the shell is put into fullscreen. -->
+        <div id="shellToolbar" class="bg-slate-900 px-3 py-2 flex items-center justify-between gap-2 border-b border-slate-800 flex-wrap">
+            <div class="flex items-center gap-2 flex-wrap">
+                <button onclick="changeCarouselItem(-1)" class="bg-slate-800 hover:bg-slate-700 text-white font-black text-xs px-3 py-1.5 rounded-lg border border-slate-700 transition" title="Previous (Left Arrow Key)">◀</button>
+                <span id="activeTickerBadgeMeta" class="text-[10px] bg-indigo-600 font-bold px-2.5 py-1.5 rounded text-white uppercase tracking-wider whitespace-nowrap">SYNC...</span>
+                <button onclick="changeCarouselItem(1)" class="bg-slate-800 hover:bg-slate-700 text-white font-black text-xs px-3 py-1.5 rounded-lg border border-slate-700 transition mr-2" title="Next (Right Arrow Key)">▶</button>
+
+                <div id="marketStateToggle" class="flex items-center bg-slate-950 border border-slate-800 rounded-lg overflow-hidden">
+                    <button data-m="US" onclick="updateMarketChannel('US')" class="m-btn text-[9px] font-black uppercase px-3 py-1.5 text-slate-400 hover:text-white transition">US</button>
+                    <button data-m="NSE" onclick="updateMarketChannel('NSE')" class="m-btn text-[9px] font-black uppercase px-3 py-1.5 text-slate-400 hover:text-white transition">NSE</button>
+                </div>
+
+                <input type="text" id="manualSearchInput" placeholder="Ticker..." value="{{ default_stock }}"
+                       class="manual-search-input bg-slate-950 text-white text-[12px] font-bold uppercase px-3 py-1.5 rounded-lg border border-slate-800 focus:outline-none focus:border-indigo-500 w-28 transition-all"
+                       onfocus="this.select()"
+                       onkeypress="if(event.key==='Enter') triggerDirectSymbolLoad(this.value)">
+
+                <div id="timeframeSelector" class="flex items-center bg-slate-950 border border-slate-800 rounded-lg overflow-hidden">
+                    <button data-r="2Y" onclick="updateTimeframe('2Y')" class="r-btn text-[9px] font-black uppercase px-2.5 py-1.5 text-slate-400 hover:text-white transition">2Y</button>
+                    <button data-r="3Y" onclick="updateTimeframe('3Y')" class="r-btn text-[9px] font-black uppercase px-2.5 py-1.5 text-slate-400 hover:text-white transition">3Y</button>
+                    <button data-r="5Y" onclick="updateTimeframe('5Y')" class="r-btn text-[9px] font-black uppercase px-2.5 py-1.5 text-slate-400 hover:text-white transition">5Y</button>
+                    <button data-r="10Y" onclick="updateTimeframe('10Y')" class="r-btn text-[9px] font-black uppercase px-2.5 py-1.5 text-slate-400 hover:text-white transition">10Y</button>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-2 flex-wrap">
+                <div id="stageBadge" class="text-[10px] font-black px-2.5 py-1.5 rounded border uppercase transition-colors duration-200 whitespace-nowrap">
+                    Stage: —
+                </div>
+                <button id="pngExporterBtn" onclick="exportPNGSnapshot()" title="Download PNG Snapshot"
+                        class="bg-slate-800 hover:bg-slate-700 text-slate-200 font-black text-[9px] uppercase px-3 py-1.5 rounded-lg transition border border-slate-700 flex items-center gap-1 whitespace-nowrap">
+                    <span>📥 PNG</span>
+                </button>
+                <button id="shareLinkBtn" onclick="copyShareLink()" title="Copy shareable link"
+                        class="bg-slate-800 hover:bg-slate-700 text-slate-200 font-black text-[9px] uppercase px-3 py-1.5 rounded-lg transition border border-slate-700 flex items-center gap-1 whitespace-nowrap">
+                    <span>🔗 Share</span>
+                </button>
+                <button id="fullscreenToggleBtn" onclick="toggleFullscreenView()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 font-black text-[9px] uppercase px-3 py-1.5 rounded-lg transition border border-slate-700 whitespace-nowrap">
+                    <span id="fsBtnLabel">⛶ FULLSCREEN</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- OHLCV bar lives inside the shell too, so it stays visible in fullscreen. -->
+        <div id="ohlcvBarMetrics" class="bg-slate-900/80 border-b border-slate-800 px-4 py-2 flex flex-wrap gap-5 text-[11px] font-bold uppercase tracking-tight text-slate-400">
+            <span>O <span id="openMetric" style="color:#e0e7ff;">—</span></span>
+            <span>H <span id="highMetric" class="text-emerald-400">—</span></span>
+            <span>L <span id="lowMetric" class="text-rose-400">—</span></span>
+            <span>C <span id="closeMetric" style="color:#e0e7ff;">—</span></span>
+            <span>Vol <span id="volMetric" class="text-indigo-400">—</span></span>
+            <span>30WMA Slope <span id="slopeMetric" class="text-amber-400">—</span></span>
+        </div>
+
+        <!-- Single pane: weekly candles + 30WMA + support/resistance lines +
+             breakout/pullback markers on top, volume histogram strip along
+             the bottom — same single-box layout as Weinstein's own charts. -->
+        <div class="pane-wrap relative bg-slate-950 overflow-hidden">
+            <div id="skeletonA" class="skeleton-grid"></div>
+            <div id="vPaneA" class="w-full relative" style="height:620px;"></div>
+            <div id="lPaneA" class="pane-legend"></div>
+        </div>
+
+        <div id="carouselErrorBanner" class="hidden bg-red-950/80 border-t border-red-800/60 text-red-300 text-[12px] font-semibold px-4 py-2 flex items-center justify-between gap-3">
+            <span class="flex items-center gap-2"><span class="text-red-400">⚠</span><span id="carouselErrorText">Something went wrong.</span></span>
+            <button onclick="document.getElementById('carouselErrorBanner').classList.add('hidden')" class="text-red-400 hover:text-red-200 font-black px-2">✕</button>
+        </div>
+    </div>
+
+    <!-- Stage Checklist / Trade Candidate Panel -->
+    <div id="signalPanel" class="hidden bg-gradient-to-b from-emerald-950/40 to-slate-900 border border-emerald-800/40 rounded-xl px-4 py-3">
+        <div class="flex items-center justify-between mb-2 flex-wrap gap-1">
+            <h4 class="text-[11px] font-black text-emerald-300 uppercase tracking-wider">✅ Points Supporting A Trade</h4>
+            <span id="signalScore" class="text-[10px] font-bold text-gray-400 uppercase"></span>
+        </div>
+        <ul id="signalList" class="space-y-1.5 text-[12px] text-gray-300 list-none"></ul>
+        <p id="signalEmpty" class="hidden text-[12px] text-gray-500 italic">No supporting points confirmed right now — see the risk flags below.</p>
+
+        <div id="riskBlock" class="hidden mt-3 pt-3 border-t border-gray-800/60">
+            <h4 class="text-[11px] font-black text-red-300 uppercase tracking-wider mb-2">⚠️ Points Against / Risk Flags</h4>
+            <ul id="riskList" class="space-y-1.5 text-[12px] text-gray-400 list-none"></ul>
+        </div>
+
+        <div class="mt-4 pt-4 border-t border-gray-800/60 flex items-center justify-between flex-wrap gap-3">
+            <p class="text-[10px] text-gray-500 italic max-w-2xl">Mechanical read of price vs. 30-week MA, detected support/resistance zones, and any recent breakout/breakdown — following Stan Weinstein's Stage Analysis method. Not investment advice; always confirm with your own research before trading.</p>
+            <form id="addTradeForm" method="POST" action="{{ url_for('trades.add_trade') }}" class="flex items-center gap-2 flex-shrink-0">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="stock_name" id="addTradeStockName" value="">
+                <select name="strategy_tag" id="addTradeStrategyTag" class="bg-slate-900 text-slate-200 text-[10px] font-bold border border-slate-700/60 rounded-md px-2 py-1.5 focus:outline-none focus:border-emerald-500 cursor-pointer">
+                    <option value="Breakout">Breakout</option>
+                    <option value="VCP">VCP</option>
+                    <option value="Top-Performers">Top-Performers</option>
+                    <option value="Delivery Surge">Delivery Surge</option>
+                    <option value="Earnings">Earnings</option>
+                    <option value="No Strategy">No Strategy</option>
+                </select>
+                <button type="submit" class="bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[11px] uppercase px-4 py-2 rounded-lg transition shadow-md whitespace-nowrap">
+                    ➕ Add to Trade List
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Legend Footer -->
+    <div class="flex flex-wrap gap-x-5 gap-y-1.5 text-[10px] font-black uppercase text-gray-400 px-1 pt-1 border-t border-gray-900">
+        <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-[#a78bfa] rounded inline-block"></span>30-Week MA</span>
+        <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-[#f87171] rounded inline-block" style="border-top:1px dashed #f87171"></span>Resistance Zone</span>
+        <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-[#4ade80] rounded inline-block" style="border-top:1px dashed #4ade80"></span>Support Zone</span>
+        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 bg-[#22c55e]/60 rounded-sm inline-block"></span>Volume (up week)</span>
+        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 bg-[#ef4444]/60 rounded-sm inline-block"></span>Volume (down week)</span>
+        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 bg-[#f59e0b] rounded-sm inline-block"></span>Volume surge (≥1.5× avg)</span>
+        <span class="flex items-center gap-1.5"><span class="text-emerald-400">▲</span>Breakout marker</span>
+        <span class="flex items-center gap-1.5"><span class="text-red-400">▼</span>Breakdown marker</span>
+    </div>
+</div>
+
+<style>
+    .pane-wrap { overflow: hidden; }
+    .pane-legend {
+        position: absolute; top: 6px; left: 10px; z-index: 10;
+        display: flex; flex-wrap: wrap; gap: 8px;
+        font-size: 10px; font-weight: 800; text-transform: uppercase;
+        letter-spacing: 0.02em; pointer-events: none;
+        text-shadow: 0 1px 2px rgba(0,0,0,0.9);
+    }
+    .m-btn.active, .r-btn.active { background: #4F46E5; color: #fff; }
+
+    .manual-search-input:-webkit-autofill,
+    .manual-search-input:-webkit-autofill:hover,
+    .manual-search-input:-webkit-autofill:focus,
+    .manual-search-input:-webkit-autofill:active {
+        -webkit-box-shadow: 0 0 0 1000px #020617 inset;
+        box-shadow: 0 0 0 1000px #020617 inset;
+        -webkit-text-fill-color: #ffffff;
+        caret-color: #ffffff;
+    }
+
+    .skeleton-grid {
+        position: absolute; inset: 0; z-index: 1;
+        background-image:
+            repeating-linear-gradient(to right, #111827 0, #111827 1px, transparent 1px, transparent 60px),
+            repeating-linear-gradient(to bottom, #111827 0, #111827 1px, transparent 1px, transparent 40px);
+        background-color: #020617;
+        overflow: hidden;
+    }
+    .skeleton-grid::after {
+        content: ''; position: absolute; inset: 0;
+        background: linear-gradient(100deg, transparent 30%, rgba(255,255,255,0.05) 50%, transparent 70%);
+        background-size: 200% 100%;
+        animation: skeleton-shimmer 1.6s ease-in-out infinite;
+    }
+    .skeleton-grid.hidden { display: none; }
+    @keyframes skeleton-shimmer {
+        0%   { background-position: 200% 0; }
+        100% { background-position: -200% 0; }
+    }
+
+    #chartWorkspaceShell:fullscreen { display: flex; flex-direction: column; }
+    #chartWorkspaceShell:-webkit-full-screen { display: flex; flex-direction: column; }
+
+    /* Same fullscreen-hardening approach used on the carousel page: force
+       toolbar control colors explicitly (both via :fullscreen and a
+       JS-toggled fallback class) so buttons/input never go white-on-white
+       inside the Fullscreen API's top-layer. */
+    #chartWorkspaceShell.cw-fs-active,
+    #chartWorkspaceShell:fullscreen,
+    #chartWorkspaceShell:-webkit-full-screen {
+        background-color: #020617 !important;
+    }
+    #chartWorkspaceShell.cw-fs-active #shellToolbar,
+    #chartWorkspaceShell:fullscreen #shellToolbar,
+    #chartWorkspaceShell:-webkit-full-screen #shellToolbar,
+    #chartWorkspaceShell.cw-fs-active #ohlcvBarMetrics,
+    #chartWorkspaceShell:fullscreen #ohlcvBarMetrics,
+    #chartWorkspaceShell:-webkit-full-screen #ohlcvBarMetrics {
+        background-color: #0f172a !important;
+    }
+    #chartWorkspaceShell.cw-fs-active #shellToolbar button,
+    #chartWorkspaceShell:fullscreen #shellToolbar button,
+    #chartWorkspaceShell:-webkit-full-screen #shellToolbar button,
+    #chartWorkspaceShell.cw-fs-active #shellToolbar input,
+    #chartWorkspaceShell:fullscreen #shellToolbar input,
+    #chartWorkspaceShell:-webkit-full-screen #shellToolbar input,
+    #chartWorkspaceShell.cw-fs-active #shellToolbar select,
+    #chartWorkspaceShell:fullscreen #shellToolbar select,
+    #chartWorkspaceShell:-webkit-full-screen #shellToolbar select {
+        appearance: none !important;
+        -webkit-appearance: none !important;
+        background-color: #1e293b !important;
+        color: #e2e8f0 !important;
+        border-color: #334155 !important;
+    }
+    #chartWorkspaceShell.cw-fs-active #shellToolbar .m-btn.active,
+    #chartWorkspaceShell:fullscreen #shellToolbar .m-btn.active,
+    #chartWorkspaceShell:-webkit-full-screen #shellToolbar .m-btn.active,
+    #chartWorkspaceShell.cw-fs-active #shellToolbar .r-btn.active,
+    #chartWorkspaceShell:fullscreen #shellToolbar .r-btn.active,
+    #chartWorkspaceShell:-webkit-full-screen #shellToolbar .r-btn.active {
+        background-color: #4f46e5 !important;
+        color: #ffffff !important;
+    }
+    #chartWorkspaceShell.cw-fs-active #shellToolbar #activeTickerBadgeMeta,
+    #chartWorkspaceShell:fullscreen #shellToolbar #activeTickerBadgeMeta,
+    #chartWorkspaceShell:-webkit-full-screen #shellToolbar #activeTickerBadgeMeta {
+        background-color: #4338ca !important;
+        color: #ffffff !important;
+    }
+    #chartWorkspaceShell.cw-fs-active #shellToolbar #manualSearchInput,
+    #chartWorkspaceShell:fullscreen #shellToolbar #manualSearchInput,
+    #chartWorkspaceShell:-webkit-full-screen #shellToolbar #manualSearchInput {
+        background-color: #020617 !important;
+        color: #ffffff !important;
+    }
+    #chartWorkspaceShell.cw-fs-active #stageBadge.stage-2,
+    #chartWorkspaceShell:fullscreen #stageBadge.stage-2,
+    #chartWorkspaceShell:-webkit-full-screen #stageBadge.stage-2 {
+        background-color: rgba(16,185,129,0.15) !important; color:#34d399 !important; border-color: rgba(16,185,129,0.4) !important;
+    }
+    #chartWorkspaceShell.cw-fs-active #stageBadge.stage-4,
+    #chartWorkspaceShell:fullscreen #stageBadge.stage-4,
+    #chartWorkspaceShell:-webkit-full-screen #stageBadge.stage-4 {
+        background-color: rgba(244,63,94,0.15) !important; color:#fb7185 !important; border-color: rgba(244,63,94,0.4) !important;
+    }
+    #chartWorkspaceShell.cw-fs-active #stageBadge.stage-1,
+    #chartWorkspaceShell:fullscreen #stageBadge.stage-1,
+    #chartWorkspaceShell:-webkit-full-screen #stageBadge.stage-1,
+    #chartWorkspaceShell.cw-fs-active #stageBadge.stage-3,
+    #chartWorkspaceShell:fullscreen #stageBadge.stage-3,
+    #chartWorkspaceShell:-webkit-full-screen #stageBadge.stage-3 {
+        background-color: rgba(245,158,11,0.15) !important; color:#fbbf24 !important; border-color: rgba(245,158,11,0.4) !important;
+    }
+    #chartWorkspaceShell.cw-fs-active #shellToolbar #pngExporterBtn,
+    #chartWorkspaceShell:fullscreen #shellToolbar #pngExporterBtn,
+    #chartWorkspaceShell:-webkit-full-screen #shellToolbar #pngExporterBtn,
+    #chartWorkspaceShell.cw-fs-active #shellToolbar #shareLinkBtn,
+    #chartWorkspaceShell:fullscreen #shellToolbar #shareLinkBtn,
+    #chartWorkspaceShell:-webkit-full-screen #shellToolbar #shareLinkBtn,
+    #chartWorkspaceShell.cw-fs-active #shellToolbar #fullscreenToggleBtn,
+    #chartWorkspaceShell:fullscreen #shellToolbar #fullscreenToggleBtn,
+    #chartWorkspaceShell:-webkit-full-screen #shellToolbar #fullscreenToggleBtn {
+        background-color: #1e293b !important;
+        color: #e2e8f0 !important;
+        border-color: #334155 !important;
+    }
+    #chartWorkspaceShell.cw-fs-active #ohlcvBarMetrics span,
+    #chartWorkspaceShell:fullscreen #ohlcvBarMetrics span,
+    #chartWorkspaceShell:-webkit-full-screen #ohlcvBarMetrics span {
+        color: #94a3b8;
+    }
+</style>
+
+<!-- Pinned to an exact version (same reasoning as the carousel/combined
+     charts): v4.2.3 keeps the add*Series() API working; @latest has served
+     v5 in the past, which removes it. -->
+<script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
+<script>
+let cA = null, sCandle, sSma30, sVolume;
+let lookupMap = {}, activePayload = null;
+let cSym = '{{ default_stock }}', cMkt = '{{ default_market }}', cRng = '5Y';
+let tickerCollection = [], fullTickerCollection = [], carouselPointer = -1;
+let currentScreener = '';
+let customListActive = false;
+let priceLines = [];
+
+const SW = 70;
+const BASE_CFG = {
+    layout: { background: { type: 'solid', color: 'transparent' }, textColor: '#9ca3af', fontFamily: 'Inter, sans-serif', fontSize: 11 },
+    grid: { vertLines: { color: '#1e293b' }, horzLines: { color: '#1e293b' } },
+    crosshair: { mode: 0, vertLine: { color: '#64748b' }, horzLine: { color: '#64748b' } },
+    rightPriceScale: { borderColor: '#334155', minimumWidth: SW },
+    timeScale: { borderColor: '#334155', timeVisible: false }
+};
+
+const STRATEGY_DROPDOWN_MAP = {
+    "NSE": [
+        { value: "HH_HL_Screener", label: "Structural HH-HL Trend Screener" },
+        { value: "Adaptive_RS", label: "Volar Adaptive Alpha RS" },
+        { value: "RS_ROC_Momentum", label: "Cross-Sectional RS-ROC Momentum" },
+        { value: "Gap_Volume", label: "Breakout Gap & Volume Scanner" }
+    ],
+    "US": [
+        { value: "Stage2_Screener", label: "Minervini Stage 2 Base Screener" },
+        { value: "Adaptive_RS", label: "Volar Adaptive Alpha RS" },
+        { value: "Gap_Volume", label: "Breakout Gap & Volume Scanner" }
+    ]
+};
+
+function populateScreenerDropdownOptions(market, autoSelectValue = null) {
+    const selector = document.getElementById('screenerStrategyDropdown');
+    selector.innerHTML = '';
+    (STRATEGY_DROPDOWN_MAP[market] || []).forEach(opt => {
+        const node = document.createElement('option');
+        node.value = opt.value;
+        node.innerText = opt.label;
+        selector.appendChild(node);
+    });
+    if (autoSelectValue) selector.value = autoSelectValue;
+    currentScreener = selector.value;
+}
+
+function onScreenerStrategyChanged(screenerKey) {
+    clearCustomListSilently();
+    fetchTickers(cMkt, null, screenerKey);
+}
+
+function fetchTickers(market, focusSymbol = null, activeScreener = null) {
+    populateScreenerDropdownOptions(market, activeScreener);
+    const selectedScreener = activeScreener || document.getElementById('screenerStrategyDropdown').value || "";
+    currentScreener = selectedScreener;
+
+    fetch(`/api/v1/weinstein-ticker-payload?market=${market}&screener=${selectedScreener}`)
+        .then(r => r.json())
+        .then(d => {
+            if (d.status === "success" && d.tickers.length > 0) {
+                tickerCollection = d.tickers;
+                fullTickerCollection = d.tickers;
+                carouselPointer = focusSymbol ? tickerCollection.indexOf(focusSymbol.toUpperCase()) : 0;
+                if (carouselPointer === -1) carouselPointer = 0;
+                updateIndexUI();
+                executeTelemetryLoad(tickerCollection[carouselPointer], cRng, cMkt, false);
+            } else {
+                tickerCollection = []; fullTickerCollection = []; carouselPointer = -1;
+                document.getElementById('carouselIndexDisplay').innerText = "[ 0 / 0 ]";
+                if (focusSymbol) executeTelemetryLoad(focusSymbol, cRng, cMkt, false);
+            }
+        });
+}
+
+function updateIndexUI() {
+    document.getElementById('carouselIndexDisplay').innerText =
+        carouselPointer !== -1 ? `[ ${carouselPointer + 1} / ${tickerCollection.length} ]` : "[ 0 / 0 ]";
+}
+
+function changeCarouselItem(step) {
+    if (tickerCollection.length === 0) return;
+    carouselPointer += step;
+    if (carouselPointer >= tickerCollection.length) carouselPointer = 0;
+    if (carouselPointer < 0) carouselPointer = tickerCollection.length - 1;
+    const ticker = tickerCollection[carouselPointer];
+    document.getElementById('manualSearchInput').value = ticker;
+    updateIndexUI();
+    executeTelemetryLoad(ticker, cRng, cMkt, false);
+}
+
+function triggerDirectSymbolLoad(val) {
+    if (!val) return;
+    executeTelemetryLoad(val, cRng, cMkt, true);
+}
+
+function updateMarketChannel(m) {
+    cMkt = m;
+    clearCustomListSilently();
+    document.querySelectorAll('.m-btn').forEach(b => b.classList.toggle('active', b.dataset.m === m));
+    const val = m === 'NSE' ? 'PRAJIND' : 'NVDA';
+    document.getElementById('manualSearchInput').value = val;
+    fetchTickers(m, null);
+}
+
+function updateTimeframe(r) {
+    cRng = r;
+    document.querySelectorAll('.r-btn').forEach(b => b.classList.toggle('active', b.dataset.r === r));
+    executeTelemetryLoad(cSym, r, cMkt, false);
+}
+
+function toggleFullscreenView() {
+    const el = document.getElementById('chartWorkspaceShell');
+    if (!document.fullscreenElement) {
+        (el.requestFullscreen || el.webkitRequestFullscreen || function(){}).call(el);
+    } else {
+        (document.exitFullscreen || document.webkitExitFullscreen || function(){}).call(document);
+    }
+}
+
+document.addEventListener('fullscreenchange', handleFullscreenChange);
+document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+
+function handleFullscreenChange() {
+    const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+    const shell = document.getElementById('chartWorkspaceShell');
+    shell.classList.toggle('cw-fs-active', isFs);
+    document.getElementById('fsBtnLabel').innerText = isFs ? '⛶ EXIT FULLSCREEN' : '⛶ FULLSCREEN';
+    shell.style.height = isFs ? '100vh' : '';
+
+    if (isFs) {
+        const toolbarH = document.getElementById('shellToolbar').offsetHeight;
+        const ohlcvH = document.getElementById('ohlcvBarMetrics').offsetHeight;
+        document.getElementById('vPaneA').style.height = (window.innerHeight - toolbarH - ohlcvH) + 'px';
+    } else {
+        document.getElementById('vPaneA').style.height = '620px';
+    }
+
+    setTimeout(() => {
+        const pA = document.getElementById('vPaneA');
+        if (cA && pA.clientWidth > 0) cA.resize(pA.clientWidth, pA.clientHeight);
+    }, 60);
+}
+
+function stageBadgeClass(stage) {
+    const base = "text-[10px] font-black px-2.5 py-1.5 rounded border uppercase transition-colors duration-200 whitespace-nowrap";
+    if (stage === 2) return base + " stage-2 border-emerald-500/40 bg-emerald-500/10 text-emerald-400";
+    if (stage === 4) return base + " stage-4 border-rose-500/40 bg-rose-500/10 text-rose-400";
+    if (stage === 1) return base + " stage-1 border-amber-500/40 bg-amber-500/10 text-amber-400";
+    if (stage === 3) return base + " stage-3 border-amber-500/40 bg-amber-500/10 text-amber-400";
+    return base + " border-slate-600 bg-slate-800 text-slate-400";
+}
+
+/**
+ * Stage checklist / risk-flags — mirrors the combined/carousel charts'
+ * signal-panel pattern, but built entirely from Weinstein-specific reads
+ * (stage, 30WMA slope, support/resistance zones, breakout/pullback events)
+ * rather than RS/EMA-stack criteria.
+ */
+function buildSignalPanel(d) {
+    const pros = [], risks = [];
+    const ev = d.events;
+    const ccySymbol = d.market === 'NSE' ? '₹' : '$';
+    const lastClose = d.series.candles.length ? d.series.candles[d.series.candles.length - 1].close : null;
+
+    if (d.stage === 2) {
+        pros.push(`Currently reads as ${d.stage_label} — price is above a rising 30-week MA, Weinstein's core buy-stage condition.`);
+    } else if (d.stage === 4) {
+        risks.push(`Currently reads as ${d.stage_label} — price is below a falling 30-week MA. Weinstein's method says avoid buying here.`);
+    } else if (d.stage === 1) {
+        risks.push(`Currently reads as ${d.stage_label} — still consolidating with a flat MA. Not yet actionable; wait for a confirmed breakout.`);
+    } else if (d.stage === 3) {
+        risks.push(`Currently reads as ${d.stage_label} — the prior uptrend has stalled and the MA has gone flat. Elevated risk of a stage 4 decline.`);
+    }
+
+    if (d.ma_slope_pct !== null && d.ma_slope_pct !== undefined) {
+        if (d.ma_slope_pct > 0.5) pros.push(`30-week MA is sloping upward (${d.ma_slope_pct}% over the last 4 weeks).`);
+        else if (d.ma_slope_pct < -0.5) risks.push(`30-week MA is sloping downward (${d.ma_slope_pct}% over the last 4 weeks).`);
+    }
+
+    if (ev.breakout) {
+        const confirmTxt = ev.breakout_volume_confirmed ? "confirmed by above-average volume" : "but NOT yet confirmed by above-average volume";
+        if (ev.breakout_volume_confirmed) pros.push(`Broke above the resistance zone ${ev.breakout_weeks_ago} week(s) ago, ${confirmTxt} — a valid Weinstein breakout.`);
+        else risks.push(`Broke above the resistance zone ${ev.breakout_weeks_ago} week(s) ago, ${confirmTxt} — Weinstein treats low-volume breakouts with suspicion.`);
+    }
+    if (ev.pullback_holding) {
+        pros.push(`Price has pulled back toward the breakout level and is holding above it — Weinstein's classic "buy the pullback" entry zone.`);
+    }
+    if (ev.pullback_failed) {
+        risks.push(`Price pulled back through the breakout level and failed to hold — this often signals a false breakout.`);
+    }
+    if (ev.breakdown) {
+        const confirmTxt = ev.breakdown_volume_confirmed ? "confirmed by above-average volume" : "on lighter volume";
+        risks.push(`Broke below the support zone ${ev.breakdown_weeks_ago} week(s) ago, ${confirmTxt}.`);
+    }
+    if (ev.extended_above_ma_pct !== null && ev.extended_above_ma_pct !== undefined) {
+        if (ev.extended_above_ma_pct > 30) {
+            risks.push(`Price is ${ev.extended_above_ma_pct}% above the 30-week MA — well into Weinstein's "too extended, don't chase" range.`);
+        } else if (ev.extended_above_ma_pct > 0 && d.stage === 2) {
+            pros.push(`Price is only ${ev.extended_above_ma_pct}% above the 30-week MA — still within a reasonable buying distance.`);
+        }
+    }
+    if (d.resistance_zone) {
+        risks.push(`Nearest resistance zone: ${ccySymbol}${d.resistance_zone[0]} – ${ccySymbol}${d.resistance_zone[1]} (${d.resistance_zone[2]} touch${d.resistance_zone[2]===1?'':'es'}).`);
+    }
+    if (d.support_zone) {
+        pros.push(`Nearest support zone: ${ccySymbol}${d.support_zone[0]} – ${ccySymbol}${d.support_zone[1]} (${d.support_zone[2]} touch${d.support_zone[2]===1?'':'es'}).`);
+    }
+
+    const list = document.getElementById('signalList');
+    const riskList = document.getElementById('riskList');
+    list.innerHTML = ''; riskList.innerHTML = '';
+
+    if (pros.length) {
+        document.getElementById('signalEmpty').classList.add('hidden');
+        pros.forEach(p => {
+            const li = document.createElement('li');
+            li.className = 'flex items-start gap-2';
+            li.innerHTML = `<span class="text-emerald-400 mt-0.5">●</span><span>${p}</span>`;
+            list.appendChild(li);
+        });
+    } else {
+        document.getElementById('signalEmpty').classList.remove('hidden');
+    }
+
+    if (risks.length) {
+        document.getElementById('riskBlock').classList.remove('hidden');
+        risks.forEach(r => {
+            const li = document.createElement('li');
+            li.className = 'flex items-start gap-2';
+            li.innerHTML = `<span class="text-red-400 mt-0.5">●</span><span>${r}</span>`;
+            riskList.appendChild(li);
+        });
+    } else {
+        document.getElementById('riskBlock').classList.add('hidden');
+    }
+
+    document.getElementById('signalScore').innerText = `${pros.length} supporting · ${risks.length} risk flag${risks.length === 1 ? '' : 's'}`;
+    document.getElementById('signalPanel').classList.remove('hidden');
+
+    document.getElementById('addTradeStockName').value = d.symbol;
+    document.getElementById('addTradeStrategyTag').value = ev.breakout ? 'Breakout' : 'No Strategy';
+}
+
+function exportPNGSnapshot() {
+    if (!cA) return;
+    try {
+        const canvas = cA.takeScreenshot();
+        const anchor = document.createElement('a');
+        anchor.download = `Weinstein_${cMkt}_${cSym}_${cRng}.png`;
+        anchor.href = canvas.toDataURL('image/png');
+        anchor.click();
+    } catch (err) {
+        console.error("Failed to compile canvas print payload stream: ", err);
+    }
+}
+
+function copyShareLink() {
+    const url = new URL(window.location.href);
+    url.searchParams.set('symbol', cSym);
+    url.searchParams.set('market', cMkt);
+    url.searchParams.set('range', cRng);
+    const shareUrl = url.toString();
+
+    const flashCopied = () => {
+        const span = document.getElementById('shareLinkBtn').querySelector('span');
+        const original = span.innerText;
+        span.innerText = '✅ Copied!';
+        setTimeout(() => { span.innerText = original; }, 1500);
+    };
+    const fallbackCopy = () => {
+        const ta = document.createElement('textarea');
+        ta.value = shareUrl; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        try { document.execCommand('copy'); } catch (e) {}
+        document.body.removeChild(ta);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(shareUrl).then(flashCopied).catch(() => { fallbackCopy(); flashCopied(); });
+    } else {
+        fallbackCopy(); flashCopied();
+    }
+}
+
+/* ---------------- Custom symbol-list upload (CSV / Excel) ---------------- */
+
+function buildCsrfHeaders() {
+    const headers = {};
+    let token = null;
+    const explicitField = document.getElementById('csrfTokenValue');
+    if (explicitField && explicitField.value) token = explicitField.value;
+    if (!token) {
+        const meta = document.querySelector('meta[name="csrf-token"]') || document.querySelector('meta[name="csrf_token"]');
+        if (meta) token = meta.getAttribute('content');
+    }
+    if (!token) {
+        const hidden = document.querySelector('input[name="csrf_token"]');
+        if (hidden) token = hidden.value;
+    }
+    if (!token) {
+        const match = document.cookie.match(/(?:^|;\s*)(csrf_token|XSRF-TOKEN|csrftoken)=([^;]+)/);
+        if (match) token = decodeURIComponent(match[2]);
+    }
+    if (token) { headers['X-CSRFToken'] = token; headers['X-CSRF-Token'] = token; }
+    return headers;
+}
+
+function handleSymbolFileUpload(file) {
+    if (!file) return;
+    const label = document.getElementById('uploadSymbolsLabel');
+    const originalLabel = label.innerText;
+    label.innerText = 'Uploading...';
+
+    const formData = new FormData();
+    formData.append('file', file);
+    const csrfField = document.getElementById('csrfTokenValue');
+    if (csrfField && csrfField.value) formData.append('csrf_token', csrfField.value);
+
+    fetch('/api/v1/weinstein-upload-symbols', { method: 'POST', headers: buildCsrfHeaders(), body: formData })
+        .then(r => r.text().then(bodyText => ({ ok: r.ok, status: r.status, bodyText })))
+        .then(({ ok, status, bodyText }) => {
+            label.innerText = originalLabel;
+            let d;
+            try { d = JSON.parse(bodyText); }
+            catch (e) {
+                const snippet = bodyText.replace(/\s+/g, ' ').trim().slice(0, 140);
+                showError(`Upload endpoint returned HTTP ${status} instead of JSON. Response started with: "${snippet}"`);
+                return;
+            }
+            if (!ok || d.status !== 'success') { showError(d.message || `Upload failed (HTTP ${status}).`); return; }
+
+            tickerCollection = d.tickers;
+            fullTickerCollection = d.tickers;
+            customListActive = true;
+            carouselPointer = 0;
+            updateIndexUI();
+
+            const badge = document.getElementById('customListBadge');
+            badge.classList.remove('hidden'); badge.classList.add('flex');
+            document.getElementById('customListName').innerText = `${d.filename} (${d.count})`;
+
+            executeTelemetryLoad(tickerCollection[0], cRng, cMkt, false);
+        })
+        .catch(err => { label.innerText = originalLabel; showError('Upload failed: ' + err.message); })
+        .finally(() => { document.getElementById('symbolFileUpload').value = ''; });
+}
+
+function clearCustomSymbolList() {
+    if (!customListActive) return;
+    clearCustomListSilently();
+    fetchTickers(cMkt, null, currentScreener);
+}
+
+function clearCustomListSilently() {
+    if (!customListActive) return;
+    customListActive = false;
+    const badge = document.getElementById('customListBadge');
+    badge.classList.add('hidden'); badge.classList.remove('flex');
+}
+
+function showError(msg) {
+    document.getElementById('carouselErrorText').innerText = msg;
+    document.getElementById('carouselErrorBanner').classList.remove('hidden');
+}
+function hideError() {
+    document.getElementById('carouselErrorBanner').classList.add('hidden');
+}
+
+function showSkeleton() { document.getElementById('skeletonA').classList.remove('hidden'); }
+function hideSkeleton() { document.getElementById('skeletonA').classList.add('hidden'); }
+
+let resizeObserver = null;
+function attachResizeObserver() {
+    if (resizeObserver) resizeObserver.disconnect();
+    const pA = document.getElementById('vPaneA');
+    resizeObserver = new ResizeObserver(() => {
+        if (cA && pA.clientWidth > 0) cA.resize(pA.clientWidth, pA.clientHeight);
+    });
+    resizeObserver.observe(pA);
+}
+
+function clearPriceLines() {
+    priceLines.forEach(pl => { try { sCandle.removePriceLine(pl); } catch (e) {} });
+    priceLines = [];
+}
+
+function executeTelemetryLoad(sym, rng, mkt, syncIndex = true) {
+    sym = sym.trim().toUpperCase().replace('.NS', '');
+    cSym = sym; cRng = rng; cMkt = mkt;
+    hideError();
+    showSkeleton();
+
+    if (syncIndex && tickerCollection.length > 0) {
+        carouselPointer = tickerCollection.indexOf(sym);
+        updateIndexUI();
+    }
+
+    const pA = document.getElementById('vPaneA');
+    pA.innerHTML = ''; lookupMap = {}; priceLines = [];
+
+    cA = LightweightCharts.createChart(pA, { ...BASE_CFG, height: pA.clientHeight || 620 });
+    attachResizeObserver();
+
+    document.getElementById('lPaneA').innerHTML = '<span style="color:#a78bfa">● 30-Week MA</span> <span style="color:#f87171; margin-left:8px;">┅ Resistance</span> <span style="color:#4ade80; margin-left:8px;">┅ Support</span>';
+
+    sCandle = cA.addCandlestickSeries({ upColor: '#22c55e', downColor: '#ef4444', borderUpColor: '#22c55e', borderDownColor: '#ef4444', wickUpColor: '#22c55e', wickDownColor: '#ef4444' });
+    sSma30  = cA.addLineSeries({ color: '#a78bfa', lineWidth: 2.5, priceLineVisible: false, lastValueVisible: false });
+
+    sVolume = cA.addHistogramSeries({ priceScaleId: 'volumeScale', priceFormat: { type: 'volume' }, priceLineVisible: false, lastValueVisible: false });
+    cA.priceScale('volumeScale').applyOptions({ scaleMargins: { top: 0.78, bottom: 0 } });
+
+    cA.subscribeCrosshairMove(p => {
+        if (p.time && lookupMap[p.time]) {
+            const c = lookupMap[p.time];
+            document.getElementById('openMetric').innerText = c.open.toFixed(2);
+            document.getElementById('highMetric').innerText = c.high.toFixed(2);
+            document.getElementById('lowMetric').innerText = c.low.toFixed(2);
+            document.getElementById('closeMetric').innerText = c.close.toFixed(2);
+            document.getElementById('volMetric').innerText = c.volume >= 1e6 ? (c.volume/1e6).toFixed(2)+'M' : c.volume;
+        }
+    });
+
+    fetch(`/api/v1/weinstein-telemetry-data/${sym}?market=${mkt}&range=${rng}`)
+        .then(r => r.json())
+        .then(d => {
+            hideSkeleton();
+            if (d.status === 'error') { showError(`Couldn't load ${mkt} ${sym}: ${d.message}`); return; }
+            activePayload = d;
+
+            document.getElementById('activeTickerBadgeMeta').innerText = `${mkt} · ${d.symbol} · Weekly`;
+            const badge = document.getElementById('stageBadge');
+            badge.className = stageBadgeClass(d.stage);
+            badge.innerText = `${d.stage_label || 'Stage: —'}`;
+            document.getElementById('slopeMetric').innerText = (d.ma_slope_pct !== null && d.ma_slope_pct !== undefined) ? `${d.ma_slope_pct}%` : '—';
+
+            d.series.candles.forEach(c => lookupMap[c.time] = c);
+
+            sCandle.setData(d.series.candles);
+            sSma30.setData(d.series.sma30);
+            sVolume.setData(d.series.volume.map(v => ({ time: v.time, value: v.value, color: v.color })));
+
+            clearPriceLines();
+            if (d.resistance_zone) {
+                priceLines.push(sCandle.createPriceLine({
+                    price: d.resistance_zone[1], color: '#f87171', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed,
+                    axisLabelVisible: true, title: 'Resistance'
+                }));
+            }
+            if (d.support_zone) {
+                priceLines.push(sCandle.createPriceLine({
+                    price: d.support_zone[0], color: '#4ade80', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed,
+                    axisLabelVisible: true, title: 'Support'
+                }));
+            }
+
+            if (d.series.markers && d.series.markers.length) {
+                sCandle.setMarkers(d.series.markers);
+            } else {
+                sCandle.setMarkers([]);
+            }
+
+            cA.timeScale().fitContent();
+
+            buildSignalPanel(d);
+        }).catch(err => {
+            hideSkeleton();
+            showError(`Couldn't load ${mkt} ${sym}: ${err.message}`);
+        });
+}
+
+document.addEventListener('keydown', e => {
+    if (document.activeElement.tagName === 'INPUT') return;
+    if (e.key === 'ArrowRight') changeCarouselItem(1);
+    if (e.key === 'ArrowLeft') changeCarouselItem(-1);
+});
+
+document.addEventListener('DOMContentLoaded', () => {
+    const params = new URLSearchParams(window.location.search);
+    const paramSymbol = params.get('symbol');
+    const paramMarket = params.get('market');
+    const paramRange = params.get('range');
+    if (paramMarket && ['US','NSE'].includes(paramMarket)) cMkt = paramMarket;
+    if (paramRange) cRng = paramRange;
+    if (paramSymbol) { cSym = paramSymbol; document.getElementById('manualSearchInput').value = paramSymbol; }
+
+    document.querySelectorAll('.m-btn').forEach(b => b.classList.toggle('active', b.dataset.m === cMkt));
+    document.querySelectorAll('.r-btn').forEach(b => b.classList.toggle('active', b.dataset.r === cRng));
+    fetchTickers(cMkt, paramSymbol || cSym);
+});
+</script>
+{% endblock %}

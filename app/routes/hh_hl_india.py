@@ -9,14 +9,12 @@ from datetime import datetime
 
 hh_hl_bp = Blueprint("hh_hl_india", __name__)
 
-# UPLOAD_FOLDER = 'uploads/india_hhhl'
-# UPLOAD_FOLDER = os.path.abspath(os.path.join(os.getcwd(), 'uploads', 'volar_ind'))
-# os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
+# Absolute Path Ingestion & Variable Sync Configuration Matrix
 UPLOAD_FOLDER = os.path.abspath(os.path.join(os.getcwd(), 'uploads', 'india_hhhl'))
 RESULTS_JSON = os.path.join(UPLOAD_FOLDER, 'last_india_hhhl_results.json')
 LAST_CSV_CONFIG = os.path.join(UPLOAD_FOLDER, 'last_csv_path.json')
 HISTORY_CACHE_DIR = os.path.join(UPLOAD_FOLDER, 'history_cache')
+
 os.makedirs(HISTORY_CACHE_DIR, exist_ok=True)
 
 def get_latest_csv(directory):
@@ -95,20 +93,25 @@ def hh_hl_view():
     stocks = []
     summary_message = None
     last_run_time = None
-    results_path = os.path.join(UPLOAD_FOLDER, 'hhhl_results.json')
     
-    latest_file_path = get_latest_csv(UPLOAD_FOLDER)
-    last_file_name = os.path.basename(latest_file_path) if latest_file_path else "None"
+    # Read persistent configuration file from disk storage layer
+    last_file_name = "None"
+    if os.path.exists(LAST_CSV_CONFIG):
+        with open(LAST_CSV_CONFIG, 'r') as cf:
+            last_file_name = json.load(cf).get("last_used_csv", "None")
 
     if request.method == "POST":
         file = request.files.get('file')
-        filepath = latest_file_path
+        filepath = get_latest_csv(UPLOAD_FOLDER)
 
         if file and file.filename != '':
             filename = secure_filename(file.filename)
             filepath = os.path.join(UPLOAD_FOLDER, filename)
             file.save(filepath)
             last_file_name = filename
+            # Cache active metadata layout configs directly to disk
+            with open(LAST_CSV_CONFIG, 'w') as cf:
+                json.dump({"last_used_csv": last_file_name}, cf)
 
         if filepath and os.path.exists(filepath):
             try:
@@ -128,15 +131,17 @@ def hh_hl_view():
                     "last_run": last_run_time,
                     "stocks": stocks
                 }
-                with open(results_path, 'w') as f:
+                
+                # Verify and commit system data payload cache to storage array
+                with open(RESULTS_JSON, 'w') as f:
                     json.dump(cache_payload, f)
                     
                 summary_message = f"✅ Scan Complete using {last_file_name}. Found {len(stocks)} stocks."
             except Exception as e:
                 summary_message = f"❌ Error: {str(e)}"
     else:
-        if os.path.exists(results_path):
-            with open(results_path, 'r') as f:
+        if os.path.exists(RESULTS_JSON):
+            with open(RESULTS_JSON, 'r') as f:
                 cached_data = json.load(f)
                 if isinstance(cached_data, dict):
                     stocks = cached_data.get("stocks", [])
@@ -185,9 +190,9 @@ def hh_hl_view():
 
 @hh_hl_bp.route("/export-hhhl")
 def export_hhhl():
-    results_path = os.path.join(UPLOAD_FOLDER, 'hhhl_results.json')
-    if os.path.exists(results_path):
-        with open(results_path, 'r') as f:
+    # Explicitly pull down data matching fixed storage constants
+    if os.path.exists(RESULTS_JSON):
+        with open(RESULTS_JSON, 'r') as f:
             cached_data = json.load(f)
             data = cached_data.get("stocks", []) if isinstance(cached_data, dict) else cached_data
         df = pd.DataFrame(data)
