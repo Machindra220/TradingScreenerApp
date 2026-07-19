@@ -53,6 +53,7 @@
                        onkeypress="if(event.key==='Enter') triggerDirectSymbolLoad(this.value)">
 
                 <div id="timeframeSelector" class="flex items-center bg-slate-950 border border-slate-800 rounded-lg overflow-hidden">
+                    <button data-r="MAX" onclick="updateTimeframe('MAX')" class="r-btn text-[9px] font-black uppercase px-2.5 py-1.5 text-slate-400 hover:text-white transition" title="Load all available history — the default, avoids 'no data' errors on stocks with a shorter listing history">MAX</button>
                     <button data-r="2Y" onclick="updateTimeframe('2Y')" class="r-btn text-[9px] font-black uppercase px-2.5 py-1.5 text-slate-400 hover:text-white transition">2Y</button>
                     <button data-r="3Y" onclick="updateTimeframe('3Y')" class="r-btn text-[9px] font-black uppercase px-2.5 py-1.5 text-slate-400 hover:text-white transition">3Y</button>
                     <button data-r="5Y" onclick="updateTimeframe('5Y')" class="r-btn text-[9px] font-black uppercase px-2.5 py-1.5 text-slate-400 hover:text-white transition">5Y</button>
@@ -292,7 +293,7 @@
 <script>
 let cA = null, sCandle, sSma30, sVolume;
 let lookupMap = {}, activePayload = null;
-let cSym = '{{ default_stock }}', cMkt = '{{ default_market }}', cRng = '5Y';
+let cSym = '{{ default_stock }}', cMkt = '{{ default_market }}', cRng = 'MAX';
 let tickerCollection = [], fullTickerCollection = [], carouselPointer = -1;
 let currentScreener = '';
 let customListActive = false;

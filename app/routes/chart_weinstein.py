@@ -32,6 +32,13 @@ MARKET_SUFFIX = {"US": "", "NSE": ".NS"}
 # downloaded and resampled to weekly bars below, with generous extra history
 # so the 30-week MA (needs 30 bars) has proper warm-up before the display window.
 RANGE_OPTIONS = {
+    # Default — always pull whatever yfinance actually has (period="max") and
+    # show all of it (weeks=None means "don't slice"). This is what avoids
+    # the "no data" failures: a fixed default like 5Y was downloading a fixed
+    # period regardless of how much history a given stock actually has, and
+    # a stock listed for less than that window could fall under the minimum-
+    # bar checks below even though yfinance had perfectly usable data for it.
+    "MAX": {"weeks": None, "download_period": "max"},
     "2Y":  {"weeks": 104, "download_period": "5y"},
     "3Y":  {"weeks": 156, "download_period": "6y"},
     "5Y":  {"weeks": 260, "download_period": "8y"},
@@ -113,12 +120,22 @@ def resample_weekly(daily_df):
 
 def find_pivots(series, left, right, mode):
     """Simple swing high/low detector: a bar qualifies if it's the max/min
-    within a window of `left` bars before and `right` bars after it."""
-    vals = series.values
+    within a window of `left` bars before and `right` bars after it.
+
+    Cast to float explicitly (rather than trusting series.values' dtype):
+    thinly-traded tickers occasionally give yfinance/pandas a reason to leave
+    a column as object-dtype with a stray Python None in it, and comparing
+    None against a number with '>' raises TypeError instead of just being
+    "missing data". Casting to float turns any None into a proper NaN, which
+    comparisons handle gracefully (just evaluate to False) instead of crashing.
+    """
+    vals = np.asarray(series, dtype=float)
     n = len(vals)
     idxs = []
     for i in range(left, n - right):
         window = vals[i - left:i + right + 1]
+        if np.isnan(window).any():
+            continue
         if mode == 'high' and vals[i] >= window.max():
             idxs.append(i)
         elif mode == 'low' and vals[i] <= window.min():
@@ -152,11 +169,11 @@ def compute_weinstein_analysis(weekly_df):
     plain, inspectable rule — no black-box scoring."""
     df = weekly_df
     n = len(df)
-    if n < 40:
-        return None  # not enough weekly bars yet for a meaningful 30-week MA read
+    if n < 34:
+        return None  # need at least 30 weeks for the MA itself + a few more for a slope read
 
-    close = df['Close'].values
-    sma30 = df['sma30'].values
+    close = np.asarray(df['Close'].values, dtype=float)
+    sma30 = np.asarray(df['sma30'].values, dtype=float)
     last = n - 1
 
     def slope_pct(arr, i, lookback):
@@ -213,8 +230,10 @@ def compute_weinstein_analysis(weekly_df):
             if close[i] > r_hi and close[i - 1] <= r_hi:
                 events["breakout"] = True
                 events["breakout_weeks_ago"] = w - 1
-                vol_i = float(df['Volume'].iloc[i])
-                avgvol_i = df['avg_vol10'].iloc[i - 1]
+                vol_i_raw = df['Volume'].iloc[i]
+                avgvol_i_raw = df['avg_vol10'].iloc[i - 1]
+                vol_i = float(vol_i_raw) if pd.notna(vol_i_raw) else float('nan')
+                avgvol_i = float(avgvol_i_raw) if pd.notna(avgvol_i_raw) else float('nan')
                 events["breakout_volume_confirmed"] = bool(
                     not np.isnan(avgvol_i) and vol_i > avgvol_i * VOLUME_SURGE_MULTIPLE
                 )
@@ -236,8 +255,10 @@ def compute_weinstein_analysis(weekly_df):
             if close[i] < s_lo and close[i - 1] >= s_lo:
                 events["breakdown"] = True
                 events["breakdown_weeks_ago"] = w - 1
-                vol_i = float(df['Volume'].iloc[i])
-                avgvol_i = df['avg_vol10'].iloc[i - 1]
+                vol_i_raw = df['Volume'].iloc[i]
+                avgvol_i_raw = df['avg_vol10'].iloc[i - 1]
+                vol_i = float(vol_i_raw) if pd.notna(vol_i_raw) else float('nan')
+                avgvol_i = float(avgvol_i_raw) if pd.notna(avgvol_i_raw) else float('nan')
                 events["breakdown_volume_confirmed"] = bool(
                     not np.isnan(avgvol_i) and vol_i > avgvol_i * VOLUME_SURGE_MULTIPLE
                 )
@@ -295,8 +316,8 @@ def get_weinstein_telemetry_data(symbol):
         if market not in MARKET_SUFFIX: market = "NSE"
         suffix = MARKET_SUFFIX[market]
 
-        range_key = request.args.get("range", "5Y").strip().upper()
-        if range_key not in RANGE_OPTIONS: range_key = "5Y"
+        range_key = request.args.get("range", "MAX").strip().upper()
+        if range_key not in RANGE_OPTIONS: range_key = "MAX"
         range_cfg = RANGE_OPTIONS[range_key]
 
         symbol_clean = symbol.strip().upper().replace(".NS", "").replace(".", "-")
@@ -313,14 +334,49 @@ def get_weinstein_telemetry_data(symbol):
         if isinstance(data.columns, pd.MultiIndex):
             data.columns = data.columns.get_level_values(0)
 
+        # Coerce to clean numeric dtype BEFORE any resampling/aggregation.
+        # This has to happen here, not after resample_weekly() — thinly-
+        # traded tickers (CEMPRO, THANGAMAYL, etc.) can hand yfinance actual
+        # Python None values on gappy days, leaving an object-dtype column.
+        # resample('W-FRI').agg({'High':'max','Low':'min',...}) then does
+        # pairwise '>' comparisons internally to find the max/min, and
+        # comparing an int to None raises TypeError right there — before any
+        # sanitization done on the *output* of resampling gets a chance to
+        # run. Coercing the raw daily columns first (turning any None into a
+        # proper NaN) fixes it at the actual source.
+        for col in ["Open", "High", "Low", "Close", "Volume"]:
+            if col in data.columns:
+                data[col] = pd.to_numeric(data[col], errors="coerce")
+
         data = data.dropna(subset=["Close", "Open", "High", "Low"])
-        if len(data) < 250:
+        if len(data) < 180:
             return jsonify({
                 "status": "error",
-                "message": "Insufficient daily history to build a reliable weekly Stage Analysis chart (need ~1yr+)."
+                "message": f"'{symbol_clean}' only has {len(data)} trading days of history on yfinance — "
+                           f"a 30-week moving average needs at least ~180 (about 8-9 months). "
+                           f"This stock may be too newly listed for Stage Analysis yet."
             }), 400
 
         weekly = resample_weekly(data)
+
+        # Thinly-traded tickers occasionally leave pandas/yfinance with an
+        # object-dtype column holding a stray Python None instead of a
+        # proper NaN (this is what was breaking THANGAMAYL: a bare None
+        # reaching a numeric '>' comparison raises TypeError instead of
+        # just being treated as missing data). pd.to_numeric(errors='coerce')
+        # forces every column to real floats, turning any such None into a
+        # NaN that the rest of the pipeline already knows how to skip.
+        for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
+            weekly[col] = pd.to_numeric(weekly[col], errors='coerce')
+        weekly = weekly.dropna(subset=['Open', 'High', 'Low', 'Close'])
+
+        if len(weekly) < 34:
+            return jsonify({
+                "status": "error",
+                "message": f"'{symbol_clean}' has only {len(weekly)} clean weekly bars after removing "
+                           f"gaps/bad data points — a 30-week MA needs at least 34."
+            }), 400
+
         weekly['sma30'] = weekly['Close'].rolling(30).mean()
         weekly['avg_vol10'] = weekly['Volume'].rolling(10).mean()
 
@@ -328,11 +384,11 @@ def get_weinstein_telemetry_data(symbol):
         if analysis is None:
             return jsonify({
                 "status": "error",
-                "message": "Not enough weekly bars yet for a 30-week MA read (need 40+ weeks of history)."
+                "message": "Not enough weekly bars yet for a 30-week MA read (need 34+ weeks of history)."
             }), 400
 
         weeks = range_cfg["weeks"]
-        display = weekly.iloc[-weeks:] if len(weekly) > weeks else weekly
+        display = weekly.iloc[-weeks:] if (weeks is not None and len(weekly) > weeks) else weekly
         # Index of the first displayed bar within the *full* weekly series —
         # needed to translate event "weeks ago" positions into marker dates below.
         display_start_pos = len(weekly) - len(display)
