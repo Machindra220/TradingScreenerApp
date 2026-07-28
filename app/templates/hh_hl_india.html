@@ -20,7 +20,7 @@
                 <span id="strategyRuleBtnText">🎯 Filter Winning Stocks</span>
             </button>
             {% if stocks %}
-            <a href="{{ url_for('hh_hl_india.export_hhhl') }}" class="px-3.5 py-2 bg-indigo-500 hover:bg-emerald-600 border border-emerald-500 text-white text-xs font-bold uppercase rounded-lg shadow-md transition-all flex items-center justify-center gap-1.5">
+            <a href="{{ url_for('hh_hl_india.export_hhhl') }}" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 border border-emerald-500/30 text-white text-xs font-bold uppercase rounded-lg shadow-md transition-all flex items-center justify-center gap-1.5">
                 <span>📥 Export CSV</span>
             </a>
             {% endif %}
@@ -75,15 +75,15 @@
             <table class="min-w-full text-left" id="trendTable">
                 <thead class="bg-slate-100/50 dark:bg-slate-900/40 border-b border-white/10 dark:border-slate-800/50">
                     <tr>
-                        <th class="px-4 py-4 text-[8px] font-bold uppercase text-slate-400 w-12">Sr.</th>
-                        <th class="px-6 py-4 text-[8px] font-bold uppercase text-slate-400">Symbol</th>
-                        <th class="px-4 py-4 text-[8px] font-bold uppercase text-slate-400 cursor-pointer hover:text-blue-500 transition-colors" onclick="sortTable(2)">Sector ↕</th>
-                        <th class="px-6 py-4 text-[8px] font-bold uppercase text-slate-400">Price</th>
-                        <th class="px-6 py-4 text-[8px] font-bold uppercase text-slate-400">Swing Low</th>
-                        <th class="px-6 py-4 text-[8px] font-bold uppercase text-slate-400 cursor-pointer hover:text-blue-500 transition-colors" onclick="sortTable(5)">SL % ↕</th>
-                        <th class="px-6 py-4 text-[8px] font-bold uppercase text-slate-400">52W Retrace</th>
-                        <th class="px-6 py-4 text-[8px] font-bold uppercase text-slate-400">RS Score</th>
-                        <th class="px-6 py-4 text-[8px] font-bold uppercase text-slate-400 cursor-pointer hover:text-blue-500 transition-colors" onclick="sortTable(8)">RS Trend ↕</th>
+                        <th class="px-4 py-4 text-[9px] font-bold uppercase text-slate-400 w-12">Sr.</th>
+                        <th class="px-6 py-4 text-[9px] font-bold uppercase text-slate-400">Symbol</th>
+                        <th class="px-4 py-4 text-[9px] font-bold uppercase text-slate-400 cursor-pointer hover:text-blue-500 transition-colors" onclick="sortTable(2)">Sector ↕</th>
+                        <th class="px-6 py-4 text-[9px] font-bold uppercase text-slate-400">Price</th>
+                        <th class="px-6 py-4 text-[9px] font-bold uppercase text-slate-400">Swing Low</th>
+                        <th class="px-6 py-4 text-[9px] font-bold uppercase text-slate-400 cursor-pointer hover:text-blue-500 transition-colors" onclick="sortTable(5)">SL % ↕</th>
+                        <th class="px-6 py-4 text-[9px] font-bold uppercase text-slate-400">52W Retrace</th>
+                        <th class="px-6 py-4 text-[9px] font-bold uppercase text-slate-400">RS Score</th>
+                        <th class="px-6 py-4 text-[9px] font-bold uppercase text-slate-400 cursor-pointer hover:text-blue-500 transition-colors" onclick="sortTable(8)">RS Trend ↕</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-white/5 dark:divide-slate-800/50">
@@ -95,7 +95,7 @@
                         data-rs="{{ stock.rs }}"
                         data-retrace="{{ stock.retracement }}"
                         data-trend="{{ stock.rs_trend }}">
-                        <td class="px-4 py-4 text-[8px] text-slate-400 font-xs row-number">{{ loop.index }}</td>
+                        <td class="px-4 py-4 text-[10px] text-slate-400 font-medium row-number">{{ loop.index }}</td>
                         <td class="px-6 py-4 font-black text-blue-500 dark:text-blue-400 text-sm">
                             <div class="flex items-center gap-2">
                                 {{ stock.symbol }}
@@ -104,14 +104,13 @@
                                 </button>
                             </div>
                         </td>
-                        <!-- Small 10px text and tracking constraints applied to keep rows perfectly unified -->
-                        <td class="px-2 py-2 whitespace-nowrap text-[8px] tracking-tighter">
+                        <td class="px-4 py-4 whitespace-nowrap text-[10px] tracking-tighter">
                             {% if sec_theme %}
-                                <span style="background-color: {{ sec_theme.bg }}; color: {{ sec_theme.text }}; border-color: {{ sec_theme.border }}; font-size: 12px;" class="px-2 py-0.5 rounded border font-black block text-center uppercase">
+                                <span style="background-color: {{ sec_theme.bg }}; color: {{ sec_theme.text }}; border-color: {{ sec_theme.border }};" class="px-2 py-0.5 rounded border font-black block text-center uppercase">
                                     {{ stock.sector }}
                                 </span>
                             {% else %}
-                                <span style="font-size: 12px;" class="text-slate-400 opacity-80 block text-left uppercase">{{ stock.sector or 'N/A' }}</span>
+                                <span class="text-slate-400 opacity-80 block text-left uppercase">{{ stock.sector or 'N/A' }}</span>
                             {% endif %}
                         </td>
                         <td class="px-6 py-4 text-xs font-bold text-slate-900 dark:text-white">₹{{ stock.price }}</td>
@@ -119,7 +118,7 @@
                         <td class="px-6 py-4 text-xs font-black text-orange-500">{{ stock.sl_percent }}%</td>
                         <td class="px-6 py-4 text-xs font-bold text-red-500">-{{ stock.retracement }}%</td>
                         <td class="px-4 py-2 text-xs font-black text-green-500 dark:text-green-400">{{ stock.rs }}</td>
-                        <td class="px-4 py-2 whitespace-nowrap text-[8px] tracking-tighter">
+                        <td class="px-4 py-2 whitespace-nowrap text-[10px] tracking-tighter">
                             {% if 'Accelerating' in stock.rs_trend %}
                                 <span class="px-1.5 py-0.5 rounded font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 block text-center">
                                     🚀 Rising (+{{ stock.rs_change }}%)
@@ -257,7 +256,6 @@ function applyCombinedFilters() {
         const trend = row.getAttribute('data-trend');
         
         let matchesSector = !activeSectorFilter || (rowSector === activeSectorFilter);
-        // Supports both 'Accelerating' from database logs and 'Rising' keyword variations seamlessly
         let matchesStrategy = !strategyFilterApplied || (rs >= 1.15 && (trend.includes('Accelerating') || trend.includes('Rising')) && sl <= 8.0 && retrace <= 12.0);
         
         if (matchesSector && matchesStrategy) {

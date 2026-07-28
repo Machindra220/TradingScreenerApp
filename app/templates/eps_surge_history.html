@@ -2,68 +2,71 @@
 {% block title %}EPS Surge History{% endblock %}
 
 {% block content %}
-<div class="max-w-7xl mx-auto p-4 lg:p-8 bg-gray-50">
+<div class="max-w-7xl mx-auto p-4 lg:p-8">
     <div class="flex items-end justify-between mb-8">
         <div>
-            <h1 class="text-2xl font-bold text-gray-900">📜 Analysis Archive</h1>
-            <p class="text-sm text-gray-500">Track historical EPS surges and performance over time.</p>
+            <h1 class="text-2xl font-black text-indigo-900 dark:text-indigo-300 uppercase tracking-tight">📜 Analysis Archive</h1>
+            <p class="text-xs text-gray-500 dark:text-slate-400 font-semibold mt-1">Track historical EPS surges and performance over time.</p>
         </div>
     </div>
 
-    <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200 mb-6">
+    <div class="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm dark:shadow-none mb-6">
         <form method="get" class="flex flex-wrap items-center gap-6">
             <div class="flex flex-col">
-                <label class="text-[10px] font-bold text-gray-400 uppercase mb-1">Stock Ticker</label>
+                <label class="text-[10px] font-bold text-gray-400 dark:text-slate-500 uppercase tracking-widest mb-1">Stock Ticker</label>
                 <input type="text" name="symbol" value="{{ symbol_filter }}" placeholder="e.g. TCS"
-                       class="px-3 py-2 bg-gray-50 border rounded-lg text-sm font-bold focus:ring-2 focus:ring-blue-500">
+                       class="px-3 py-2 bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-slate-100 border border-gray-300 dark:border-slate-700 rounded-xl text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none">
             </div>
             <div class="flex flex-col">
-                <label class="text-[10px] font-bold text-gray-400 uppercase mb-1">Screen Date</label>
+                <label class="text-[10px] font-bold text-gray-400 dark:text-slate-500 uppercase tracking-widest mb-1">Screen Date</label>
                 <input type="date" name="date" value="{{ date_filter }}"
-                       class="px-3 py-2 bg-gray-50 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500">
+                       class="px-3 py-2 bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-slate-100 border border-gray-300 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 outline-none">
             </div>
             <div class="flex gap-2 h-10 mt-5">
-                <button type="submit" class="px-6 bg-gray-900 text-white text-sm font-bold rounded-lg hover:bg-black transition-colors">Apply</button>
-                <a href="{{ url_for('eps.eps_screener_history') }}" class="px-6 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 flex items-center">Reset</a>
+                <button type="submit" class="px-6 bg-gray-900 dark:bg-slate-700 text-white text-xs font-bold uppercase rounded-xl hover:bg-black dark:hover:bg-slate-600 transition-colors shadow-md">Apply</button>
+                <a href="{{ url_for('eps.eps_screener_history') }}" class="px-6 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-700 dark:text-slate-300 text-xs font-bold uppercase rounded-xl hover:bg-gray-50 dark:hover:bg-slate-700 flex items-center transition-colors">Reset</a>
             </div>
         </form>
     </div>
 
-    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <table class="w-full text-xs font-mono" id="history-table">
-            <thead class="bg-gray-50 border-b">
-                <tr class="text-gray-400 text-left">
-                    <th class="px-6 py-4 font-bold uppercase tracking-tighter">Date</th>
-                    <th class="px-4 py-4 font-bold uppercase tracking-tighter">Ticker</th>
-                    <th class="px-4 py-4 font-bold uppercase tracking-tighter text-right">Signal Price</th>
-                    <th class="px-4 py-4 font-bold uppercase tracking-tighter text-center">EPS Q1|Q2|Q3</th>
-                    <th class="px-4 py-4 font-bold uppercase tracking-tighter text-right">Volume</th>
-                    <th class="px-4 py-4 font-bold uppercase tracking-tighter text-right">ROE%</th>
-                </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-50">
-                {% for stock in rows %}
-                <tr class="hover:bg-gray-50/50 transition-colors">
-                    <td class="px-6 py-4 text-gray-500">{{ stock.screener_date.strftime('%d %b %Y') }}</td>
-                    <td class="px-4 py-4 font-extrabold text-gray-900">{{ stock.symbol_clean }}</td>
-                    <td class="px-4 py-4 text-right text-gray-900">₹{{ "%.2f"|format(stock.price or 0) }}</td>
-                    <td class="px-4 py-4 text-center">
-                        <span class="text-blue-600 font-bold">{{ stock.eps_growth_q1 }}%</span>
-                        <span class="mx-1 text-gray-300">|</span>
-                        <span class="text-blue-600 font-bold">{{ stock.eps_growth_q2 }}%</span>
-                        <span class="mx-1 text-gray-300">|</span>
-                        <span class="text-blue-600 font-bold">{{ stock.eps_growth_q3 }}%</span>
-                    </td>
-                    <td class="px-4 py-4 text-right text-gray-400">{{ "{:,}".format(stock.volume or 0) }}</td>
-                    <td class="px-4 py-4 text-right font-semibold {{ 'text-green-600' if stock.roc_21d >= 17 else 'text-gray-400' }}">
-                        {{ stock.roc_21d }}%
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm dark:shadow-none overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-xs" id="history-table">
+                <thead class="bg-gray-50 dark:bg-slate-800/60 border-b border-gray-100 dark:border-slate-800 text-gray-400 dark:text-slate-400 font-bold uppercase">
+                    <tr class="text-left">
+                        <th class="px-6 py-4">Date</th>
+                        <th class="px-4 py-4">Ticker</th>
+                        <th class="px-4 py-4 text-right">Signal Price</th>
+                        <th class="px-4 py-4 text-center">EPS Q1|Q2|Q3</th>
+                        <th class="px-4 py-4 text-right">Volume</th>
+                        <th class="px-4 py-4 text-right">ROE%</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-50 dark:divide-slate-800 text-gray-800 dark:text-slate-200">
+                    {% for stock in rows %}
+                    <tr class="hover:bg-indigo-50/30 dark:hover:bg-indigo-500/10 transition-colors">
+                        <td class="px-6 py-4 text-gray-500 dark:text-slate-400 font-medium">{{ stock.screener_date.strftime('%d %b %Y') }}</td>
+                        <td class="px-4 py-4 font-black text-indigo-700 dark:text-indigo-300">{{ stock.symbol_clean }}</td>
+                        <td class="px-4 py-4 text-right font-bold text-gray-900 dark:text-slate-100">₹{{ "%.2f"|format(stock.price or 0) }}</td>
+                        <td class="px-4 py-4 text-center">
+                            <span class="text-blue-600 dark:text-blue-400 font-bold">{{ stock.eps_growth_q1 }}%</span>
+                            <span class="mx-1 text-gray-300 dark:text-slate-600">|</span>
+                            <span class="text-blue-600 dark:text-blue-400 font-bold">{{ stock.eps_growth_q2 }}%</span>
+                            <span class="mx-1 text-gray-300 dark:text-slate-600">|</span>
+                            <span class="text-blue-600 dark:text-blue-400 font-bold">{{ stock.eps_growth_q3 }}%</span>
+                        </td>
+                        <td class="px-4 py-4 text-right text-gray-500 dark:text-slate-400 font-mono">{{ "{:,}".format(stock.volume or 0) }}</td>
+                        <td class="px-4 py-4 text-right font-bold {{ 'text-green-600 dark:text-emerald-400' if stock.roc_21d >= 17 else 'text-gray-500 dark:text-slate-400' }}">
+                            {{ stock.roc_21d }}%
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
 </div>
+
 <!-- 📋 Copy-to-Clipboard Script -->
 <script>
 function copyToClipboard(symbol) {

@@ -1,46 +1,50 @@
 {% extends "base_authenticated.html" %}
 {% block content %}
-<h2 class="text-xl font-semibold mb-4">🔥 Top Stocks in {{ sector }}</h2>
+<div class="max-w-7xl mx-auto px-4 py-8">
+  <h2 class="text-2xl font-black text-indigo-900 dark:text-indigo-300 uppercase tracking-tight mb-6">🔥 Top Stocks in {{ sector }}</h2>
 
-{% if error %}
-  <p class="text-red-600 bg-red-100 border border-red-300 rounded px-4 py-2 mb-4">
-    {{ error }}
-  </p>
-{% elif stocks %}
-  <table class="min-w-full bg-white rounded shadow">
-    <thead class="bg-blue-100 text-left">
-      <tr>
-        <th class="px-4 py-2">#</th>
-        <th class="px-4 py-2">Symbol</th>
-        <th class="px-4 py-2">Price</th>
-        <th class="px-4 py-2">30W MA</th>
-        <th class="px-4 py-2">RS</th>
-        <th class="px-4 py-2">Persistence</th>
-        <th class="px-4 py-2">Tag</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for stock in stocks %}
-      <tr class="border-t">
-        <td class="px-4 py-2">{{ stock.rank }}</td>
-        <td class="px-4 py-2 flex items-center gap-2">
-          <span>{{ stock.symbol_clean }}</span>
-          <button onclick="copyToClipboard('{{ stock.symbol_clean }}')" class="text-blue-600 hover:underline text-sm">📋 Copy</button>
-        </td>
-        <td class="px-4 py-2">{{ stock.price }}</td>
-        <td class="px-4 py-2">{{ stock['30w_ma'] }}</td>
-        <td class="px-4 py-2">{{ stock.rs }}</td>
-        <td class="px-4 py-2">{{ stock.persistence }}</td>
-        <td class="px-4 py-2">{{ stock.tag }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-{% else %}
-  <p class="text-yellow-600 bg-yellow-100 border border-yellow-300 rounded px-4 py-2 mt-4">
-    No Stage 2 stocks found in {{ sector }}.
-  </p>
-{% endif %}
+  {% if error %}
+    <p class="text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-500/10 border border-red-300 dark:border-red-800/50 rounded-xl px-4 py-3 mb-6 text-xs font-bold">
+      {{ error }}
+    </p>
+  {% elif stocks %}
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm dark:shadow-none overflow-hidden">
+      <table class="min-w-full text-left text-xs">
+        <thead class="bg-gray-50 dark:bg-slate-800/60 border-b border-gray-100 dark:border-slate-800 text-gray-400 dark:text-slate-400 font-bold uppercase">
+          <tr>
+            <th class="px-6 py-4">#</th>
+            <th class="px-6 py-4">Symbol</th>
+            <th class="px-6 py-4">Price</th>
+            <th class="px-6 py-4">30W MA</th>
+            <th class="px-6 py-4">RS</th>
+            <th class="px-6 py-4">Persistence</th>
+            <th class="px-6 py-4">Tag</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-50 dark:divide-slate-800 text-gray-800 dark:text-slate-200">
+          {% for stock in stocks %}
+          <tr class="hover:bg-indigo-50/30 dark:hover:bg-indigo-500/10 transition-colors">
+            <td class="px-6 py-4 font-bold text-gray-400 dark:text-slate-500">{{ stock.rank }}</td>
+            <td class="px-6 py-4 flex items-center gap-2 font-black text-indigo-700 dark:text-indigo-300">
+              <span>{{ stock.symbol_clean }}</span>
+              <button onclick="copyToClipboard('{{ stock.symbol_clean }}')" class="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded transition text-xs">📋 Copy</button>
+            </td>
+            <td class="px-6 py-4 font-bold text-gray-900 dark:text-slate-100">{{ stock.price }}</td>
+            <td class="px-6 py-4">{{ stock['30w_ma'] }}</td>
+            <td class="px-6 py-4 font-black text-green-600 dark:text-emerald-400">{{ stock.rs }}</td>
+            <td class="px-6 py-4 text-gray-500 dark:text-slate-400">{{ stock.persistence }}</td>
+            <td class="px-6 py-4"><span class="px-2 py-1 bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-300 rounded text-[9px] font-bold uppercase">{{ stock.tag }}</span></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="text-yellow-700 dark:text-yellow-300 bg-yellow-100 dark:bg-yellow-500/10 border border-yellow-300 dark:border-yellow-800/50 rounded-xl px-4 py-3 mt-4 text-xs font-bold">
+      No Stage 2 stocks found in {{ sector }}.
+    </p>
+  {% endif %}
+</div>
 
 <script>
 function copyToClipboard(text) {

@@ -3,18 +3,18 @@
 <div class="max-w-4xl mx-auto px-4 py-8">
     <div class="mb-8 flex justify-between items-end">
         <div>
-            <h2 class="text-2xl font-black text-blue-900 uppercase">🤖 VOLAR AI Analyst</h2>
-            <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Rate-Limited Protected Mode</p>
+            <h2 class="text-2xl font-black text-indigo-900 dark:text-indigo-300 uppercase tracking-tight">🤖 VOLAR AI Analyst</h2>
+            <p class="text-[10px] font-bold text-gray-400 dark:text-slate-500 uppercase tracking-widest mt-1">Rate-Limited Protected Mode</p>
         </div>
-        <span id="cooldownTimer" class="hidden bg-amber-100 text-amber-700 text-[8px] px-2 py-1 rounded-full font-black uppercase tracking-tighter animate-pulse">Cooldown: 15s</span>
+        <span id="cooldownTimer" class="hidden bg-amber-100 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/40 text-[8px] px-2 py-1 rounded-full font-black uppercase tracking-tighter animate-pulse">Cooldown: 15s</span>
     </div>
 
     <input type="hidden" id="csrf_token" value="{{ csrf_token }}">
 
-    <div class="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden flex flex-col h-[600px]">
-        <div id="chatWindow" class="flex-1 p-6 overflow-y-auto space-y-4 bg-gray-50/50">
+    <div class="bg-white dark:bg-slate-900 rounded-3xl border border-gray-100 dark:border-slate-800 shadow-sm dark:shadow-none overflow-hidden flex flex-col h-[600px]">
+        <div id="chatWindow" class="flex-1 p-6 overflow-y-auto space-y-4 bg-gray-50/50 dark:bg-slate-950/40">
             <div class="flex gap-3">
-                <div class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-black">AI</div>
+                <div class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-black shrink-0">AI</div>
                 <div class="bg-blue-600 text-white p-4 rounded-2xl rounded-tl-none max-w-[80%] text-xs font-bold shadow-sm">
                     Ready to analyze. Send button will cool down for 15s after each request to respect API limits.
                 </div>
@@ -23,10 +23,10 @@
 
         <div id="loading" class="hidden px-6 py-2 text-[10px] font-black text-indigo-400 animate-pulse uppercase">Processing...</div>
 
-        <div class="p-4 bg-white border-t border-gray-100">
-            <div class="flex gap-2 bg-gray-50 p-2 rounded-2xl border border-gray-100">
-                <input type="text" id="userInput" placeholder="Ask about the scan..." class="flex-1 bg-transparent border-none focus:ring-0 text-xs font-bold px-4 py-2">
-                <button id="sendBtn" onclick="sendMessage()" class="bg-indigo-600 text-white p-3 rounded-xl hover:bg-indigo-700 transition">
+        <div class="p-4 bg-white dark:bg-slate-900 border-t border-gray-100 dark:border-slate-800">
+            <div class="flex gap-2 bg-gray-50 dark:bg-slate-800 p-2 rounded-2xl border border-gray-100 dark:border-slate-700">
+                <input type="text" id="userInput" placeholder="Ask about the scan..." class="flex-1 bg-transparent border-none focus:ring-0 text-xs font-bold px-4 py-2 text-gray-900 dark:text-slate-100 placeholder:text-gray-400 dark:placeholder:text-slate-500 outline-none">
+                <button id="sendBtn" onclick="sendMessage()" class="bg-indigo-600 text-white p-3 rounded-xl hover:bg-indigo-700 transition shadow-md">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
                 </button>
             </div>
@@ -49,7 +49,7 @@ function sendMessage() {
     sendBtn.classList.add('opacity-50', 'cursor-not-allowed');
     timer.classList.remove('hidden');
 
-    chatWindow.innerHTML += `<div class="flex justify-end"><div class="bg-white border p-4 rounded-2xl text-xs font-bold shadow-sm">${message}</div></div>`;
+    chatWindow.innerHTML += `<div class="flex justify-end"><div class="bg-white dark:bg-slate-800 border border-gray-100 dark:border-slate-700 p-4 rounded-2xl text-xs font-bold text-gray-800 dark:text-slate-200 shadow-sm max-w-[80%]">${message}</div></div>`;
     input.value = '';
     document.getElementById('loading').classList.remove('hidden');
 
@@ -62,7 +62,7 @@ function sendMessage() {
     .then(data => {
         document.getElementById('loading').classList.add('hidden');
         const formatted = data.response.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-        chatWindow.innerHTML += `<div class="flex gap-3"><div class="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 text-xs font-black">AI</div><div class="bg-white border p-4 rounded-2xl text-xs font-bold shadow-sm">${formatted}</div></div>`;
+        chatWindow.innerHTML += `<div class="flex gap-3"><div class="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-500/20 flex items-center justify-center text-indigo-600 dark:text-indigo-400 text-xs font-black shrink-0">AI</div><div class="bg-white dark:bg-slate-800 border border-gray-100 dark:border-slate-700 p-4 rounded-2xl text-xs font-bold text-gray-800 dark:text-slate-200 shadow-sm max-w-[80%]">${formatted}</div></div>`;
         chatWindow.scrollTop = chatWindow.scrollHeight;
 
         // Start 15s cooldown before enabling button again

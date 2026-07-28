@@ -27,6 +27,7 @@ SCREENER_CONFIG = {
 }
 
 MARKET_SUFFIX = {"US": "", "NSE": ".NS"}
+MARKET_BENCHMARK = {"US": "^GSPC", "NSE": "^CRSLDX"}
 
 # Weinstein's method is explicitly a WEEKLY chart method — daily data is
 # downloaded and resampled to weekly bars below, with generous extra history
@@ -58,6 +59,11 @@ ZONE_CLUSTER_PCT = 3.0           # merge pivots within this % of each other into
 ZONE_LOOKBACK_WEEKS = 52         # only look at pivots from the last N weeks for "the current range"
 BREAKOUT_LOOKBACK_WEEKS = 12     # how far back a breakout/breakdown still counts as "recent"
 EXTENDED_ABOVE_MA_PCT = 30.0     # Weinstein's chasing-caution zone: %+ above the 30WMA
+
+RS_SMA_WEEKS = 10                # smoothing window for the RS trend line
+RS_NEW_HIGH_LOOKBACK_WEEKS = 52  # "52-week RS high" is Weinstein's own convention
+RS_NEW_HIGH_RECENT_WEEKS = 8     # how far back a 52-week RS high still counts as a "recent" event
+RS_GROWTH_LOOKBACK_WEEKS = 13    # ~1 quarter — window used to rank cross-sectional RS strength
 
 
 # ----------------------------------------------------------------------------
@@ -285,6 +291,44 @@ STAGE_LABELS = {
 }
 
 
+def compute_rs_events(rs_ratio):
+    """RS-specific reads, independent of the price/stage analysis above:
+
+    - rs_new_high: has the weekly RS ratio (stock ÷ benchmark) made a new
+      RS_NEW_HIGH_LOOKBACK_WEEKS-week high within the last RS_NEW_HIGH_RECENT_WEEKS
+      weeks? Weinstein treats RS making new highs — especially ahead of price
+      itself — as one of the earliest, most reliable strength signals.
+    - rs_trend_up: is the RS ratio higher than it was ~4 weeks ago (a short
+      trend read, same style as the 30WMA slope check).
+    """
+    result = {"rs_new_high": False, "rs_new_high_weeks_ago": None, "rs_trend_up": False}
+    vals = np.asarray(rs_ratio.values, dtype=float)
+    n = len(vals)
+    if n < 2:
+        return result
+
+    lookback = min(RS_NEW_HIGH_LOOKBACK_WEEKS, n)
+    recent_window = min(RS_NEW_HIGH_RECENT_WEEKS, n - 1)
+
+    for w in range(0, recent_window + 1):
+        i = n - 1 - w
+        if i < 0:
+            break
+        window = vals[max(0, i - lookback + 1):i + 1]
+        if len(window) == 0 or np.all(np.isnan(window)) or np.isnan(vals[i]):
+            continue
+        if vals[i] >= np.nanmax(window):
+            result["rs_new_high"] = True
+            result["rs_new_high_weeks_ago"] = w
+            break
+
+    j = n - 1
+    if j - 4 >= 0 and not np.isnan(vals[j]) and not np.isnan(vals[j - 4]) and vals[j - 4] != 0:
+        result["rs_trend_up"] = bool(vals[j] > vals[j - 4])
+
+    return result
+
+
 @chart_weinstein_bp.route("/chart-weinstein-stage-analysis")
 def weinstein_dashboard():
     default_market = request.args.get("market", "NSE").strip().upper()
@@ -322,9 +366,10 @@ def get_weinstein_telemetry_data(symbol):
 
         symbol_clean = symbol.strip().upper().replace(".NS", "").replace(".", "-")
         fetch_symbol = f"{symbol_clean}{suffix}"
+        benchmark_symbol = MARKET_BENCHMARK[market]
 
         data = yf.download(
-            fetch_symbol, period=range_cfg["download_period"], interval="1d",
+            [fetch_symbol, benchmark_symbol], period=range_cfg["download_period"], interval="1d",
             auto_adjust=True, progress=False
         )
 
@@ -332,7 +377,23 @@ def get_weinstein_telemetry_data(symbol):
             return jsonify({"status": "error", "message": f"No data returned for '{symbol_clean}'."}), 400
 
         if isinstance(data.columns, pd.MultiIndex):
-            data.columns = data.columns.get_level_values(0)
+            if data.columns.names[0] != 'Price':
+                try: data.columns = data.columns.swaplevel(0, 1)
+                except Exception: pass
+            data.columns.names = ['Price', 'Ticker']
+
+        if 'Close' not in data or fetch_symbol not in data['Close'].columns:
+            return jsonify({"status": "error", "message": f"Invalid {market} ticker '{symbol_clean}'."}), 400
+
+        daily = pd.DataFrame({
+            "Open": data['Open'][fetch_symbol], "High": data['High'][fetch_symbol],
+            "Low": data['Low'][fetch_symbol], "Close": data['Close'][fetch_symbol],
+            "Volume": data['Volume'][fetch_symbol] if 'Volume' in data else pd.Series(dtype=float)
+        })
+        bench_daily_close = (
+            data['Close'][benchmark_symbol] if benchmark_symbol in data['Close'].columns
+            else pd.Series(dtype=float)
+        )
 
         # Coerce to clean numeric dtype BEFORE any resampling/aggregation.
         # This has to happen here, not after resample_weekly() — thinly-
@@ -345,19 +406,19 @@ def get_weinstein_telemetry_data(symbol):
         # run. Coercing the raw daily columns first (turning any None into a
         # proper NaN) fixes it at the actual source.
         for col in ["Open", "High", "Low", "Close", "Volume"]:
-            if col in data.columns:
-                data[col] = pd.to_numeric(data[col], errors="coerce")
+            daily[col] = pd.to_numeric(daily[col], errors="coerce")
+        bench_daily_close = pd.to_numeric(bench_daily_close, errors="coerce")
 
-        data = data.dropna(subset=["Close", "Open", "High", "Low"])
-        if len(data) < 180:
+        daily = daily.dropna(subset=["Close", "Open", "High", "Low"])
+        if len(daily) < 180:
             return jsonify({
                 "status": "error",
-                "message": f"'{symbol_clean}' only has {len(data)} trading days of history on yfinance — "
+                "message": f"'{symbol_clean}' only has {len(daily)} trading days of history on yfinance — "
                            f"a 30-week moving average needs at least ~180 (about 8-9 months). "
                            f"This stock may be too newly listed for Stage Analysis yet."
             }), 400
 
-        weekly = resample_weekly(data)
+        weekly = resample_weekly(daily)
 
         # Thinly-traded tickers occasionally leave pandas/yfinance with an
         # object-dtype column holding a stray Python None instead of a
@@ -380,12 +441,23 @@ def get_weinstein_telemetry_data(symbol):
         weekly['sma30'] = weekly['Close'].rolling(30).mean()
         weekly['avg_vol10'] = weekly['Volume'].rolling(10).mean()
 
+        # --- Relative Strength vs the market benchmark (weekly), Weinstein's
+        # own preferred RS read — same benchmark tickers as the carousel/
+        # combined charts (^GSPC / ^CRSLDX) so all three stay consistent. ---
+        bench_weekly = bench_daily_close.resample('W-FRI').last().ffill().bfill()
+        bench_weekly = bench_weekly.reindex(weekly.index, method='ffill').bfill()
+        weekly['bench'] = pd.to_numeric(bench_weekly, errors='coerce')
+        weekly['rs_ratio'] = weekly['Close'] / weekly['bench']
+        weekly['rs_sma'] = weekly['rs_ratio'].rolling(RS_SMA_WEEKS).mean()
+
         analysis = compute_weinstein_analysis(weekly)
         if analysis is None:
             return jsonify({
                 "status": "error",
                 "message": "Not enough weekly bars yet for a 30-week MA read (need 34+ weeks of history)."
             }), 400
+
+        rs_events = compute_rs_events(weekly['rs_ratio'])
 
         weeks = range_cfg["weeks"]
         display = weekly.iloc[-weeks:] if (weeks is not None and len(weekly) > weeks) else weekly
@@ -394,6 +466,7 @@ def get_weinstein_telemetry_data(symbol):
         display_start_pos = len(weekly) - len(display)
 
         candles, sma30_series, volume_series = [], [], []
+        rs_ratio_series, rs_sma_series = [], []
         for idx, row in display.iterrows():
             date_str = idx.strftime("%Y-%m-%d")
             candles.append({
@@ -408,6 +481,11 @@ def get_weinstein_telemetry_data(symbol):
             up_week = row['Close'] >= row['Open']
             color = 'rgba(245,158,11,0.85)' if surge else ('rgba(34,197,94,0.5)' if up_week else 'rgba(239,68,68,0.5)')
             volume_series.append({"time": date_str, "value": int(row['Volume']), "color": color, "surge": surge})
+
+            if not pd.isna(row['rs_ratio']):
+                rs_ratio_series.append({"time": date_str, "value": round(float(row['rs_ratio']), 6)})
+            if not pd.isna(row['rs_sma']):
+                rs_sma_series.append({"time": date_str, "value": round(float(row['rs_sma']), 6)})
 
         markers = []
         ev = analysis['events']
@@ -429,6 +507,16 @@ def get_weinstein_telemetry_data(symbol):
                     "text": "Breakdown ✓Vol" if ev['breakdown_volume_confirmed'] else "Breakdown"
                 })
 
+        rs_markers = []
+        if rs_events['rs_new_high'] and rs_events['rs_new_high_weeks_ago'] is not None:
+            i = full_n - 1 - rs_events['rs_new_high_weeks_ago']
+            if display_start_pos <= i < full_n:
+                t = weekly.index[i].strftime("%Y-%m-%d")
+                rs_markers.append({
+                    "time": t, "position": "aboveBar", "color": "#facc15", "shape": "circle",
+                    "text": f"{RS_NEW_HIGH_LOOKBACK_WEEKS}W RS High"
+                })
+
         return jsonify({
             "status": "success", "symbol": symbol_clean, "market": market, "range": range_key,
             "stage": analysis['stage'], "stage_label": STAGE_LABELS.get(analysis['stage']),
@@ -436,10 +524,121 @@ def get_weinstein_telemetry_data(symbol):
             "resistance_zone": analysis['resistance_zone'],
             "support_zone": analysis['support_zone'],
             "events": analysis['events'],
-            "series": {"candles": candles, "sma30": sma30_series, "volume": volume_series, "markers": markers}
+            "rs_events": rs_events,
+            "series": {
+                "candles": candles, "sma30": sma30_series, "volume": volume_series, "markers": markers,
+                "rs_ratio": rs_ratio_series, "rs_sma": rs_sma_series, "rs_markers": rs_markers
+            }
         })
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# ----------------------------------------------------------------------------
+# Weekly RS strength scanner — ranks the entire active screener list by
+# cross-sectional relative strength, answering "which stocks are actually
+# strong this week" rather than reading one ticker at a time.
+#
+# One batch yfinance call (ticker list + the market benchmark together),
+# then per ticker: weekly-resample, compute the same rs_ratio used on the
+# main chart (stock ÷ benchmark), and rank by how much that ratio has grown
+# over the last RS_GROWTH_LOOKBACK_WEEKS (~1 quarter) — a % change is
+# comparable across tickers regardless of each stock's absolute price level,
+# which a raw rs_ratio value is not.
+# ----------------------------------------------------------------------------
+
+@chart_weinstein_bp.route("/api/v1/weinstein-rs-scanner")
+def get_weinstein_rs_scanner():
+    market = request.args.get("market", "NSE").strip().upper()
+    screener_key = request.args.get("screener", "").strip()
+    market, screener_key = _resolve_screener_key(market, screener_key)
+
+    entries = _load_screener_stock_entries(market, screener_key)
+    tickers = _dedupe_tickers(entries)
+
+    if not tickers:
+        return jsonify({"status": "success", "market": market, "screener": screener_key, "count": 0, "ranked": []})
+
+    suffix = MARKET_SUFFIX[market]
+    benchmark_symbol = MARKET_BENCHMARK[market]
+    fetch_list = [f"{t}{suffix}" for t in tickers] if market == "NSE" else list(tickers)
+    full_fetch_list = fetch_list + [benchmark_symbol]
+
+    try:
+        raw = yf.download(
+            full_fetch_list, period="2y", interval="1d",
+            auto_adjust=True, progress=False, group_by='ticker', threads=True
+        )
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"Batch download failed: {e}"}), 500
+
+    # Pull the benchmark's own weekly close once, reused for every ticker.
+    try:
+        if benchmark_symbol in raw.columns.get_level_values(0):
+            bench_daily = pd.to_numeric(raw[benchmark_symbol]['Close'], errors='coerce').dropna()
+        else:
+            return jsonify({"status": "error", "message": f"Benchmark '{benchmark_symbol}' data unavailable."}), 500
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"Couldn't read benchmark data: {e}"}), 500
+
+    bench_weekly = bench_daily.resample('W-FRI').last().ffill().bfill()
+
+    ranked = []
+    for orig_sym, fsym in zip(tickers, fetch_list):
+        try:
+            if fsym not in raw.columns.get_level_values(0):
+                continue
+            df = raw[fsym]
+            close = pd.to_numeric(df['Close'], errors='coerce').dropna()
+            if len(close) < 100:
+                continue
+
+            weekly_close = close.resample('W-FRI').last().dropna()
+            if len(weekly_close) < RS_GROWTH_LOOKBACK_WEEKS + 5:
+                continue
+
+            bench_aligned = bench_weekly.reindex(weekly_close.index, method='ffill').bfill()
+            rs_ratio = weekly_close / bench_aligned
+            rs_ratio = rs_ratio.dropna()
+            if len(rs_ratio) < RS_GROWTH_LOOKBACK_WEEKS + 1:
+                continue
+
+            rs_now = float(rs_ratio.iloc[-1])
+            rs_then = float(rs_ratio.iloc[-1 - RS_GROWTH_LOOKBACK_WEEKS])
+            if rs_then <= 0:
+                continue
+            rs_growth_pct = round((rs_now / rs_then - 1) * 100, 2)
+
+            rs_events = compute_rs_events(rs_ratio)
+
+            ranked.append({
+                "symbol": orig_sym,
+                "rs_growth_pct": rs_growth_pct,
+                "last_close": round(float(weekly_close.iloc[-1]), 2),
+                "rs_new_high": rs_events["rs_new_high"],
+                "rs_new_high_weeks_ago": rs_events["rs_new_high_weeks_ago"],
+                "rs_trend_up": rs_events["rs_trend_up"],
+            })
+        except Exception:
+            continue
+
+    if not ranked:
+        return jsonify({"status": "success", "market": market, "screener": screener_key, "count": 0, "ranked": []})
+
+    # Cross-sectional percentile: how this ticker's RS growth compares to
+    # every other ticker actually scanned, not an absolute scale.
+    growth_values = sorted([r["rs_growth_pct"] for r in ranked])
+    n_vals = len(growth_values)
+    for r in ranked:
+        rank_pos = sum(1 for v in growth_values if v <= r["rs_growth_pct"])
+        r["rs_percentile"] = int(round(rank_pos / n_vals * 100))
+
+    ranked.sort(key=lambda r: -r["rs_growth_pct"])
+
+    return jsonify({
+        "status": "success", "market": market, "screener": screener_key,
+        "lookback_weeks": RS_GROWTH_LOOKBACK_WEEKS, "count": len(ranked), "scanned": len(tickers), "ranked": ranked
+    })
 
 
 # ----------------------------------------------------------------------------

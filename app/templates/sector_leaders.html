@@ -1,44 +1,60 @@
 <!DOCTYPE html>
-<html>
+<html lang="en" class="dark">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sector-Wise Leader Stocks (India, 2025)</title>
-    <a href="/about">
-        <button style="margin-top: 20px;">About This App</button>
-    </a>
-
+    <script src="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css"></script>
     <style>
-        body { font-family: Arial, sans-serif; margin: 40px; }
-        h1 { text-align: center; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { border: 1px solid #ccc; padding: 10px; text-align: left; }
-        th { background-color: #f2f2f2; }
+        body { font-family: 'Inter', Arial, sans-serif; }
     </style>
 </head>
-<body>
-    <h1>Sector-Wise Leader Stocks (India, 2025)</h1>
-    <table>
-        <tr><th>Sector</th><th>Top Leader Stocks</th></tr>
-        <tr><td>Banking</td><td>HDFC Bank, ICICI Bank, Kotak Mahindra Bank</td></tr>
-        <tr><td>IT Services</td><td>TCS, Infosys, Wipro</td></tr>
-        <tr><td>Pharmaceuticals</td><td>Sun Pharma, Dr. Reddy’s, Cipla</td></tr>
-        <tr><td>Automobiles</td><td>Maruti Suzuki, Tata Motors, Mahindra & Mahindra</td></tr>
-        <tr><td>Oil & Gas</td><td>Reliance Industries, ONGC, Indian Oil Corporation</td></tr>
-        <tr><td>FMCG</td><td>Hindustan Unilever, ITC, Nestlé India</td></tr>
-        <tr><td>Telecom</td><td>Bharti Airtel, Reliance Jio, Vodafone Idea</td></tr>
-        <tr><td>Infrastructure</td><td>Larsen & Toubro, Adani Ports, GMR Infrastructure</td></tr>
-        <tr><td>Power & Utilities</td><td>NTPC, Power Grid Corp, Adani Green Energy</td></tr>
-        <tr><td>Metals & Mining</td><td>Tata Steel, JSW Steel, Hindalco Industries</td></tr>
-        <tr><td>Cement</td><td>UltraTech Cement, Shree Cement, Ambuja Cement</td></tr>
-        <tr><td>Consumer Durables</td><td>Voltas, Whirlpool India, Havells India</td></tr>
-        <tr><td>Real Estate</td><td>DLF, Godrej Properties, Oberoi Realty</td></tr>
-        <tr><td>Retail</td><td>DMart, Trent, Aditya Birla Fashion</td></tr>
-        <tr><td>Insurance</td><td>LIC, HDFC Life, ICICI Prudential</td></tr>
-        <tr><td>Logistics</td><td>Blue Dart, TCI Express, Delhivery</td></tr>
-        <tr><td>Chemicals</td><td>SRF, Aarti Industries, Deepak Nitrite</td></tr>
-        <tr><td>Media & Entertainment</td><td>Zee Entertainment, Sun TV, PVR Inox</td></tr>
-        <tr><td>Textiles</td><td>Vardhman Textiles, Arvind, Page Industries</td></tr>
-        <tr><td>Hospitality</td><td>Indian Hotels, EIH, Lemon Tree Hotels</td></tr>
-        <tr><td>Renewables</td><td>Adani Green, Tata Power, ReNew Energy Global</td></tr>
-    </table>
+<body class="bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 p-8 transition-colors duration-300">
+    <div class="max-w-5xl mx-auto">
+        <div class="flex justify-between items-center mb-6">
+            <h1 class="text-2xl font-black text-indigo-900 dark:text-indigo-300 uppercase tracking-tight">
+                Sector-Wise Leader Stocks (India, 2025)
+            </h1>
+            <a href="/about">
+                <button class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold uppercase rounded-xl transition shadow-md">
+                    About This App
+                </button>
+            </a>
+        </div>
+
+        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm dark:shadow-none overflow-hidden">
+            <table class="min-w-full text-left text-xs border-collapse">
+                <thead class="bg-gray-100 dark:bg-slate-800/60 border-b border-gray-200 dark:border-slate-800 text-gray-500 dark:text-slate-400 uppercase font-bold">
+                    <tr>
+                        <th class="px-6 py-4">Sector</th>
+                        <th class="px-6 py-4">Top Leader Stocks</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100 dark:divide-slate-800 text-gray-800 dark:text-slate-200">
+                    <tr class="hover:bg-indigo-50/30 dark:hover:bg-indigo-500/10 transition-colors"><td class="px-6 py-3 font-bold text-indigo-700 dark:text-indigo-300">Banking</td><td class="px-6 py-3">HDFC Bank, ICICI Bank, Kotak Mahindra Bank</td></tr>
+                    <tr class="hover:bg-indigo-50/30 dark:hover:bg-indigo-500/10 transition-colors"><td class="px-6 py-3 font-bold text-indigo-700 dark:text-indigo-300">IT Services</td><td class="px-6 py-3">TCS, Infosys, Wipro</td></tr>
+                    <tr class="hover:bg-indigo-50/30 dark:hover:bg-indigo-500/10 transition-colors"><td class="px-6 py-3 font-bold text-indigo-700 dark:text-indigo-300">Pharmaceuticals</td><td class="px-6 py-3">Sun Pharma, Dr. Reddy’s, Cipla</td></tr>
+                    <tr class="hover:bg-indigo-50/30 dark:hover:bg-indigo-500/10 transition-colors"><td class="px-6 py-3 font-bold text-indigo-700 dark:text-indigo-300">Automobiles</td><td class="px-6 py-3">Maruti Suzuki, Tata Motors, Mahindra & Mahindra</td></tr>
+                    <tr class="hover:bg-indigo-50/30 dark:hover:bg-indigo-500/10 transition-colors"><td class="px-6 py-3 font-bold text-indigo-700 dark:text-indigo-300">Oil & Gas</td><td class="px-6 py-3">Reliance Industries, ONGC, Indian Oil Corporation</td></tr>
+                    <tr class="hover:bg-indigo-50/30 dark:hover:bg-indigo-500/10 transition-colors"><td class="px-6 py-3 font-bold text-indigo-700 dark:text-indigo-300">FMCG</td><td class="px-6 py-3">Hindustan Unilever, ITC, Nestlé India</td></tr>
+                    <tr class="hover:bg-indigo-50/30 dark:hover:bg-indigo-500/10 transition-colors"><td class="px-6 py-3 font-bold text-indigo-700 dark:text-indigo-300">Telecom</td><td class="px-6 py-3">Bharti Airtel, Reliance Jio, Vodafone Idea</td></tr>
+                    <tr class="hover:bg-indigo-50/30 dark:hover:bg-indigo-500/10 transition-colors"><td class="px-6 py-3 font-bold text-indigo-700 dark:text-indigo-300">Infrastructure</td><td class="px-6 py-3">Larsen & Toubro, Adani Ports, GMR Infrastructure</td></tr>
+                    <tr class="hover:bg-indigo-50/30 dark:hover:bg-indigo-500/10 transition-colors"><td class="px-6 py-3 font-bold text-indigo-700 dark:text-indigo-300">Power & Utilities</td><td class="px-6 py-3">NTPC, Power Grid Corp, Adani Green Energy</td></tr>
+                    <tr class="hover:bg-indigo-50/30 dark:hover:bg-indigo-500/10 transition-colors"><td class="px-6 py-3 font-bold text-indigo-700 dark:text-indigo-300">Metals & Mining</td><td class="px-6 py-3">Tata Steel, JSW Steel, Hindalco Industries</td></tr>
+                    <tr class="hover:bg-indigo-50/30 dark:hover:bg-indigo-500/10 transition-colors"><td class="px-6 py-3 font-bold text-indigo-700 dark:text-indigo-300">Cement</td><td class="px-6 py-3">UltraTech Cement, Shree Cement, Ambuja Cement</td></tr>
+                    <tr class="hover:bg-indigo-50/30 dark:hover:bg-indigo-500/10 transition-colors"><td class="px-6 py-3 font-bold text-indigo-700 dark:text-indigo-300">Consumer Durables</td><td class="px-6 py-3">Voltas, Whirlpool India, Havells India</td></tr>
+                    <tr class="hover:bg-indigo-50/30 dark:hover:bg-indigo-500/10 transition-colors"><td class="px-6 py-3 font-bold text-indigo-700 dark:text-indigo-300">Real Estate</td><td class="px-6 py-3">DLF, Godrej Properties, Oberoi Realty</td></tr>
+                    <tr class="hover:bg-indigo-50/30 dark:hover:bg-indigo-500/10 transition-colors"><td class="px-6 py-3 font-bold text-indigo-700 dark:text-indigo-300">Retail</td><td class="px-6 py-3">DMart, Trent, Aditya Birla Fashion</td></tr>
+                    <tr class="hover:bg-indigo-50/30 dark:hover:bg-indigo-500/10 transition-colors"><td class="px-6 py-3 font-bold text-indigo-700 dark:text-indigo-300">Insurance</td><td class="px-6 py-3">LIC, HDFC Life, ICICI Prudential</td></tr>
+                    <tr class="hover:bg-indigo-50/30 dark:hover:bg-indigo-500/10 transition-colors"><td class="px-6 py-3 font-bold text-indigo-700 dark:text-indigo-300">Logistics</td><td class="px-6 py-3">Blue Dart, TCI Express, Delhivery</td></tr>
+                    <tr class="hover:bg-indigo-50/30 dark:hover:bg-indigo-500/10 transition-colors"><td class="px-6 py-3 font-bold text-indigo-700 dark:text-indigo-300">Chemicals</td><td class="px-6 py-3">SRF, Aarti Industries, Deepak Nitrite</td></tr>
+                    <tr class="hover:bg-indigo-50/30 dark:hover:bg-indigo-500/10 transition-colors"><td class="px-6 py-3 font-bold text-indigo-700 dark:text-indigo-300">Media & Entertainment</td><td class="px-6 py-3">Zee Entertainment, Sun TV, PVR Inox</td></tr>
+                    <tr class="hover:bg-indigo-50/30 dark:hover:bg-indigo-500/10 transition-colors"><td class="px-6 py-3 font-bold text-indigo-700 dark:text-indigo-300">Textiles</td><td class="px-6 py-3">Vardhman Textiles, Arvind, Page Industries</td></tr>
+                    <tr class="hover:bg-indigo-50/30 dark:hover:bg-indigo-500/10 transition-colors"><td class="px-6 py-3 font-bold text-indigo-700 dark:text-indigo-300">Hospitality</td><td class="px-6 py-3">Indian Hotels, EIH, Lemon Tree Hotels</td></tr>
+                    <tr class="hover:bg-indigo-50/30 dark:hover:bg-indigo-500/10 transition-colors"><td class="px-6 py-3 font-bold text-indigo-700 dark:text-indigo-300">Renewables</td><td class="px-6 py-3">Adani Green, Tata Power, ReNew Energy Global</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
 </body>
 </html>

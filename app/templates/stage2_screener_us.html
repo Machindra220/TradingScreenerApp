@@ -1,31 +1,31 @@
 {% extends "base_authenticated.html" %}
 {% block content %}
-<div class="max-w-7xl mx-auto px-4 py-8">
-    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+<div class="max-w-7xl mx-auto px-4 py-8 space-y-6">
+    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-4 border-b border-gray-100 dark:border-slate-800">
         <div>
-            <h2 class="text-2xl font-black text-gray-900 dark:text-white uppercase tracking-tight">US Stage 2 Screener</h2>
-            <div class="text-xs font-semibold text-gray-500 dark:text-gray-400 mt-1">
+            <h2 class="text-2xl font-black text-indigo-900 dark:text-indigo-300 uppercase tracking-tight">US Stage 2 Screener</h2>
+            <div class="text-xs font-semibold text-gray-500 dark:text-slate-400 mt-1">
                 ⏱️ Last Scan Time: <span class="text-indigo-600 dark:text-indigo-400 font-bold">{{ last_run_time or 'Never' }}</span>
             </div>
         </div>
         <div class="flex flex-wrap items-center gap-2">
-            <button id="filterBtn" onclick="toggleOptimalFilter()" class="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-black-600 text-xs font-bold uppercase rounded-lg shadow-sm transition flex items-center gap-1.5">
+            <button id="filterBtn" onclick="toggleOptimalFilter()" class="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold uppercase rounded-lg shadow-sm transition flex items-center gap-1.5">
                 <span id="filterBtnText">🎯 Filter Winning Stocks</span>
             </button>
-            <button onclick="exportTableToCSV('stage2_screener_results.csv')" class="px-3.5 py-2 bg-emerald-600 hover:bg-blue-700 text-black text-xs font-bold uppercase rounded-lg shadow-sm transition flex items-center gap-1.5">
+            <button onclick="exportTableToCSV('stage2_screener_results.csv')" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold uppercase rounded-lg shadow-sm transition flex items-center gap-1.5">
                 <span>📥 Export CSV</span>
             </button>
         </div>
     </div>
 
-    <div class="bg-white dark:bg-gray-800 p-6 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm mb-8">
+    <div class="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm dark:shadow-none mb-8">
         <form method="POST" enctype="multipart/form-data" class="flex flex-col md:flex-row items-end gap-6">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <div class="flex-1 w-full">
-                <label class="block text-[10px] font-bold uppercase text-gray-400 mb-2 ml-1">Upload New Stock List (Optional)</label>
-                <input type="file" name="file" class="w-full text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-[10px] file:font-bold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100">
+            <div class="flex-1 w-full text-xs">
+                <label class="block text-[10px] font-bold uppercase text-gray-400 dark:text-slate-500 mb-2 tracking-widest ml-1">Upload New Stock List (Optional CSV)</label>
+                <input type="file" name="file" class="w-full text-xs text-gray-500 dark:text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-[10px] file:font-bold file:bg-blue-50 dark:file:bg-blue-500/10 file:text-blue-700 dark:file:text-blue-300">
             </div>
-            <button type="submit" onclick="document.getElementById('spinner').classList.remove('hidden')" class="w-full md:w-auto px-8 py-3 bg-indigo-600 text-white text-xs font-black uppercase rounded-xl hover:bg-indigo-700 transition flex items-center justify-center gap-2">
+            <button type="submit" onclick="document.getElementById('spinner').classList.remove('hidden')" class="w-full md:w-auto px-8 py-3 bg-indigo-600 text-white text-xs font-black uppercase rounded-xl hover:bg-indigo-700 transition flex items-center justify-center gap-2 shadow-lg shadow-indigo-200 dark:shadow-indigo-950/40">
                 <span>🚀 Run US Stage 2 Screener</span>
                 <span id="spinner" class="hidden animate-spin">⏳</span>
             </button>
@@ -33,12 +33,12 @@
     </div>
 
     {% if summary_message %}
-        <div class="mb-6 p-3 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900 text-indigo-700 dark:text-indigo-300 text-xs font-bold rounded-lg">{{ summary_message }}</div>
+        <div class="mb-6 p-3 bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-300 text-xs font-bold rounded-lg">{{ summary_message }}</div>
     {% endif %}
 
     {% if top_sectors %}
-    <div class="mb-6">
-        <h3 class="text-xs font-black uppercase text-gray-400 mb-3 tracking-wider">🔥 Top Dominant Sectors</h3>
+    <div class="space-y-2">
+        <h3 class="text-xs font-black uppercase text-gray-400 dark:text-slate-500 tracking-wider">🔥 Top Dominant Sectors</h3>
         <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
             {% for sec in top_sectors %}
             <div style="background-color: {{ sec.theme.bg }}; border-color: {{ sec.theme.border }};" class="p-3 rounded-xl border flex items-center justify-between shadow-sm">
@@ -55,35 +55,35 @@
     </div>
     {% endif %}
 
-    <div class="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden mb-8">
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm dark:shadow-none overflow-hidden mb-8">
         <div class="overflow-x-auto">
-            <table id="screenerTable" class="min-w-full text-left">
-                <thead class="bg-gray-50/50 dark:bg-gray-900/50 border-b border-gray-100 dark:border-gray-700">
+            <table id="screenerTable" class="min-w-full text-left text-xs">
+                <thead class="bg-gray-50 dark:bg-slate-800/60 border-b border-gray-100 dark:border-slate-800 text-gray-400 dark:text-slate-400 font-bold uppercase text-[10px] tracking-widest">
                     <tr>
-                        <th class="px-4 py-3 text-[9px] font-bold uppercase text-gray-400">#</th>
-                        <th class="px-4 py-3 text-[9px] font-bold uppercase text-gray-400">Symbol</th>
-                        <th class="px-4 py-3 text-[9px] font-bold uppercase text-gray-400">Sector</th>
-                        <th class="px-4 py-3 text-[9px] font-bold uppercase text-gray-400">Price</th>
-                        <th class="px-4 py-3 text-[9px] font-bold uppercase text-gray-400">Retracement</th>
-                        <th class="px-4 py-3 text-[9px] font-bold uppercase text-gray-400">Vol vs Avg</th>
-                        <th class="px-4 py-3 text-[9px] font-bold uppercase text-gray-400">Rel Strength</th>
-                        <th class="px-4 py-3 text-[9px] font-bold uppercase text-gray-400">RS Trend (20D)</th>
+                        <th class="px-4 py-3">#</th>
+                        <th class="px-4 py-3">Symbol</th>
+                        <th class="px-4 py-3">Sector</th>
+                        <th class="px-4 py-3">Price</th>
+                        <th class="px-4 py-3">Retracement</th>
+                        <th class="px-4 py-3">Vol vs Avg</th>
+                        <th class="px-4 py-3">Rel Strength</th>
+                        <th class="px-4 py-3">RS Trend (20D)</th>
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-gray-50 dark:divide-gray-700">
+                <tbody class="divide-y divide-gray-50 dark:divide-slate-800 text-gray-800 dark:text-slate-200">
                     {% for stock in stocks %}
                     {% set sec_theme = sector_color_map.get(stock.sector) %}
-                    <tr class="stock-row hover:bg-gray-50/50 dark:hover:bg-gray-700/50 transition-colors"
+                    <tr class="stock-row hover:bg-indigo-50/30 dark:hover:bg-indigo-500/10 transition-colors group"
                         data-sector="{{ stock.sector }}"
                         data-is-top-sector="{% if sec_theme %}true{% else %}false{% endif %}"
                         data-rs="{{ stock.rs }}"
                         data-vol-status="{{ stock.vol_status }}"
                         data-retracement="{{ stock.retracement }}">
-                        <td class="px-4 py-4 text-xs font-bold text-gray-400 row-number">{{ loop.index }}</td>
+                        <td class="px-4 py-4 text-xs font-bold text-gray-400 dark:text-slate-500 row-number">{{ loop.index }}</td>
                         <td class="px-4 py-4 font-black text-indigo-600 dark:text-indigo-400 text-sm">
                             <div class="flex items-center gap-2">
                                 {{ stock.symbol }}
-                                <button onclick="navigator.clipboard.writeText('{{ stock.symbol }}')" class="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded opacity-30 group-hover:opacity-100 transition-opacity focus:opacity-100" title="Copy Ticker">
+                                <button onclick="navigator.clipboard.writeText('{{ stock.symbol }}')" class="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded opacity-0 group-hover:opacity-100 transition-opacity focus:opacity-100" title="Copy Ticker">
                                     <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0A2.25 2.25 0 0113.5 4.5h-3a2.25 2.25 0 01-2.166-1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.75c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 011.927-.184"></path></svg>
                                 </button>
                             </div>
@@ -94,31 +94,31 @@
                                     {{ stock.sector }}
                                 </span>
                             {% else %}
-                                <span class="text-gray-500 dark:text-gray-400">{{ stock.sector }}</span>
+                                <span class="text-gray-500 dark:text-slate-400">{{ stock.sector }}</span>
                             {% endif %}
                         </td>
-                        <td class="px-4 py-4 text-xs font-bold text-gray-900 dark:text-white">${{ stock.price }}</td>
-                        <td class="px-4 py-4 text-xs font-bold text-red-500">-{{ stock.retracement }}%</td>
+                        <td class="px-4 py-4 text-xs font-bold text-gray-900 dark:text-slate-100">${{ stock.price }}</td>
+                        <td class="px-4 py-4 text-xs font-bold text-red-500 dark:text-red-400">-{{ stock.retracement }}%</td>
                         <td class="px-4 py-4">
                             <div class="flex items-center gap-2">
-                                <span class="text-xs font-bold dark:text-gray-200">{{ (stock.volume / 1000000)|round(1) }}M</span>
+                                <span class="text-xs font-bold text-gray-700 dark:text-slate-300 font-mono">{{ (stock.volume / 1000000)|round(1) }}M</span>
                                 {% if stock.vol_status == "🔥" %}
-                                    <span class="text-[9px] bg-orange-100 text-orange-600 dark:bg-orange-950 dark:text-orange-400 px-1.5 py-0.5 rounded-full font-black uppercase">High</span>
+                                    <span class="text-[9px] bg-orange-100 text-orange-600 dark:bg-amber-500/10 dark:text-amber-400 px-1.5 py-0.5 rounded-full font-black uppercase border border-orange-200 dark:border-amber-800/40">High</span>
                                 {% endif %}
                             </div>
                         </td>
                         <td class="px-4 py-4 text-xs font-black text-blue-600 dark:text-blue-400">{{ stock.rs }}</td>
                         <td class="px-4 py-4 text-xs font-bold">
                             {% if 'Accelerating' in stock.rs_trend %}
-                                <span class="px-2 py-1 rounded-md text-[10px] font-black bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+                                <span class="px-2 py-1 rounded-md text-[10px] font-black bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
                                     {{ stock.rs_trend }} (+{{ stock.rs_change }}%)
                                 </span>
                             {% elif 'Steady' in stock.rs_trend %}
-                                <span class="px-2 py-1 rounded-md text-[10px] font-bold bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300">
+                                <span class="px-2 py-1 rounded-md text-[10px] font-bold bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300 border border-blue-100 dark:border-blue-900/30">
                                     {{ stock.rs_trend }} ({{ stock.rs_change }}%)
                                 </span>
                             {% else %}
-                                <span class="px-2 py-1 rounded-md text-[10px] font-bold bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300">
+                                <span class="px-2 py-1 rounded-md text-[10px] font-bold bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300 border border-amber-100 dark:border-amber-900/30">
                                     {{ stock.rs_trend }} ({{ stock.rs_change }}%)
                                 </span>
                             {% endif %}
@@ -126,7 +126,7 @@
                     </tr>
                     {% else %}
                     <tr>
-                        <td colspan="8" class="px-6 py-12 text-center text-gray-400 text-xs italic">No cached results. Click "Run" to process.</td>
+                        <td colspan="8" class="px-6 py-12 text-center text-gray-400 dark:text-slate-500 text-xs italic bg-gray-50/30 dark:bg-slate-800/20">No cached results. Click "Run" to process.</td>
                     </tr>
                     {% endfor %}
                 </tbody>

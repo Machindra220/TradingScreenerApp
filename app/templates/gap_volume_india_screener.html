@@ -3,28 +3,28 @@
 <div class="max-w-7xl mx-auto px-4 py-8">
     <div class="flex justify-between items-center mb-8">
         <div>
-            <h2 class="text-2xl font-black text-indigo-900 uppercase tracking-tight">India - Volume Breakout & Gap Up Screener</h2>
-            <p class="text-[7px] font-bold text-gray-400 mt-1 uppercase tracking-widest">
-                Last Run: <span class="text-blue-600">{{ last_processed_time|default('N/A') }}</span> | Source: {{ source_name|default('None') }}
+            <h2 class="text-2xl font-black text-indigo-900 dark:text-indigo-300 uppercase tracking-tight">India - Volume Breakout & Gap Up Screener</h2>
+            <p class="text-[7px] font-bold text-gray-400 dark:text-slate-500 mt-1 uppercase tracking-widest">
+                Last Run: <span class="text-blue-600 dark:text-blue-400">{{ last_processed_time|default('N/A') }}</span> | Source: {{ source_name|default('None') }}
             </p>
         </div>
         <div>
             {% if both_stocks or vol_stocks or gap_stocks %}
-            <a href="{{ url_for('gap_volume_india.export_gap_volume_india') }}" class="bg-gray-900 text-white px-5 py-2.5 rounded-xl text-[10px] font-bold hover:bg-black transition shadow-lg shadow-gray-200 uppercase tracking-wider">
+            <a href="{{ url_for('gap_volume_india.export_gap_volume_india') }}" class="bg-gray-900 dark:bg-slate-700 text-white px-5 py-2.5 rounded-xl text-[10px] font-bold hover:bg-black dark:hover:bg-slate-600 transition shadow-lg shadow-gray-200 dark:shadow-black/30 uppercase tracking-wider">
                 📥 Export All to CSV
             </a>
             {% endif %}
         </div>
     </div>
 
-    <div class="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm mb-8">
+    <div class="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm dark:shadow-none mb-8">
         <form method="POST" enctype="multipart/form-data" class="flex flex-col md:flex-row items-end gap-6">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <div class="flex-1 w-full text-xs">
-                <label class="block text-[10px] font-bold uppercase text-gray-400 mb-2 tracking-widest">Custom Watchlist CSV (Optional)</label>
-                <input type="file" name="file" accept=".csv" class="w-full text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-[10px] file:font-bold file:bg-blue-50 file:text-blue-700">
+                <label class="block text-[10px] font-bold uppercase text-gray-400 dark:text-slate-500 mb-2 tracking-widest">Custom Watchlist CSV (Optional)</label>
+                <input type="file" name="file" accept=".csv" class="w-full text-gray-500 dark:text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-[10px] file:font-bold file:bg-blue-50 dark:file:bg-blue-500/10 file:text-blue-700 dark:file:text-blue-300">
             </div>
-            <button type="submit" onclick="document.getElementById('spinner').classList.remove('hidden')" class="bg-indigo-600 text-white px-8 py-3 rounded-xl font-black text-xs uppercase hover:bg-indigo-700 transition flex items-center gap-2 shadow-lg shadow-indigo-200">
+            <button type="submit" onclick="document.getElementById('spinner').classList.remove('hidden')" class="bg-indigo-600 text-white px-8 py-3 rounded-xl font-black text-xs uppercase hover:bg-indigo-700 transition flex items-center gap-2 shadow-lg shadow-indigo-200 dark:shadow-indigo-950/40">
                 <span>🚀 Run Segmented Scan</span>
                 <span id="spinner" class="hidden animate-spin">⏳</span>
             </button>
@@ -32,53 +32,56 @@
     </div>
 
     {% macro render_section_table(table_id, stock_list, section_title, badge_color) %}
-    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-12">
-        <div class="px-6 py-4 bg-gray-50 border-b border-gray-100 flex justify-between items-center">
-            <h3 class="text-xs font-black uppercase tracking-wider text-gray-700 flex items-center gap-2">
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm dark:shadow-none overflow-hidden mb-12">
+        <div class="px-6 py-4 bg-gray-50 dark:bg-slate-800/60 border-b border-gray-100 dark:border-slate-800 flex justify-between items-center">
+            <h3 class="text-xs font-black uppercase tracking-wider text-gray-700 dark:text-slate-300 flex items-center gap-2">
                 <span class="w-2 h-2 rounded-full {{ badge_color }}"></span> {{ section_title }}
             </h3>
-            <span class="text-[9px] font-bold bg-white px-2 py-0.5 rounded-md border border-gray-100 text-gray-500">Hits: {{ stock_list|length }}</span>
+            <span class="text-[9px] font-bold bg-white dark:bg-slate-800 px-2 py-0.5 rounded-md border border-gray-100 dark:border-slate-700 text-gray-500 dark:text-slate-400">Hits: {{ stock_list|length }}</span>
         </div>
         <table class="min-w-full text-left text-xs" id="{{ table_id }}">
-            <thead class="bg-gray-100/50 border-b border-gray-100">
+            <thead class="bg-gray-100/50 dark:bg-slate-800/40 border-b border-gray-100 dark:border-slate-800">
                 <tr>
-                    <th class="px-6 py-3 font-bold uppercase text-gray-400 w-16">Rank</th>
-                    <th class="px-6 py-3 font-bold uppercase text-gray-400">Symbol</th>
-                    <th class="px-6 py-3 font-bold uppercase text-gray-400">CMP</th> 
-                    <th class="px-6 py-3 font-bold uppercase text-gray-400 text-center">RS %tile</th>
-                    <th class="px-6 py-3 font-bold uppercase text-gray-400">Vol Ratio</th>
-                    <th class="px-6 py-3 font-bold uppercase text-gray-400">52W Pullback</th>
-                    <th class="px-6 py-3 font-bold uppercase text-gray-400 text-right">Alert Status</th>
+                    <th class="px-6 py-3 font-bold uppercase text-gray-400 dark:text-slate-400 w-16">Rank</th>
+                    <th class="px-6 py-3 font-bold uppercase text-gray-400 dark:text-slate-400">Symbol</th>
+                    <th class="px-6 py-3 font-bold uppercase text-gray-400 dark:text-slate-400">CMP</th> 
+                    <th class="px-6 py-3 font-bold uppercase text-gray-400 dark:text-slate-400 text-center">RS %tile</th>
+                    <th class="px-6 py-3 font-bold uppercase text-gray-400 dark:text-slate-400">Vol Ratio</th>
+                    <th class="px-6 py-3 font-bold uppercase text-gray-400 dark:text-slate-400">52W Pullback</th>
+                    <th class="px-6 py-3 font-bold uppercase text-gray-400 dark:text-slate-400 text-right">Alert Status</th>
                 </tr>
             </thead>
-            <tbody class="divide-y divide-gray-50">
+            <tbody class="divide-y divide-gray-50 dark:divide-slate-800">
                 {% for stock in stock_list %}
-                <tr class="hover:bg-indigo-50/20 transition-colors">
-                    <td class="px-6 py-4 font-bold text-gray-300">#{{ stock.rank }}</td>
-                    <td class="px-6 py-4 font-black text-indigo-700">{{ stock.symbol }}
-                         <button onclick="navigator.clipboard.writeText('{{ stock.symbol }}')" class="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded opacity-40 group-hover:opacity-100 transition-opacity focus:opacity-100" title="Copy Ticker">
-                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0A2.25 2.25 0 0113.5 4.5h-3a2.25 2.25 0 01-2.166-1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.75c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 011.927-.184"></path></svg>
-                        </button>
+                <tr class="hover:bg-indigo-50/20 dark:hover:bg-indigo-500/10 transition-colors">
+                    <td class="px-6 py-4 font-bold text-gray-300 dark:text-slate-600">#{{ stock.rank }}</td>
+                    <td class="px-6 py-4 font-black text-indigo-700 dark:text-indigo-300">
+                        <div class="flex items-center gap-2">
+                            <span>{{ stock.symbol }}</span>
+                            <button onclick="navigator.clipboard.writeText('{{ stock.symbol }}')" class="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded opacity-40 group-hover:opacity-100 transition-opacity focus:opacity-100" title="Copy Ticker">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0A2.25 2.25 0 0113.5 4.5h-3a2.25 2.25 0 01-2.166-1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.75c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 011.927-.184"></path></svg>
+                            </button>
+                        </div>
                     </td>
-                    <td class="px-6 py-4 font-bold text-gray-900">₹{{ "{:,.2f}".format(stock.price) }}</td> 
+                    <td class="px-6 py-4 font-bold text-gray-900 dark:text-slate-100">₹{{ "{:,.2f}".format(stock.price) }}</td> 
                     <td class="px-6 py-4 text-center">
-                        <span class="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-black {% if stock.rs_percentile >= 90 %}bg-green-600 text-white{% elif stock.rs_percentile >= 70 %}bg-blue-600 text-white{% else %}bg-gray-100 text-gray-500{% endif %}">
+                        <span class="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-black {% if stock.rs_percentile >= 90 %}bg-green-600 text-white{% elif stock.rs_percentile >= 70 %}bg-blue-600 text-white{% else %}bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400{% endif %}">
                             {{ stock.rs_percentile }}th
                         </span>
                     </td>
-                    <td class="px-6 py-4 font-bold text-gray-700">{{ stock.volume_ratio }}x</td>
-                    <td class="px-6 py-4 text-gray-400">{{ stock.pullback_pct }}% off high</td>
+                    <td class="px-6 py-4 font-bold text-gray-700 dark:text-slate-300">{{ stock.volume_ratio }}x</td>
+                    <td class="px-6 py-4 text-gray-400 dark:text-slate-500">{{ stock.pullback_pct }}% off high</td>
                     <td class="px-6 py-4 text-right">
                         {% if stock.high_volume_alert %}
-                            <span class="text-[8px] px-2 py-0.5 bg-red-50 text-red-600 rounded font-black uppercase tracking-wider border border-red-100 animate-pulse">Institutional Surge 🔥</span>
+                            <span class="text-[8px] px-2 py-0.5 bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 rounded font-black uppercase tracking-wider border border-red-100 dark:border-red-900/30 animate-pulse">Institutional Surge 🔥</span>
                         {% else %}
-                            <span class="text-[8px] px-2 py-0.5 bg-gray-50 text-gray-500 rounded font-bold uppercase">Passed</span>
+                            <span class="text-[8px] px-2 py-0.5 bg-gray-50 dark:bg-slate-800 text-gray-500 dark:text-slate-400 rounded font-bold uppercase">Passed</span>
                         {% endif %}
                     </td>
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="7" class="px-6 py-8 text-center text-gray-400 italic bg-gray-50/30">No assets detected inside this specific momentum profile block selection.</td>
+                    <td colspan="7" class="px-6 py-8 text-center text-gray-400 dark:text-slate-500 italic bg-gray-50/30 dark:bg-slate-800/20">No assets detected inside this specific momentum profile block selection.</td>
                 </tr>
                 {% endfor %}
             </tbody>

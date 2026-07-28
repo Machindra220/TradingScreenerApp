@@ -1,0 +1,701 @@
+{% extends 'base_authenticated.html' %}
+{% block title %}Multi-Timeframe Analysis{% endblock %}
+{% block content %}
+<input type="hidden" id="csrfTokenValue" name="csrf_token" value="{{ csrf_token }}">
+
+<div id="mtf-root-workspace" class="w-full max-w-[1900px] mx-auto px-3 py-4 space-y-3">
+
+    <!-- Header: shared controls that drive BOTH panels (same symbol/market) -->
+    <div class="backdrop-blur-md bg-white/10 dark:bg-slate-950/40 border border-white/20 dark:border-slate-800/50 px-4 py-3 rounded-xl flex items-center justify-between shadow-md flex-wrap gap-2">
+        <div class="flex items-center gap-3 flex-wrap">
+            <div class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+            <h3 class="text-xs font-black text-slate-900 dark:text-gray-200 uppercase tracking-wider">📊 Multi-Timeframe Stage Analysis</h3>
+            <select id="screenerStrategyDropdown" onchange="onScreenerStrategyChanged(this.value)" class="bg-slate-900 text-slate-200 text-[11px] font-bold border border-slate-700/60 rounded-md px-2.5 py-1 focus:outline-none focus:border-indigo-500 cursor-pointer">
+            </select>
+            <label for="symbolFileUpload" title="Load a CSV/Excel file with a 'Symbol' column and browse it with ◀ ▶"
+                   class="bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-300 border border-cyan-700/50 font-black text-[10px] uppercase px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 cursor-pointer">
+                📄 <span id="uploadSymbolsLabel">Upload Symbols</span>
+            </label>
+            <input type="file" id="symbolFileUpload" accept=".csv,.xlsx,.xls" class="hidden" onchange="handleSymbolFileUpload(this.files[0])">
+            <span id="customListBadge" class="hidden items-center gap-2 text-[10px] font-black bg-cyan-950 text-cyan-300 px-2.5 py-1.5 rounded-md border border-cyan-800/50">
+                📄 <span id="customListName"></span>
+                <button onclick="clearCustomSymbolList()" title="Clear custom list, go back to screener" class="text-cyan-400 hover:text-cyan-100 font-black">✕</button>
+            </span>
+        </div>
+        <div id="carouselIndexDisplay" class="text-[10px] font-black bg-indigo-950 text-indigo-400 px-3 py-1 rounded-md tracking-widest border border-indigo-800/50">
+            [ 0 / 0 ]
+        </div>
+    </div>
+
+    <div id="mtfFullscreenShell" class="space-y-3 bg-slate-950 rounded-2xl p-2">
+        <!-- Ticker/market bar -->
+        <div id="mtfTickerBar" class="bg-slate-900 rounded-xl border border-slate-800 px-3 py-2 flex items-center justify-between gap-2 flex-wrap">
+            <div class="flex items-center gap-2 flex-wrap">
+                <button onclick="changeCarouselItem(-1)" class="bg-slate-800 hover:bg-slate-700 text-white font-black text-xs px-3 py-1.5 rounded-lg border border-slate-700 transition" title="Previous (Left Arrow Key)">◀</button>
+                <span id="activeTickerBadgeMeta" class="text-[10px] bg-indigo-600 font-bold px-2.5 py-1.5 rounded text-white uppercase tracking-wider whitespace-nowrap">SYNC...</span>
+                <button onclick="changeCarouselItem(1)" class="bg-slate-800 hover:bg-slate-700 text-white font-black text-xs px-3 py-1.5 rounded-lg border border-slate-700 transition mr-2" title="Next (Right Arrow Key)">▶</button>
+
+                <div id="marketStateToggle" class="flex items-center bg-slate-950 border border-slate-800 rounded-lg overflow-hidden">
+                    <button data-m="US" onclick="updateMarketChannel('US')" class="m-btn text-[9px] font-black uppercase px-3 py-1.5 text-slate-400 hover:text-white transition">US</button>
+                    <button data-m="NSE" onclick="updateMarketChannel('NSE')" class="m-btn text-[9px] font-black uppercase px-3 py-1.5 text-slate-400 hover:text-white transition">NSE</button>
+                </div>
+
+                <input type="text" id="manualSearchInput" placeholder="Ticker..." value="{{ default_stock }}"
+                       class="manual-search-input bg-slate-950 text-white text-[12px] font-bold uppercase px-3 py-1.5 rounded-lg border border-slate-800 focus:outline-none focus:border-indigo-500 w-28 transition-all"
+                       onfocus="this.select()"
+                       onkeypress="if(event.key==='Enter') triggerDirectSymbolLoad(this.value)">
+            </div>
+            <div class="flex items-center gap-2">
+                <button id="shareLinkBtn" onclick="copyShareLink()" title="Copy shareable link"
+                        class="bg-slate-800 hover:bg-slate-700 text-slate-200 font-black text-[9px] uppercase px-3 py-1.5 rounded-lg transition border border-slate-700 flex items-center gap-1">
+                    <span>🔗 Share</span>
+                </button>
+                <button id="fullscreenToggleBtn" onclick="toggleFullscreenView()" title="Fullscreen both panels"
+                        class="bg-slate-800 hover:bg-slate-700 text-slate-200 font-black text-[9px] uppercase px-3 py-1.5 rounded-lg transition border border-slate-700 flex items-center gap-1">
+                    <span id="fsBtnLabel">⛶ Fullscreen</span>
+                </button>
+            </div>
+        </div>
+
+        <div id="carouselErrorBanner" class="hidden bg-red-950/80 border border-red-800/60 rounded-xl text-red-300 text-[12px] font-semibold px-4 py-2 flex items-center justify-between gap-3">
+            <span class="flex items-center gap-2"><span class="text-red-400">⚠</span><span id="carouselErrorText">Something went wrong.</span></span>
+            <button onclick="document.getElementById('carouselErrorBanner').classList.add('hidden')" class="text-red-400 hover:text-red-200 font-black px-2">✕</button>
+        </div>
+
+        <!-- Data-sourcing note: hourly is a separate intraday fetch, capped at
+             ~730 days by Yahoo Finance itself — it will always show less history
+             than the Daily/Weekly panels, which both derive from one long daily
+             download. This is a real data-availability limit, not a bug. -->
+        <p id="mtfInfoNote" class="text-[10px] text-gray-500 dark:text-slate-500 italic px-1">
+            ℹ️ Hourly uses a separate intraday data feed capped at ~730 days of history by Yahoo Finance — Daily and Weekly share a much longer daily download, so Hourly's chart will naturally look "shorter."
+        </p>
+
+        <!-- Dual side-by-side panels -->
+        <div id="mtfPanelGrid" class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            <div id="panelHost-left" class="mtf-panel"></div>
+            <div id="panelHost-right" class="mtf-panel"></div>
+        </div>
+    </div>
+
+    <!-- Combined checklist: both panels' stage/event reads in one place -->
+    <div id="combinedSignalPanel" class="hidden bg-gradient-to-b from-emerald-950/40 to-slate-900 border border-emerald-800/40 rounded-xl px-4 py-3">
+        <h4 class="text-[11px] font-black text-emerald-300 uppercase tracking-wider mb-3">🧭 Multi-Timeframe Read</h4>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div id="signalCol-left"></div>
+            <div id="signalCol-right"></div>
+        </div>
+        <p class="mt-3 pt-3 border-t border-gray-800/60 text-[10px] text-gray-500 italic">
+            Different timeframes reading different stages for the same stock is normal and useful — e.g. a Daily pullback inside a still-intact Weekly uptrend, or early Hourly strength ahead of a Daily base. Mechanical read only, not investment advice.
+        </p>
+    </div>
+
+    <!-- Legend -->
+    <div class="flex flex-wrap gap-x-5 gap-y-1.5 text-[10px] font-black uppercase text-gray-400 px-1 pt-1 border-t border-gray-900">
+        <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-[#a78bfa] rounded inline-block"></span>N-Period MA</span>
+        <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-[#FACC15] rounded inline-block"></span>10 EMA</span>
+        <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-[#22D3EE] rounded inline-block"></span>100 EMA</span>
+        <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-[#f87171] rounded inline-block" style="border-top:1px dashed #f87171"></span>Resistance Zone</span>
+        <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-[#4ade80] rounded inline-block" style="border-top:1px dashed #4ade80"></span>Support Zone</span>
+        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 bg-[#22c55e]/60 rounded-sm inline-block"></span>Volume Up</span>
+        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 bg-[#ef4444]/60 rounded-sm inline-block"></span>Volume Down</span>
+        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 bg-[#f59e0b] rounded-sm inline-block"></span>Volume Surge (≥1.5× avg)</span>
+        <span class="flex items-center gap-1.5"><span class="text-emerald-400">▲</span>Breakout</span>
+        <span class="flex items-center gap-1.5"><span class="text-red-400">▼</span>Breakdown</span>
+        <span class="flex items-center gap-1.5"><span class="text-yellow-400">●</span>RS New High</span>
+        <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-[#34d399] rounded inline-block"></span>RS Ratio</span>
+    </div>
+</div>
+
+<style>
+    .mtf-panel { background:#020617; border-radius:1rem; border:1px solid #1e293b; overflow:hidden; }
+    .mtf-toolbar { background:#0f172a; padding:.5rem .75rem; display:flex; align-items:center; justify-content:space-between; gap:.5rem; border-bottom:1px solid #1e293b; flex-wrap:wrap; }
+    .mtf-tf-btn { font-size:9px; font-weight:900; text-transform:uppercase; padding:.3rem .6rem; color:#94a3b8; transition:.15s; border-radius:.4rem; }
+    .mtf-tf-btn.active { background:#4F46E5; color:#fff; }
+    .mtf-tf-btn:hover:not(.active) { color:#fff; background:#1e293b; }
+    .mtf-pane-legend {
+        position:absolute; top:6px; left:8px; z-index:10; display:flex; flex-wrap:wrap; gap:6px;
+        font-size:9px; font-weight:800; text-transform:uppercase; pointer-events:none;
+        text-shadow:0 1px 2px rgba(0,0,0,0.9);
+    }
+    .mtf-skeleton {
+        position:absolute; inset:0; z-index:1; background-color:#020617;
+        background-image:
+            repeating-linear-gradient(to right, #111827 0, #111827 1px, transparent 1px, transparent 50px),
+            repeating-linear-gradient(to bottom, #111827 0, #111827 1px, transparent 1px, transparent 35px);
+        overflow:hidden;
+    }
+    .mtf-skeleton::after {
+        content:''; position:absolute; inset:0;
+        background:linear-gradient(100deg, transparent 30%, rgba(255,255,255,0.05) 50%, transparent 70%);
+        background-size:200% 100%; animation:mtf-shimmer 1.6s ease-in-out infinite;
+    }
+    .mtf-skeleton.hidden { display:none; }
+    @keyframes mtf-shimmer { 0%{background-position:200% 0;} 100%{background-position:-200% 0;} }
+
+    .m-btn.active { background:#4F46E5; color:#fff; }
+    .manual-search-input:-webkit-autofill { -webkit-box-shadow:0 0 0 1000px #020617 inset; -webkit-text-fill-color:#fff; }
+
+    #mtfFullscreenShell:fullscreen,
+    #mtfFullscreenShell:-webkit-full-screen,
+    #mtfFullscreenShell.mtf-fs-active {
+        display: flex; flex-direction: column; background-color:#020617 !important; overflow-y:auto;
+    }
+    #mtfFullscreenShell:fullscreen #mtfPanelGrid,
+    #mtfFullscreenShell:-webkit-full-screen #mtfPanelGrid,
+    #mtfFullscreenShell.mtf-fs-active #mtfPanelGrid {
+        flex: 1; min-height: 0;
+    }
+
+    /* Same fullscreen-hardening approach used on the carousel/Weinstein
+       pages: force toolbar control colors explicitly (both via :fullscreen
+       and a JS-toggled fallback class) so buttons/input never go
+       white-on-white inside the Fullscreen API's top-layer. */
+    #mtfFullscreenShell.mtf-fs-active #mtfTickerBar,
+    #mtfFullscreenShell:fullscreen #mtfTickerBar,
+    #mtfFullscreenShell:-webkit-full-screen #mtfTickerBar {
+        background-color: #0f172a !important;
+    }
+    #mtfFullscreenShell.mtf-fs-active #mtfTickerBar button,
+    #mtfFullscreenShell:fullscreen #mtfTickerBar button,
+    #mtfFullscreenShell:-webkit-full-screen #mtfTickerBar button,
+    #mtfFullscreenShell.mtf-fs-active #mtfTickerBar input,
+    #mtfFullscreenShell:fullscreen #mtfTickerBar input,
+    #mtfFullscreenShell:-webkit-full-screen #mtfTickerBar input {
+        appearance: none !important; -webkit-appearance: none !important;
+        background-color: #1e293b !important; color: #e2e8f0 !important; border-color: #334155 !important;
+    }
+    #mtfFullscreenShell.mtf-fs-active #mtfTickerBar .m-btn.active,
+    #mtfFullscreenShell:fullscreen #mtfTickerBar .m-btn.active,
+    #mtfFullscreenShell:-webkit-full-screen #mtfTickerBar .m-btn.active {
+        background-color: #4f46e5 !important; color: #ffffff !important;
+    }
+    #mtfFullscreenShell.mtf-fs-active #mtfTickerBar #activeTickerBadgeMeta,
+    #mtfFullscreenShell:fullscreen #mtfTickerBar #activeTickerBadgeMeta,
+    #mtfFullscreenShell:-webkit-full-screen #mtfTickerBar #activeTickerBadgeMeta {
+        background-color: #4338ca !important; color: #ffffff !important;
+    }
+</style>
+
+<script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
+<script>
+/* ============================================================
+   Shared state: symbol/market/ticker list drive BOTH panels.
+   Each panel manages its own timeframe + chart instances via
+   the createPanel() factory below — this is what keeps the two
+   sides fully independent without duplicating all the chart code.
+============================================================ */
+let cSym = '{{ default_stock }}', cMkt = '{{ default_market }}';
+let tickerCollection = [], fullTickerCollection = [], carouselPointer = -1;
+let currentScreener = '';
+let customListActive = false;
+let panels = {};
+
+const TIMEFRAME_LABELS = { H: 'Hourly', D: 'Daily', W: 'Weekly' };
+const SW = 60;
+const BASE_CFG = {
+    layout: { background: { type: 'solid', color: 'transparent' }, textColor: '#9ca3af', fontFamily: 'Inter, sans-serif', fontSize: 10 },
+    grid: { vertLines: { color: '#1e293b' }, horzLines: { color: '#1e293b' } },
+    crosshair: { mode: 0, vertLine: { color: '#64748b' }, horzLine: { color: '#64748b' } },
+    rightPriceScale: { borderColor: '#334155', minimumWidth: SW },
+    timeScale: { borderColor: '#334155', timeVisible: true }
+};
+
+const STRATEGY_DROPDOWN_MAP = {
+    "NSE": [
+        { value: "HH_HL_Screener", label: "Structural HH-HL Trend Screener" },
+        { value: "Adaptive_RS", label: "Volar Adaptive Alpha RS" },
+        { value: "RS_ROC_Momentum", label: "Cross-Sectional RS-ROC Momentum" },
+        { value: "Gap_Volume", label: "Breakout Gap & Volume Scanner" }
+    ],
+    "US": [
+        { value: "Stage2_Screener", label: "Minervini Stage 2 Base Screener" },
+        { value: "Adaptive_RS", label: "Volar Adaptive Alpha RS" },
+        { value: "Gap_Volume", label: "Breakout Gap & Volume Scanner" }
+    ]
+};
+
+/* ---------------- Panel factory ----------------
+   Each panel is a self-contained unit: its own timeframe, its own
+   two chart instances (price+volume, RS), its own DOM. Left/right
+   are just two instances of this with different default timeframes. */
+function createPanel(side, defaultTf) {
+    const hostId = `panelHost-${side}`;
+    const host = document.getElementById(hostId);
+    const paneAId = `vPane-${side}-A`, paneBId = `vPane-${side}-B`;
+    const skelAId = `skel-${side}-A`, skelBId = `skel-${side}-B`;
+    const legAId = `leg-${side}-A`, legBId = `leg-${side}-B`;
+
+    host.innerHTML = `
+        <div class="mtf-toolbar">
+            <div class="flex items-center gap-2">
+                <span class="text-[10px] font-black text-slate-300 uppercase">${side === 'left' ? 'Panel A' : 'Panel B'}</span>
+                <div class="flex items-center bg-slate-950 border border-slate-800 rounded-lg overflow-hidden" id="tfSelector-${side}">
+                    <button class="mtf-tf-btn" data-tf="H">H</button>
+                    <button class="mtf-tf-btn" data-tf="D">D</button>
+                    <button class="mtf-tf-btn" data-tf="W">W</button>
+                </div>
+            </div>
+            <div id="stageBadge-${side}" class="text-[9px] font-black px-2 py-1 rounded border uppercase whitespace-nowrap">Stage: —</div>
+        </div>
+        <div id="ohlc-${side}" class="bg-slate-900/80 border-b border-slate-800 px-3 py-1.5 flex flex-wrap gap-3 text-[10px] font-bold uppercase text-slate-400">
+            <span>O <span class="ohlc-o" style="color:#e0e7ff;">—</span></span>
+            <span>H <span class="ohlc-h text-emerald-400">—</span></span>
+            <span>L <span class="ohlc-l text-rose-400">—</span></span>
+            <span>C <span class="ohlc-c" style="color:#e0e7ff;">—</span></span>
+            <span>Vol <span class="ohlc-v text-indigo-400">—</span></span>
+            <span>Slope <span class="ohlc-slope text-amber-400">—</span></span>
+        </div>
+        <div class="relative bg-slate-950 overflow-hidden">
+            <div id="${skelAId}" class="mtf-skeleton"></div>
+            <div id="${paneAId}" style="height:260px;"></div>
+            <div id="${legAId}" class="mtf-pane-legend"></div>
+        </div>
+        <div class="border-t border-slate-800"></div>
+        <div class="relative bg-slate-950 overflow-hidden">
+            <div id="${skelBId}" class="mtf-skeleton"></div>
+            <div id="${paneBId}" style="height:120px;"></div>
+            <div id="${legBId}" class="mtf-pane-legend"></div>
+        </div>
+    `;
+
+    const panel = {
+        side, timeframe: defaultTf,
+        cA: null, cB: null, sCandle: null, sMa: null, sEma10: null, sEma100: null, sVolume: null, sRs: null, sRsSma: null,
+        priceLines: [], lookupMap: {}, rsLookupMap: {}, resizeObserver: null, lastPayload: null,
+
+        setTimeframe(tf) {
+            this.timeframe = tf;
+            host.querySelectorAll('.mtf-tf-btn').forEach(b => b.classList.toggle('active', b.dataset.tf === tf));
+            this.load(cSym, cMkt);
+        },
+
+        showSkeleton() {
+            document.getElementById(skelAId).classList.remove('hidden');
+            document.getElementById(skelBId).classList.remove('hidden');
+        },
+        hideSkeleton() {
+            document.getElementById(skelAId).classList.add('hidden');
+            document.getElementById(skelBId).classList.add('hidden');
+        },
+
+        attachResizeObserver() {
+            if (this.resizeObserver) this.resizeObserver.disconnect();
+            const pA = document.getElementById(paneAId), pB = document.getElementById(paneBId);
+            this.resizeObserver = new ResizeObserver(() => {
+                if (this.cA && pA.clientWidth > 0) this.cA.resize(pA.clientWidth, pA.clientHeight);
+                if (this.cB && pB.clientWidth > 0) this.cB.resize(pB.clientWidth, pB.clientHeight);
+            });
+            this.resizeObserver.observe(pA);
+            this.resizeObserver.observe(pB);
+        },
+
+        clearPriceLines() {
+            this.priceLines.forEach(pl => { try { this.sCandle.removePriceLine(pl); } catch (e) {} });
+            this.priceLines = [];
+        },
+
+        load(sym, mkt) {
+            const pA = document.getElementById(paneAId), pB = document.getElementById(paneBId);
+            pA.innerHTML = ''; pB.innerHTML = '';
+            this.lookupMap = {}; this.rsLookupMap = {}; this.priceLines = [];
+            this.showSkeleton();
+
+            this.cA = LightweightCharts.createChart(pA, { ...BASE_CFG, height: pA.clientHeight || 260 });
+            this.cB = LightweightCharts.createChart(pB, { ...BASE_CFG, height: pB.clientHeight || 120, localization: { priceFormatter: v => v.toFixed(4) } });
+            this.attachResizeObserver();
+
+            document.getElementById(legAId).innerHTML = '<span style="color:#a78bfa">● MA</span> <span style="color:#FACC15; margin-left:6px;">● 10 EMA</span> <span style="color:#22D3EE; margin-left:6px;">● 100 EMA</span> <span style="color:#f87171; margin-left:6px;">┅ R</span> <span style="color:#4ade80; margin-left:6px;">┅ S</span>';
+            document.getElementById(legBId).innerHTML = '<span style="color:#34d399">● RS</span> <span style="color:#f472b6; margin-left:6px;">● RS SMA</span>';
+
+            this.sCandle = this.cA.addCandlestickSeries({ upColor: '#22c55e', downColor: '#ef4444', borderUpColor: '#22c55e', borderDownColor: '#ef4444', wickUpColor: '#22c55e', wickDownColor: '#ef4444' });
+            this.sMa = this.cA.addLineSeries({ color: '#a78bfa', lineWidth: 2, priceLineVisible: false, lastValueVisible: false });
+            this.sEma10 = this.cA.addLineSeries({ color: '#FACC15', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+            this.sEma100 = this.cA.addLineSeries({ color: '#22D3EE', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false });
+            this.sVolume = this.cA.addHistogramSeries({ priceScaleId: 'volumeScale', priceFormat: { type: 'volume' }, priceLineVisible: false, lastValueVisible: false });
+            this.cA.priceScale('volumeScale').applyOptions({ scaleMargins: { top: 0.78, bottom: 0 } });
+
+            this.sRs = this.cB.addLineSeries({ color: '#34d399', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false });
+            this.sRsSma = this.cB.addLineSeries({ color: '#f472b6', lineWidth: 1.2, priceLineVisible: false, lastValueVisible: false });
+
+            const ohlcHost = document.getElementById(`ohlc-${this.side}`);
+            this.cA.subscribeCrosshairMove(p => {
+                if (p.time && this.lookupMap[p.time]) {
+                    const c = this.lookupMap[p.time];
+                    ohlcHost.querySelector('.ohlc-o').innerText = c.open.toFixed(2);
+                    ohlcHost.querySelector('.ohlc-h').innerText = c.high.toFixed(2);
+                    ohlcHost.querySelector('.ohlc-l').innerText = c.low.toFixed(2);
+                    ohlcHost.querySelector('.ohlc-c').innerText = c.close.toFixed(2);
+                    ohlcHost.querySelector('.ohlc-v').innerText = c.volume >= 1e6 ? (c.volume/1e6).toFixed(2)+'M' : c.volume;
+                }
+                if (p.time) this.cB.setCrosshairPosition(NaN, p.time, this.sRs);
+                else this.cB.clearCrosshairPosition();
+            });
+            this.cB.subscribeCrosshairMove(p => {
+                if (p.time) this.cA.setCrosshairPosition(NaN, p.time, this.sCandle);
+                else this.cA.clearCrosshairPosition();
+            });
+            this.cA.timeScale().subscribeVisibleLogicalRangeChange(r => { if (r) this.cB.timeScale().setVisibleLogicalRange(r); });
+            this.cB.timeScale().subscribeVisibleLogicalRangeChange(r => { if (r) this.cA.timeScale().setVisibleLogicalRange(r); });
+
+            fetch(`/api/v1/mtf-telemetry-data/${sym}?market=${mkt}&timeframe=${this.timeframe}`)
+                .then(r => r.json())
+                .then(d => {
+                    this.hideSkeleton();
+                    if (d.status === 'error') { showError(`[${TIMEFRAME_LABELS[this.timeframe]}] ${d.message}`); return; }
+                    this.lastPayload = d;
+
+                    const badge = document.getElementById(`stageBadge-${this.side}`);
+                    badge.className = stageBadgeClass(d.stage);
+                    badge.innerText = d.stage_label || 'Stage: —';
+                    ohlcHost.querySelector('.ohlc-slope').innerText = (d.ma_slope_pct !== null && d.ma_slope_pct !== undefined) ? `${d.ma_slope_pct}%` : '—';
+
+                    d.series.candles.forEach(c => this.lookupMap[c.time] = c);
+                    (d.series.rs_ratio || []).forEach(r => this.rsLookupMap[r.time] = r.value);
+
+                    document.getElementById(legAId).innerHTML = `<span style="color:#a78bfa">● ${d.ma_period}-Period MA</span> <span style="color:#FACC15; margin-left:6px;">● 10 EMA</span> <span style="color:#22D3EE; margin-left:6px;">● 100 EMA</span> <span style="color:#f87171; margin-left:6px;">┅ R</span> <span style="color:#4ade80; margin-left:6px;">┅ S</span>`;
+
+                    this.sCandle.setData(d.series.candles);
+                    this.sMa.setData(d.series.ma);
+                    this.sEma10.setData(d.series.ema10 || []);
+                    this.sEma100.setData(d.series.ema100 || []);
+                    this.sVolume.setData(d.series.volume.map(v => ({ time: v.time, value: v.value, color: v.color })));
+                    this.sRs.setData(d.series.rs_ratio || []);
+                    this.sRsSma.setData(d.series.rs_sma || []);
+
+                    this.clearPriceLines();
+                    if (d.resistance_zone) {
+                        this.priceLines.push(this.sCandle.createPriceLine({
+                            price: d.resistance_zone[1], color: '#f87171', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed,
+                            axisLabelVisible: true, title: 'R'
+                        }));
+                    }
+                    if (d.support_zone) {
+                        this.priceLines.push(this.sCandle.createPriceLine({
+                            price: d.support_zone[0], color: '#4ade80', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed,
+                            axisLabelVisible: true, title: 'S'
+                        }));
+                    }
+
+                    this.sCandle.setMarkers(d.series.markers && d.series.markers.length ? d.series.markers : []);
+                    this.sRs.setMarkers(d.series.rs_markers && d.series.rs_markers.length ? d.series.rs_markers : []);
+
+                    this.cA.timeScale().fitContent();
+                    const r = this.cA.timeScale().getVisibleLogicalRange();
+                    if (r) this.cB.timeScale().setVisibleLogicalRange(r);
+
+                    renderCombinedSignalPanel();
+                }).catch(err => {
+                    this.hideSkeleton();
+                    showError(`[${TIMEFRAME_LABELS[this.timeframe]}] Couldn't load ${mkt} ${sym}: ${err.message}`);
+                });
+        }
+    };
+
+    host.querySelectorAll('.mtf-tf-btn').forEach(btn => {
+        btn.addEventListener('click', () => panel.setTimeframe(btn.dataset.tf));
+        btn.classList.toggle('active', btn.dataset.tf === defaultTf);
+    });
+
+    return panel;
+}
+
+function stageBadgeClass(stage) {
+    const base = "text-[9px] font-black px-2 py-1 rounded border uppercase whitespace-nowrap";
+    if (stage === 2) return base + " border-emerald-500/40 bg-emerald-500/10 text-emerald-400";
+    if (stage === 4) return base + " border-rose-500/40 bg-rose-500/10 text-rose-400";
+    if (stage === 1 || stage === 3) return base + " border-amber-500/40 bg-amber-500/10 text-amber-400";
+    return base + " border-slate-600 bg-slate-800 text-slate-400";
+}
+
+/* ---------------- Combined checklist across both panels ---------------- */
+function renderCombinedSignalPanel() {
+    const left = panels.left && panels.left.lastPayload;
+    const right = panels.right && panels.right.lastPayload;
+    if (!left && !right) return;
+
+    document.getElementById('combinedSignalPanel').classList.remove('hidden');
+    document.getElementById('signalCol-left').innerHTML = left ? buildPanelSummaryHTML(left) : '<p class="text-[11px] text-gray-500 italic">Loading...</p>';
+    document.getElementById('signalCol-right').innerHTML = right ? buildPanelSummaryHTML(right) : '<p class="text-[11px] text-gray-500 italic">Loading...</p>';
+}
+
+function buildPanelSummaryHTML(d) {
+    const ccySymbol = d.market === 'NSE' ? '₹' : '$';
+    const ev = d.events, rs = d.rs_events || {};
+    const points = [];
+
+    points.push({ ok: d.stage === 2, text: `${d.timeframe_label}: ${d.stage_label}` });
+    if (ev.breakout) {
+        points.push({ ok: ev.breakout_volume_confirmed, text: `Breakout ${ev.breakout_bars_ago} bar(s) ago${ev.breakout_volume_confirmed ? ', volume-confirmed' : ', NOT volume-confirmed'}` });
+    }
+    if (ev.pullback_holding) points.push({ ok: true, text: `Pullback holding above the breakout level` });
+    if (ev.pullback_failed) points.push({ ok: false, text: `Pullback failed — broke back below the breakout level` });
+    if (ev.breakdown) {
+        points.push({ ok: false, text: `Breakdown ${ev.breakdown_bars_ago} bar(s) ago${ev.breakdown_volume_confirmed ? ', volume-confirmed' : ''}` });
+    }
+    if (ev.extended_above_ma_pct !== null && ev.extended_above_ma_pct !== undefined && ev.extended_above_ma_pct > 30) {
+        points.push({ ok: false, text: `${ev.extended_above_ma_pct}% above the MA — extended, avoid chasing` });
+    }
+    if (rs.rs_new_high) points.push({ ok: true, text: `RS made a fresh new high ${rs.rs_new_high_bars_ago} bar(s) ago` });
+    if (rs.rs_trend_up === true) points.push({ ok: true, text: `RS trending up` });
+    else if (rs.rs_trend_up === false) points.push({ ok: false, text: `RS trending down` });
+    if (d.resistance_zone) points.push({ ok: null, text: `Resistance: ${ccySymbol}${d.resistance_zone[0]}–${ccySymbol}${d.resistance_zone[1]}` });
+    if (d.support_zone) points.push({ ok: null, text: `Support: ${ccySymbol}${d.support_zone[0]}–${ccySymbol}${d.support_zone[1]}` });
+
+    return `<div class="bg-slate-900/60 rounded-lg p-3 border border-slate-800">
+        <div class="text-[10px] font-black uppercase text-slate-300 mb-2">${d.timeframe_label} Panel</div>
+        <ul class="space-y-1 text-[11px] text-gray-300">
+            ${points.map(p => `<li class="flex items-start gap-2"><span class="${p.ok === true ? 'text-emerald-400' : p.ok === false ? 'text-red-400' : 'text-slate-500'} mt-0.5">●</span><span>${p.text}</span></li>`).join('')}
+        </ul>
+    </div>`;
+}
+
+/* ---------------- Shared controls: screener/upload/ticker nav ---------------- */
+
+function populateScreenerDropdownOptions(market, autoSelectValue = null) {
+    const selector = document.getElementById('screenerStrategyDropdown');
+    selector.innerHTML = '';
+    (STRATEGY_DROPDOWN_MAP[market] || []).forEach(opt => {
+        const node = document.createElement('option');
+        node.value = opt.value; node.innerText = opt.label;
+        selector.appendChild(node);
+    });
+    if (autoSelectValue) selector.value = autoSelectValue;
+    currentScreener = selector.value;
+}
+
+function onScreenerStrategyChanged(screenerKey) {
+    clearCustomListSilently();
+    fetchTickers(cMkt, null, screenerKey);
+}
+
+function fetchTickers(market, focusSymbol = null, activeScreener = null) {
+    populateScreenerDropdownOptions(market, activeScreener);
+    const selectedScreener = activeScreener || document.getElementById('screenerStrategyDropdown').value || "";
+    currentScreener = selectedScreener;
+
+    fetch(`/api/v1/mtf-ticker-payload?market=${market}&screener=${selectedScreener}`)
+        .then(r => r.json())
+        .then(d => {
+            if (d.status === "success" && d.tickers.length > 0) {
+                tickerCollection = d.tickers; fullTickerCollection = d.tickers;
+                carouselPointer = focusSymbol ? tickerCollection.indexOf(focusSymbol.toUpperCase()) : 0;
+                if (carouselPointer === -1) carouselPointer = 0;
+                updateIndexUI();
+                loadBothPanels(tickerCollection[carouselPointer], cMkt);
+            } else {
+                tickerCollection = []; fullTickerCollection = []; carouselPointer = -1;
+                document.getElementById('carouselIndexDisplay').innerText = "[ 0 / 0 ]";
+                if (focusSymbol) loadBothPanels(focusSymbol, cMkt);
+            }
+        });
+}
+
+function updateIndexUI() {
+    document.getElementById('carouselIndexDisplay').innerText =
+        carouselPointer !== -1 ? `[ ${carouselPointer + 1} / ${tickerCollection.length} ]` : "[ 0 / 0 ]";
+}
+
+function changeCarouselItem(step) {
+    if (tickerCollection.length === 0) return;
+    carouselPointer += step;
+    if (carouselPointer >= tickerCollection.length) carouselPointer = 0;
+    if (carouselPointer < 0) carouselPointer = tickerCollection.length - 1;
+    const ticker = tickerCollection[carouselPointer];
+    document.getElementById('manualSearchInput').value = ticker;
+    updateIndexUI();
+    loadBothPanels(ticker, cMkt);
+}
+
+function triggerDirectSymbolLoad(val) {
+    if (!val) return;
+    val = val.trim().toUpperCase();
+    if (tickerCollection.length > 0) carouselPointer = tickerCollection.indexOf(val);
+    updateIndexUI();
+    loadBothPanels(val, cMkt);
+}
+
+function updateMarketChannel(m) {
+    cMkt = m;
+    clearCustomListSilently();
+    document.querySelectorAll('.m-btn').forEach(b => b.classList.toggle('active', b.dataset.m === m));
+    const val = m === 'NSE' ? 'PRAJIND' : 'NVDA';
+    document.getElementById('manualSearchInput').value = val;
+    fetchTickers(m, null);
+}
+
+function loadBothPanels(sym, mkt) {
+    cSym = sym.trim().toUpperCase().replace('.NS', '');
+    hideError();
+    panels.left.load(cSym, mkt);
+    panels.right.load(cSym, mkt);
+}
+
+/* ---------------- Fullscreen (both panels together) ----------------
+   Fullscreens the shell that wraps the ticker bar + both panels, so
+   symbol/market navigation stays usable while fullscreened — not just
+   the charts. On resize, both panels' price+volume pane (65%) and RS
+   pane (35%) are re-split from the available height, and all four
+   underlying chart instances (2 panels × 2 panes) get an explicit
+   resize() call since ResizeObserver alone can lag behind a fullscreen
+   transition. */
+function toggleFullscreenView() {
+    const el = document.getElementById('mtfFullscreenShell');
+    if (!document.fullscreenElement) {
+        (el.requestFullscreen || el.webkitRequestFullscreen || function(){}).call(el);
+    } else {
+        (document.exitFullscreen || document.webkitExitFullscreen || function(){}).call(document);
+    }
+}
+
+document.addEventListener('fullscreenchange', handleFullscreenChange);
+document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+
+function handleFullscreenChange() {
+    const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+    const shell = document.getElementById('mtfFullscreenShell');
+    shell.classList.toggle('mtf-fs-active', isFs);
+    document.getElementById('fsBtnLabel').innerText = isFs ? '⛶ Exit Fullscreen' : '⛶ Fullscreen';
+    document.getElementById('mtfInfoNote').style.display = isFs ? 'none' : '';
+
+    ['left', 'right'].forEach(side => {
+        const pA = document.getElementById(`vPane-${side}-A`);
+        const pB = document.getElementById(`vPane-${side}-B`);
+        if (isFs) {
+            const tickerH = document.getElementById('mtfTickerBar').offsetHeight;
+            const ohlcH = document.getElementById(`ohlc-${side}`).offsetHeight;
+            const toolbarH = pA.closest('.mtf-panel').querySelector('.mtf-toolbar').offsetHeight;
+            const avail = window.innerHeight - tickerH - ohlcH - toolbarH - 40;
+            pA.style.height = Math.round(avail * 0.65) + 'px';
+            pB.style.height = Math.round(avail * 0.35) + 'px';
+        } else {
+            pA.style.height = '260px';
+            pB.style.height = '120px';
+        }
+    });
+
+    setTimeout(() => {
+        ['left', 'right'].forEach(side => {
+            const p = panels[side];
+            if (!p) return;
+            const pA = document.getElementById(`vPane-${side}-A`);
+            const pB = document.getElementById(`vPane-${side}-B`);
+            if (p.cA && pA.clientWidth > 0) p.cA.resize(pA.clientWidth, pA.clientHeight);
+            if (p.cB && pB.clientWidth > 0) p.cB.resize(pB.clientWidth, pB.clientHeight);
+        });
+    }, 60);
+}
+
+function copyShareLink() {
+    const url = new URL(window.location.href);
+    url.searchParams.set('symbol', cSym);
+    url.searchParams.set('market', cMkt);
+    const shareUrl = url.toString();
+    const flashCopied = () => {
+        const span = document.getElementById('shareLinkBtn').querySelector('span');
+        const original = span.innerText;
+        span.innerText = '✅ Copied!';
+        setTimeout(() => { span.innerText = original; }, 1500);
+    };
+    const fallbackCopy = () => {
+        const ta = document.createElement('textarea');
+        ta.value = shareUrl; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        try { document.execCommand('copy'); } catch (e) {}
+        document.body.removeChild(ta);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(shareUrl).then(flashCopied).catch(() => { fallbackCopy(); flashCopied(); });
+    } else { fallbackCopy(); flashCopied(); }
+}
+
+/* ---------------- CSV/Excel upload ---------------- */
+
+function buildCsrfHeaders() {
+    const headers = {};
+    let token = null;
+    const explicitField = document.getElementById('csrfTokenValue');
+    if (explicitField && explicitField.value) token = explicitField.value;
+    if (token) { headers['X-CSRFToken'] = token; headers['X-CSRF-Token'] = token; }
+    return headers;
+}
+
+function handleSymbolFileUpload(file) {
+    if (!file) return;
+    const label = document.getElementById('uploadSymbolsLabel');
+    const originalLabel = label.innerText;
+    label.innerText = 'Uploading...';
+
+    const formData = new FormData();
+    formData.append('file', file);
+    const csrfField = document.getElementById('csrfTokenValue');
+    if (csrfField && csrfField.value) formData.append('csrf_token', csrfField.value);
+
+    fetch('/api/v1/mtf-upload-symbols', { method: 'POST', headers: buildCsrfHeaders(), body: formData })
+        .then(r => r.text().then(bodyText => ({ ok: r.ok, status: r.status, bodyText })))
+        .then(({ ok, status, bodyText }) => {
+            label.innerText = originalLabel;
+            let d;
+            try { d = JSON.parse(bodyText); }
+            catch (e) {
+                const snippet = bodyText.replace(/\s+/g, ' ').trim().slice(0, 140);
+                showError(`Upload endpoint returned HTTP ${status} instead of JSON. Response started with: "${snippet}"`);
+                return;
+            }
+            if (!ok || d.status !== 'success') { showError(d.message || `Upload failed (HTTP ${status}).`); return; }
+
+            tickerCollection = d.tickers; fullTickerCollection = d.tickers;
+            customListActive = true; carouselPointer = 0;
+            updateIndexUI();
+
+            const badge = document.getElementById('customListBadge');
+            badge.classList.remove('hidden'); badge.classList.add('flex');
+            document.getElementById('customListName').innerText = `${d.filename} (${d.count})`;
+
+            loadBothPanels(tickerCollection[0], cMkt);
+        })
+        .catch(err => { label.innerText = originalLabel; showError('Upload failed: ' + err.message); })
+        .finally(() => { document.getElementById('symbolFileUpload').value = ''; });
+}
+
+function clearCustomSymbolList() {
+    if (!customListActive) return;
+    clearCustomListSilently();
+    fetchTickers(cMkt, null, currentScreener);
+}
+
+function clearCustomListSilently() {
+    if (!customListActive) return;
+    customListActive = false;
+    const badge = document.getElementById('customListBadge');
+    badge.classList.add('hidden'); badge.classList.remove('flex');
+}
+
+function showError(msg) {
+    document.getElementById('carouselErrorText').innerText = msg;
+    document.getElementById('carouselErrorBanner').classList.remove('hidden');
+}
+function hideError() {
+    document.getElementById('carouselErrorBanner').classList.add('hidden');
+}
+
+document.addEventListener('keydown', e => {
+    if (document.activeElement.tagName === 'INPUT') return;
+    if (e.key === 'ArrowRight') changeCarouselItem(1);
+    if (e.key === 'ArrowLeft') changeCarouselItem(-1);
+});
+
+document.addEventListener('DOMContentLoaded', () => {
+    panels.left = createPanel('left', 'D');
+    panels.right = createPanel('right', 'H');
+
+    const params = new URLSearchParams(window.location.search);
+    const paramSymbol = params.get('symbol');
+    const paramMarket = params.get('market');
+    if (paramMarket && ['US','NSE'].includes(paramMarket)) cMkt = paramMarket;
+    if (paramSymbol) { cSym = paramSymbol; document.getElementById('manualSearchInput').value = paramSymbol; }
+
+    document.querySelectorAll('.m-btn').forEach(b => b.classList.toggle('active', b.dataset.m === cMkt));
+    fetchTickers(cMkt, paramSymbol || cSym);
+});
+</script>
+{% endblock %}

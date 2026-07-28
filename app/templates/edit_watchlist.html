@@ -2,155 +2,157 @@
 {% block title %}✏️ Edit Watchlist Entry{% endblock %}
 {% block content %}
 
-<!-- 🧭 Page Heading -->
-<h2 class="text-2xl font-semibold mb-4 text-gray-800">
-  ✏️ Edit Watchlist Entry – {{ item.stock_name }}
-</h2>
+<div class="max-w-4xl mx-auto px-4 py-8">
+  <!-- 🧭 Page Heading -->
+  <h2 class="text-2xl font-black text-indigo-900 dark:text-indigo-300 uppercase tracking-tight mb-6">
+    ✏️ Edit Watchlist Entry – {{ item.stock_name }}
+  </h2>
 
-<!-- 🔔 Flash Messages -->
-{% with messages = get_flashed_messages(with_categories=true) %}
-  {% for category, message in messages %}
-    <div class="mb-4 px-4 py-2 rounded bg-blue-100 text-blue-800 text-sm">
-      {{ message }}
+  <!-- 🔔 Flash Messages -->
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+      <div class="mb-6 px-4 py-3 rounded-xl bg-blue-100 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-300 text-xs font-bold">
+        {{ message }}
+      </div>
+    {% endfor %}
+  {% endwith %}
+
+  <!-- 📋 Edit Watchlist Form -->
+  <form method="POST"
+        action="{{ url_for('watchlist.edit', item_id=item.id) }}"
+        class="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm dark:shadow-none max-w-4xl space-y-4">
+
+    <!-- 🔐 CSRF Protection -->
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+    <!-- 🧩 Grid Layout for Inputs -->
+    <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
+
+      <!-- 🏷️ Stock Name -->
+      <div>
+        <label for="stock_name" class="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400 mb-1">Stock Name</label>
+        <input type="text"
+               name="stock_name"
+               id="stock_name"
+               value="{{ item.stock_name }}"
+               required
+               class="w-full px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 border border-gray-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-xs font-bold" />
+      </div>
+
+      <!-- 🎯 Target Price -->
+      <div>
+        <label for="target_price" class="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400 mb-1">Target Price</label>
+        <input type="number"
+               step="0.01"
+               name="target_price"
+               id="target_price"
+               value="{{ item.target_price }}"
+               required
+               min="0.01"
+               onwheel="this.blur()"
+               class="w-full px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 border border-gray-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-xs font-bold" />
+      </div>
+
+      <!-- 🛡️ Stop Loss -->
+      <div>
+        <label for="stop_loss" class="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400 mb-1">Stop Loss</label>
+        <input type="number"
+               step="0.01"
+               name="stop_loss"
+               id="stop_loss"
+               value="{{ item.stop_loss }}"
+               required
+               min="0.01"
+               onwheel="this.blur()"
+               class="w-full px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 border border-gray-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-xs font-bold" />
+      </div>
+
+      <!-- 📈 Expected Move -->
+      <div>
+        <label for="expected_move" class="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400 mb-1">Expected Move</label>
+        <input type="number"
+               step="0.01"
+               name="expected_move"
+               id="expected_move"
+               value="{{ item.expected_move }}"
+               required
+               min="0.01"
+               onwheel="this.blur()"
+               class="w-full px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 border border-gray-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-xs font-bold" />
+      </div>
+
+      <!-- 🧪 Setup Type -->
+      <div>
+        <label for="setup_type" class="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400 mb-1">Setup Type</label>
+        <select name="setup_type"
+                id="setup_type"
+                required
+                class="w-full px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 border border-gray-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-xs font-bold">
+          <option value="">Select</option>
+          {% for option in ['Breakout', 'Pullback', 'Reversal', 'News Driven'] %}
+            <option value="{{ option }}" {% if item.setup_type == option %}selected{% endif %}>{{ option }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <!-- 📊 Confidence Level -->
+      <div>
+        <label for="confidence" class="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400 mb-1">Confidence</label>
+        <select name="confidence"
+                id="confidence"
+                class="w-full px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 border border-gray-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-xs font-bold">
+          <option value="">Select</option>
+          {% for level in ['High', 'Medium', 'Low'] %}
+            <option value="{{ level }}" {% if item.confidence == level %}selected{% endif %}>{{ level }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <!-- 📅 Date Added -->
+      <div>
+        <label for="date_added" class="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400 mb-1">Date Added</label>
+        <input type="date"
+               name="date_added"
+               id="date_added"
+               value="{{ item.date_added.isoformat() }}"
+               required
+               class="w-full px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 border border-gray-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-xs font-bold" />
+      </div>
+
+      <!-- 📌 Status -->
+      <div>
+        <label for="status" class="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400 mb-1">Status</label>
+        <select name="status"
+                id="status"
+                class="w-full px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 border border-gray-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-xs font-bold">
+          {% for status in ['Open', 'Archived', 'Triggered'] %}
+            <option value="{{ status }}" {% if item.status == status %}selected{% endif %}>{{ status }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <!-- 📝 Notes -->
+      <div class="md:col-span-2 lg:col-span-3">
+        <label for="notes" class="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400 mb-1">Notes</label>
+        <textarea name="notes"
+                  id="notes"
+                  rows="2"
+                  class="w-full px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 border border-gray-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-xs">{{ item.notes }}</textarea>
+      </div>
     </div>
-  {% endfor %}
-{% endwith %}
 
-<!-- 📋 Edit Watchlist Form -->
-<form method="POST"
-      action="{{ url_for('watchlist.edit', item_id=item.id) }}"
-      class="bg-white p-6 rounded shadow max-w-4xl">
-
-  <!-- 🔐 CSRF Protection -->
-  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-
-  <!-- 🧩 Grid Layout for Inputs -->
-  <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
-
-    <!-- 🏷️ Stock Name -->
-    <div>
-      <label for="stock_name" class="block text-sm font-medium text-gray-700 mb-1">Stock Name</label>
-      <input type="text"
-             name="stock_name"
-             id="stock_name"
-             value="{{ item.stock_name }}"
-             required
-             class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+    <!-- ✅ Action Buttons -->
+    <div class="pt-4 flex gap-4">
+      <button type="submit"
+              class="px-5 py-2.5 bg-indigo-600 text-white rounded-xl text-xs font-bold uppercase hover:bg-indigo-700 transition shadow-md shadow-indigo-200 dark:shadow-indigo-950/40">
+        💾 Save Changes
+      </button>
+      <a href="{{ url_for('watchlist.add') }}"
+         class="px-5 py-2.5 border border-gray-300 dark:border-slate-700 rounded-xl text-gray-700 dark:text-slate-300 text-xs font-bold uppercase hover:bg-gray-100 dark:hover:bg-slate-800 transition">
+        Cancel
+      </a>
     </div>
-
-    <!-- 🎯 Target Price -->
-    <div>
-      <label for="target_price" class="block text-sm font-medium text-gray-700 mb-1">Target Price</label>
-      <input type="number"
-             step="0.01"
-             name="target_price"
-             id="target_price"
-             value="{{ item.target_price }}"
-             required
-             min="0.01"
-             onwheel="this.blur()"
-             class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-    </div>
-
-    <!-- 🛡️ Stop Loss -->
-    <div>
-      <label for="stop_loss" class="block text-sm font-medium text-gray-700 mb-1">Stop Loss</label>
-      <input type="number"
-             step="0.01"
-             name="stop_loss"
-             id="stop_loss"
-             value="{{ item.stop_loss }}"
-             required
-             min="0.01"
-             onwheel="this.blur()"
-             class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-    </div>
-
-    <!-- 📈 Expected Move -->
-    <div>
-      <label for="expected_move" class="block text-sm font-medium text-gray-700 mb-1">Expected Move</label>
-      <input type="number"
-             step="0.01"
-             name="expected_move"
-             id="expected_move"
-             value="{{ item.expected_move }}"
-             required
-             min="0.01"
-             onwheel="this.blur()"
-             class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-    </div>
-
-    <!-- 🧪 Setup Type -->
-    <div>
-      <label for="setup_type" class="block text-sm font-medium text-gray-700 mb-1">Setup Type</label>
-      <select name="setup_type"
-              id="setup_type"
-              required
-              class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500">
-        <option value="">Select</option>
-        {% for option in ['Breakout', 'Pullback', 'Reversal', 'News Driven'] %}
-          <option value="{{ option }}" {% if item.setup_type == option %}selected{% endif %}>{{ option }}</option>
-        {% endfor %}
-      </select>
-    </div>
-
-    <!-- 📊 Confidence Level -->
-    <div>
-      <label for="confidence" class="block text-sm font-medium text-gray-700 mb-1">Confidence</label>
-      <select name="confidence"
-              id="confidence"
-              class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500">
-        <option value="">Select</option>
-        {% for level in ['High', 'Medium', 'Low'] %}
-          <option value="{{ level }}" {% if item.confidence == level %}selected{% endif %}>{{ level }}</option>
-        {% endfor %}
-      </select>
-    </div>
-
-    <!-- 📅 Date Added -->
-    <div>
-      <label for="date_added" class="block text-sm font-medium text-gray-700 mb-1">Date Added</label>
-      <input type="date"
-             name="date_added"
-             id="date_added"
-             value="{{ item.date_added.isoformat() }}"
-             required
-             class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-    </div>
-
-    <!-- 📌 Status -->
-    <div>
-      <label for="status" class="block text-sm font-medium text-gray-700 mb-1">Status</label>
-      <select name="status"
-              id="status"
-              class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500">
-        {% for status in ['Open', 'Archived', 'Triggered'] %}
-          <option value="{{ status }}" {% if item.status == status %}selected{% endif %}>{{ status }}</option>
-        {% endfor %}
-      </select>
-    </div>
-
-    <!-- 📝 Notes -->
-    <div class="md:col-span-2 lg:col-span-3">
-      <label for="notes" class="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-      <textarea name="notes"
-                id="notes"
-                rows="2"
-                class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500">{{ item.notes }}</textarea>
-    </div>
-  </div>
-
-  <!-- ✅ Action Buttons -->
-  <div class="mt-6 flex gap-4">
-    <button type="submit"
-            class="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition">
-      💾 Save Changes
-    </button>
-    <a href="{{ url_for('watchlist.add') }}"
-       class="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-100 transition">
-      Cancel
-    </a>
-  </div>
-</form>
+  </form>
+</div>
 
 {% endblock %}

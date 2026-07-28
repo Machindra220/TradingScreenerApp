@@ -2,14 +2,14 @@
 {% block title %}EPS Surge Screener{% endblock %}
 
 {% block content %}
-<div class="max-w-7xl mx-auto p-4 lg:p-8 bg-gray-50 min-h-screen">
+<div class="max-w-7xl mx-auto p-4 lg:p-8">
     <div class="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
         <div>
-            <h1 class="text-3xl font-extrabold text-gray-900 tracking-tight">📈 EPS Surge Screener</h1>
-            <p class="text-gray-500 mt-1">Identify stocks with accelerating earnings growth and relative strength.</p>
+            <h1 class="text-3xl font-extrabold text-indigo-900 dark:text-indigo-300 tracking-tight">📈 EPS Surge Screener</h1>
+            <p class="text-gray-500 dark:text-slate-400 text-xs font-semibold mt-1">Identify stocks with accelerating earnings growth and relative strength.</p>
         </div>
         <div class="flex items-center gap-3">
-            <span class="flex items-center gap-2 px-3 py-1 bg-white border rounded-full text-xs font-medium text-gray-600 shadow-sm">
+            <span class="flex items-center gap-2 px-3 py-1 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-full text-xs font-bold text-gray-600 dark:text-slate-400 shadow-sm">
                 <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
                 Market Data Live
             </span>
@@ -17,37 +17,37 @@
     </div>
 
     <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-            <h3 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Quick Analysis</h3>
+        <div class="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm dark:shadow-none border border-gray-100 dark:border-slate-800">
+            <h3 class="text-xs font-black text-gray-400 dark:text-slate-500 uppercase tracking-widest mb-4">Quick Analysis</h3>
             <form method="post" action="{{ url_for('eps.eps_screener_from_form') }}" class="space-y-4">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <div class="relative">
                     <input type="text" name="symbol" id="symbol" placeholder="e.g. RELIANCE"
-                           class="w-full pl-3 pr-10 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all uppercase font-bold">
+                           class="w-full pl-3 pr-10 py-2.5 bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-slate-100 border border-gray-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 transition-all uppercase font-bold text-xs outline-none">
                 </div>
-                <button type="submit" class="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg shadow-md transition-colors flex items-center justify-center gap-2">
+                <button type="submit" class="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs uppercase rounded-xl shadow-lg shadow-blue-200 dark:shadow-blue-950/40 transition-colors flex items-center justify-center gap-2">
                     <span>🔍</span> Analyze Symbol
                 </button>
             </form>
         </div>
 
-        <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex flex-col justify-between">
-            <h3 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Master List</h3>
-            <p class="text-xs text-gray-500 mb-4 italic">Process standard watchlists for 25% YoY quarterly growth.</p>
+        <div class="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm dark:shadow-none border border-gray-100 dark:border-slate-800 flex flex-col justify-between">
+            <h3 class="text-xs font-black text-gray-400 dark:text-slate-500 uppercase tracking-widest mb-4">Master List</h3>
+            <p class="text-xs text-gray-500 dark:text-slate-400 mb-4 italic">Process standard watchlists for 25% YoY quarterly growth.</p>
             <form method="post" action="{{ url_for('eps.eps_screener_from_file') }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                <button type="submit" class="w-full py-2.5 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg shadow-md transition-colors flex items-center justify-center gap-2">
+                <button type="submit" class="w-full py-3 bg-green-600 hover:bg-green-700 text-white font-black text-xs uppercase rounded-xl shadow-lg shadow-green-200 dark:shadow-green-950/40 transition-colors flex items-center justify-center gap-2">
                     <span>📂</span> Run Master CSV
                 </button>
             </form>
         </div>
 
-        <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex flex-col justify-between">
-            <h3 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Power Trend</h3>
-            <p class="text-xs text-gray-500 mb-4 italic">Filter for Stage 2 breakouts combined with EPS surge.</p>
+        <div class="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm dark:shadow-none border border-gray-100 dark:border-slate-800 flex flex-col justify-between">
+            <h3 class="text-xs font-black text-gray-400 dark:text-slate-500 uppercase tracking-widest mb-4">Power Trend</h3>
+            <p class="text-xs text-gray-500 dark:text-slate-400 mb-4 italic">Filter for Stage 2 breakouts combined with EPS surge.</p>
             <form method="post" action="{{ url_for('eps.eps_screener_stage2_eps') }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                <button type="submit" class="w-full py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-lg shadow-md transition-colors flex items-center justify-center gap-2">
+                <button type="submit" class="w-full py-3 bg-purple-600 hover:bg-purple-700 text-white font-black text-xs uppercase rounded-xl shadow-lg shadow-purple-200 dark:shadow-purple-950/40 transition-colors flex items-center justify-center gap-2">
                     <span>🚀</span> Run Stage 2 + EPS
                 </button>
             </form>
@@ -55,55 +55,55 @@
     </div>
 
     {% if results_csv or results_manual %}
-    <div class="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
-        <div class="p-5 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
-            <h2 class="font-bold text-gray-800 flex items-center gap-2">
+    <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-sm dark:shadow-none border border-gray-100 dark:border-slate-800 overflow-hidden">
+        <div class="p-5 border-b border-gray-100 dark:border-slate-800 flex items-center justify-between bg-gray-50/50 dark:bg-slate-800/40">
+            <h2 class="font-bold text-gray-800 dark:text-slate-200 flex items-center gap-2 text-sm uppercase">
                 {% if source_name %}{{ source_name }}{% else %}Results{% endif %}
-                <span class="text-xs font-normal text-gray-500">({{ (results_csv|length or results_manual|length) }} found)</span>
+                <span class="text-xs font-normal text-gray-500 dark:text-slate-400">({{ (results_csv|length or results_manual|length) }} found)</span>
             </h2>
         </div>
         
         <div class="overflow-x-auto">
-            <table class="w-full text-left border-collapse font-mono text-sm" id="main-screener-table">
+            <table class="w-full text-left border-collapse text-xs" id="main-screener-table">
                 <thead>
-                    <tr class="text-gray-500 bg-gray-50 border-b uppercase text-[10px] tracking-widest">
-                        <th class="px-6 py-4 font-medium">Symbol</th>
-                        <th class="px-4 py-4 font-medium text-right">Price</th>
-                        <th class="px-4 py-4 font-medium text-center">EPS Growth (Q1|Q2|Q3)</th>
-                        <th class="px-4 py-4 font-medium text-right">Volume</th>
-                        <th class="px-4 py-4 font-medium text-right">ROE%</th>
-                        <th class="px-4 py-4 font-medium text-right">Relative Strength</th>
+                    <tr class="text-gray-400 dark:text-slate-400 bg-gray-50 dark:bg-slate-800/60 border-b border-gray-100 dark:border-slate-800 uppercase font-bold text-[10px] tracking-widest">
+                        <th class="px-6 py-4">Symbol</th>
+                        <th class="px-4 py-4 text-right">Price</th>
+                        <th class="px-4 py-4 text-center">EPS Growth (Q1|Q2|Q3)</th>
+                        <th class="px-4 py-4 text-right">Volume</th>
+                        <th class="px-4 py-4 text-right">ROE%</th>
+                        <th class="px-4 py-4 text-right">Relative Strength</th>
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-gray-100">
+                <tbody class="divide-y divide-gray-50 dark:divide-slate-800 text-gray-800 dark:text-slate-200">
                     {% for stock in (results_manual or results_csv) %}
-                    <tr class="hover:bg-blue-50/30 transition-colors group">
+                    <tr class="hover:bg-indigo-50/30 dark:hover:bg-indigo-500/10 transition-colors group">
                         <td class="px-6 py-4 whitespace-nowrap">
                             <div class="flex items-center gap-3">
-                                <span class="font-bold text-gray-900 group-hover:text-blue-600">{{ stock.symbol_clean }}</span>
+                                <span class="font-black text-indigo-700 dark:text-indigo-300">{{ stock.symbol_clean }}</span>
                                 <button onclick="copyToClipboard('{{ stock.symbol_clean }}')" class="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-blue-500 transition-opacity">
                                     📋
                                 </button>
                             </div>
                         </td>
-                        <td class="px-4 py-4 text-right font-semibold text-gray-900">₹{{ "{:,.2f}".format(stock.price) }}</td>
+                        <td class="px-4 py-4 text-right font-bold text-gray-900 dark:text-slate-100">₹{{ "{:,.2f}".format(stock.price) }}</td>
                         <td class="px-4 py-4 text-center">
                             <div class="flex justify-center gap-1">
                                 {% for g in stock.eps_growth %}
-                                <span class="px-2 py-0.5 rounded text-[11px] font-bold {{ 'bg-green-100 text-green-700' if g >= 25 else 'bg-gray-100 text-gray-500' }}">
+                                <span class="px-2 py-0.5 rounded text-[11px] font-bold {{ 'bg-green-100 dark:bg-emerald-500/10 text-green-700 dark:text-emerald-400' if g >= 25 else 'bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400' }}">
                                     {{ g }}%
                                 </span>
                                 {% endfor %}
                             </div>
                         </td>
-                        <td class="px-4 py-4 text-right text-gray-600">{{ "{:,}".format(stock.volume) }}</td>
+                        <td class="px-4 py-4 text-right text-gray-600 dark:text-slate-400 font-mono">{{ "{:,}".format(stock.volume) }}</td>
                         <td class="px-4 py-4 text-right">
-                            <span class="{{ 'text-green-600 font-bold' if stock.roc_21d >= 17 else 'text-gray-500' }}">
+                            <span class="{{ 'text-green-600 dark:text-emerald-400 font-bold' if stock.roc_21d >= 17 else 'text-gray-500 dark:text-slate-400' }}">
                                 {{ stock.roc_21d }}%
                             </span>
                         </td>
                         <td class="px-4 py-4 text-right">
-                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ 'bg-blue-100 text-blue-800' if stock.rs_vs_index_21d > 0 else 'bg-red-100 text-red-800' }}">
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold {{ 'bg-blue-100 dark:bg-blue-500/10 text-blue-800 dark:text-blue-300' if stock.rs_vs_index_21d > 0 else 'bg-red-100 dark:bg-red-500/10 text-red-800 dark:text-red-400' }}">
                                 {{ stock.rs_vs_index_21d }}
                             </span>
                         </td>
@@ -114,11 +114,12 @@
         </div>
     </div>
     {% else %}
-    <div class="text-center py-20 bg-white rounded-xl border-2 border-dashed border-gray-200">
-        <p class="text-gray-400">No qualifying stocks identified. Try running a different list.</p>
+    <div class="text-center py-20 bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800">
+        <p class="text-gray-400 dark:text-slate-500 italic text-sm">No qualifying stocks identified. Try running a different list.</p>
     </div>
     {% endif %}
 </div>
+
 <!-- 📋 Copy-to-Clipboard Script -->
 <script>
 function copyToClipboard(id) {
@@ -135,7 +136,6 @@ function copyToClipboard(id) {
     });
   }
 }
-
 </script>
 
 <!-- 🔃 Sortable Table Script -->

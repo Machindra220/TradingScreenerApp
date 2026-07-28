@@ -1,75 +1,97 @@
 {% extends 'base_authenticated.html' %}
 {% block content %}
-<h2 class="text-2xl font-semibold mb-4">📜 Momentum Strategy History (Nifty 500)</h2>
+<div class="max-w-7xl mx-auto px-4 py-8">
+  <h2 class="text-2xl font-black text-indigo-900 dark:text-indigo-300 uppercase tracking-tight mb-6">📜 Momentum Strategy History (Nifty 500)</h2>
 
-<!-- Filters -->
-<form method="get" class="mb-4 flex gap-4 flex-wrap">
-  <input type="text" name="symbol" placeholder="Filter by symbol (e.g. INFY)"
-         value="{{ symbol_filter }}" class="px-3 py-2 border rounded w-48">
-  <input type="text" name="month" placeholder="Filter by month (YYYY-MM)"
-         value="{{ month_filter }}" class="px-3 py-2 border rounded w-48">
-  <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded">🔍 Filter</button>
-</form>
+  <!-- Filters -->
+  <form method="get" class="mb-8 flex gap-4 flex-wrap items-center bg-white dark:bg-slate-900 p-6 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm dark:shadow-none">
+    <input type="text" name="symbol" placeholder="Filter by symbol (e.g. INFY)"
+           value="{{ symbol_filter }}" class="px-4 py-2 bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-slate-100 border border-gray-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-xs font-bold w-48">
+    <input type="text" name="month" placeholder="Filter by month (YYYY-MM)"
+           value="{{ month_filter }}" class="px-4 py-2 bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-slate-100 border border-gray-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-xs w-48">
+    <button type="submit" class="px-6 py-2.5 bg-blue-600 text-white rounded-xl font-black text-xs uppercase hover:bg-blue-700 transition shadow-md shadow-blue-200 dark:shadow-blue-950/40">🔍 Filter</button>
+  </form>
 
-<!-- Active Trades (BUY) -->
-<h3 class="text-xl font-semibold mb-2 text-blue-700">📈 Active Trades</h3>
-<table class="w-full table-auto border-collapse mb-8">
-  <thead>
-    <tr class="bg-blue-100 dark:bg-blue-800">
-      <th class="px-4 py-2 text-left">Date</th>
-      <th class="px-4 py-2 text-left">Symbol</th>
-      <th class="px-4 py-2 text-left">Price</th>
-      <th class="px-4 py-2 text-left">Qty</th>
-      <th class="px-4 py-2 text-left">Notes</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for trade in trades %}
-    <tr class="border-b">
-      <td class="px-4 py-2">{{ trade.trade_date }}</td>
-      <td class="px-4 py-2">{{ trade.symbol.replace('.NS', '') }}</td>
-      <td class="px-4 py-2">₹{{ trade.price }}</td>
-      <td class="px-4 py-2">{{ trade.quantity }}</td>
-      <td class="px-4 py-2">{{ trade.notes }}</td>
-    </tr>
-    {% else %}
-    <tr>
-      <td colspan="5" class="px-4 py-4 text-center text-gray-500">No trades found for selected filters.</td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+  <!-- Active Trades (BUY) -->
+  <div class="mb-10">
+    <h3 class="text-lg font-black uppercase text-indigo-700 dark:text-indigo-400 mb-3 tracking-wider flex items-center gap-2">📈 Active Trades</h3>
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm dark:shadow-none overflow-hidden">
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-xs">
+          <thead class="bg-indigo-50/50 dark:bg-slate-800/60 border-b border-gray-100 dark:border-slate-800 text-gray-400 dark:text-slate-400 font-bold uppercase text-[10px] tracking-widest">
+            <tr>
+              <th class="px-6 py-4">Date</th>
+              <th class="px-6 py-4">Symbol</th>
+              <th class="px-6 py-4">Price</th>
+              <th class="px-6 py-4">Qty</th>
+              <th class="px-6 py-4">Notes</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-50 dark:divide-slate-800 text-gray-800 dark:text-slate-200">
+            {% for trade in trades %}
+            <tr class="hover:bg-indigo-50/30 dark:hover:bg-indigo-500/10 transition-colors">
+              <td class="px-6 py-4 font-medium text-gray-500 dark:text-slate-400">{{ trade.trade_date }}</td>
+              <td class="px-6 py-4 font-black text-indigo-700 dark:text-indigo-300">{{ trade.symbol.replace('.NS', '') }}</td>
+              <td class="px-6 py-4 font-bold text-gray-900 dark:text-slate-100">₹{{ trade.price }}</td>
+              <td class="px-6 py-4 font-mono">{{ trade.quantity }}</td>
+              <td class="px-6 py-4 text-gray-500 dark:text-slate-400">{{ trade.notes }}</td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="5" class="px-6 py-8 text-center text-gray-400 dark:text-slate-500 italic bg-gray-50/30 dark:bg-slate-800/20">No trades found for selected filters.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
 
-<!-- Removed Trades (SELL) -->
-<h3 class="text-xl font-semibold mb-2 text-red-700">📉 Removed Trades</h3>
-<table class="w-full table-auto border-collapse">
-  <thead>
-    <tr class="bg-red-100 dark:bg-red-800">
-      <th class="px-4 py-2 text-left">Symbol</th>
-      <th class="px-4 py-2 text-left">Entry Date</th>
-      <th class="px-4 py-2 text-left">Exit Date</th>
-      <th class="px-4 py-2 text-left">Entry Price</th>
-      <th class="px-4 py-2 text-left">Exit Price</th>
-      <th class="px-4 py-2 text-left">Return/Loss</th>
-      <th class="px-4 py-2 text-left">Return/Loss %</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for trade in removed_trades %}
-    <tr class="border-b">
-      <td class="px-4 py-2">{{ trade.symbol.replace('.NS', '') }}</td>
-      <td class="px-4 py-2">{{ trade.portfolio.buy_date }}</td>
-      <td class="px-4 py-2">{{ trade.trade_date }}</td>
-      <td class="px-4 py-2">₹{{ trade.portfolio.buy_price }}</td>
-      <td class="px-4 py-2">₹{{ trade.price }}</td>
-      <td class="px-4 py-2">₹{{ trade.profit_loss_value }}</td>
-      <td class="px-4 py-2">{{ trade.profit_loss_pct }}%</td>
-    </tr>
-    {% else %}
-    <tr>
-      <td colspan="7" class="px-4 py-4 text-center text-gray-500">No removed trades found.</td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+  <!-- Removed Trades (SELL) -->
+  <div>
+    <h3 class="text-lg font-black uppercase text-red-600 dark:text-red-400 mb-3 tracking-wider flex items-center gap-2">📉 Removed Trades</h3>
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm dark:shadow-none overflow-hidden">
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-xs">
+          <thead class="bg-red-50/50 dark:bg-slate-800/60 border-b border-gray-100 dark:border-slate-800 text-gray-400 dark:text-slate-400 font-bold uppercase text-[10px] tracking-widest">
+            <tr>
+              <th class="px-6 py-4">Symbol</th>
+              <th class="px-6 py-4">Entry Date</th>
+              <th class="px-6 py-4">Exit Date</th>
+              <th class="px-6 py-4">Entry Price</th>
+              <th class="px-6 py-4">Exit Price</th>
+              <th class="px-6 py-4">Return/Loss</th>
+              <th class="px-6 py-4">Return/Loss %</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-50 dark:divide-slate-800 text-gray-800 dark:text-slate-200">
+            {% for trade in removed_trades %}
+            <tr class="hover:bg-red-50/30 dark:hover:bg-red-500/10 transition-colors">
+              <td class="px-6 py-4 font-black text-indigo-700 dark:text-indigo-300">{{ trade.symbol.replace('.NS', '') }}</td>
+              <td class="px-6 py-4 text-gray-500 dark:text-slate-400 font-medium">{{ trade.portfolio.buy_date if trade.portfolio else 'N/A' }}</td>
+              <td class="px-6 py-4 text-gray-500 dark:text-slate-400 font-medium">{{ trade.trade_date }}</td>
+              <td class="px-6 py-4 font-bold text-gray-900 dark:text-slate-100">₹{{ trade.portfolio.buy_price if trade.portfolio else 'N/A' }}</td>
+              <td class="px-6 py-4 font-bold text-gray-900 dark:text-slate-100">₹{{ trade.price }}</td>
+              
+              <!-- Safe Null Checks for P&L Value -->
+              <td class="px-6 py-4 font-bold {% if trade.profit_loss_value is not none and trade.profit_loss_value >= 0 %}text-green-600 dark:text-emerald-400{% else %}text-red-500 dark:text-red-400{% endif %}">
+                {% if trade.profit_loss_value is not none %}₹{{ trade.profit_loss_value }}{% else %}—{% endif %}
+              </td>
+              
+              <!-- Safe Null Checks for P&L Percentage -->
+              <td class="px-6 py-4 font-black {% if trade.profit_loss_pct is not none and trade.profit_loss_pct >= 0 %}text-green-600 dark:text-emerald-400{% else %}text-red-500 dark:text-red-400{% endif %}">
+                {% if trade.profit_loss_pct is not none %}{{ trade.profit_loss_pct }}%{% else %}—{% endif %}
+              </td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="7" class="px-6 py-8 text-center text-gray-400 dark:text-slate-500 italic bg-gray-50/30 dark:bg-slate-800/20">No removed trades found.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
