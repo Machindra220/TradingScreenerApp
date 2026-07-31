@@ -221,7 +221,7 @@ def adaptive_4d_process():
         if stock_list:
             # Slice processing boundary window size to 100 tickers for fast runtime executions
             results = process_4d_screening_pipeline(stock_list[:100], market_type=market)
-            last_time = datetime.now().strftime("%d %b %Y %I:%M %p")
+            last_time = datetime.now().strftime("%d-%b-%Y %H:%M:%S")
             
             snapshot_id = f"snap_4d_{uuid.uuid4().hex}"
             snapshot_file_path = os.path.join(HISTORY_CACHE_DIR, f"{snapshot_id}.json")
@@ -269,7 +269,7 @@ def restore_adaptive_4d_snapshot(snapshot_id):
     if os.path.exists(snapshot_file_path):
         with open(snapshot_file_path, 'r') as f:
             restored_records = json.load(f)
-        restored_time = datetime.now().strftime("%d %b %Y %I:%M %p") + " (Restored)"
+        restored_time = datetime.now().strftime("%d-%b-%Y %H:%M:%S") + " (Restored)"
         with open(RESULTS_JSON, 'w') as f:
             json.dump({'stocks': restored_records, 'time': restored_time, 'market': market, 'source_name': 'Snapshot Recovery'}, f)
             

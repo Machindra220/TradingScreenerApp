@@ -178,7 +178,7 @@ def launchpad_scan_process():
 
         # Scan the first 150 tickers concurrently for optimized performance
         stocks = run_launchpad_pipeline(symbols[:150], market_type=market)
-        last_time = datetime.now().strftime("%d %b %Y %I:%M %p")
+        last_time = datetime.now().strftime("%d-%b-%Y %H:%M:%S")
         
         with open(RESULTS_JSON, 'w') as f:
             json.dump({'stocks': stocks, 'time': last_time, 'market': market}, f)

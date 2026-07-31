@@ -48,7 +48,7 @@ def export_history():
     filter_range = request.args.get('range', 'all_time')
     output_format = request.args.get('format', 'excel')
     trades = get_filtered_trades(current_user.id, filter_range)
-    last_computed = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    last_computed = datetime.now().strftime("%d-%b-%Y %H:%M:%S")
 
     # 📊 Compute metrics
     closed_trades = [t for t in trades if t.status == "Closed"]
@@ -152,7 +152,7 @@ def export_stats_only():
     closed_trades = [t for t in trades if t.status == "Closed"]
     win_trades = [t for t in closed_trades if is_win(t)]
     loss_trades = [t for t in closed_trades if not is_win(t)]
-    last_computed = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    last_computed = datetime.now().strftime("%d-%b-%Y %H:%M:%S")
 
     realized_pnl = sum(calculate_realized_pnl(t) for t in closed_trades)
     win_rate = round((len(win_trades) / len(closed_trades)) * 100, 2) if closed_trades else 0

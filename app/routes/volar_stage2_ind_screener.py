@@ -164,7 +164,7 @@ def volar_process():
                 stock["rank_status"] = "up" if diff > 0 else ("down" if diff < 0 else "stable")
             enriched.append(stock)
 
-        last_processed_time = datetime.now().strftime("%d %b %Y %I:%M %p")
+        last_processed_time = datetime.now().strftime("%d-%b-%Y %H:%M:%S")
         
         # 💾 DISK WRITE: Snapshot full database arrays locally to bypass browser cookie limits
         snapshot_id = f"snapshot_{uuid.uuid4().hex}"
@@ -206,7 +206,7 @@ def restore_volar_ind_snapshot(snapshot_id):
         with open(snapshot_file_path, 'r') as f:
             restored_records = json.load(f)
             
-        restored_time = datetime.now().strftime("%d %b %Y %I:%M %p") + " (Restored Snapshot)"
+        restored_time = datetime.now().strftime("%d-%b-%Y %H:%M:%S") + " (Restored Snapshot)"
         restored_source = "Snapshot"
         
         if os.path.exists(meta_history_file):

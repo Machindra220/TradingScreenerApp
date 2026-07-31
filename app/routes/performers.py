@@ -88,7 +88,7 @@ def top_performers_process():
     overlap_all = n200_set & bse_set & n500_set
     last_processed_time = datetime.now()
 
-    summary_message = f"✅ Screener completed at {last_processed_time.strftime('%d %b %Y %I:%M %p')}"
+    summary_message = f"✅ Screener completed at {last_processed_time.strftime("%d-%b-%Y %H:%M:%S")}"
 
     return render_template("top_performers.html",
                            nifty_200=nifty_200,

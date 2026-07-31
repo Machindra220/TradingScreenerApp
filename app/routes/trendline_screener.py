@@ -203,7 +203,7 @@ def trendline_scan_process():
 
         both, tl, h52w = execute_algorithmic_scan(symbols, market_type=market)
         sections = {"both": both, "tl_only": tl, "high_52w_only": h52w}
-        last_processed_time = datetime.now().strftime("%d %b %Y %I:%M %p")
+        last_processed_time = datetime.now().strftime("%d-%b-%Y %H:%M:%S")
         
         with open(RESULTS_JSON, 'w') as f:
             json.dump({'sections': sections, 'time': last_processed_time, 'source': source_name, 'market': market}, f)

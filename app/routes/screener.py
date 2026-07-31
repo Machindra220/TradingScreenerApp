@@ -169,7 +169,7 @@ def stage2_process():
         )
         enriched.append(stock)
 
-    last_processed_time = datetime.now().strftime("%d %b %Y %I:%M %p")
+    last_processed_time = datetime.now().strftime("%d-%b-%Y %H:%M:%S")
     updated, inserted = save_screened_stocks(results)
     summary_message = f"✅ Updated {updated} stocks, added {inserted} new"
 
@@ -208,14 +208,14 @@ def stage2_saved():
     # Apply date range filters
     if start_date:
         try:
-            start_dt = datetime.strptime(start_date, "%Y-%m-%d").date()
+            start_dt = datetime.strptime(start_date, "%d-%m-%Y").date()
             query = query.filter(Stage2Stock.date >= start_dt)
         except:
             pass
 
     if end_date:
         try:
-            end_dt = datetime.strptime(end_date, "%Y-%m-%d").date()
+            end_dt = datetime.strptime(end_date, "%d-%m-%Y").date()
             query = query.filter(Stage2Stock.date <= end_dt)
         except:
             pass

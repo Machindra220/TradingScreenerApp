@@ -181,7 +181,7 @@ def ibd_us_scan_process():
             # Select first 100 tickers for optimized runtime performance execution balance
             test_pool = symbols[:100]
             stocks = run_ibd_us_screening_pipeline(test_pool)
-            last_time = datetime.now().strftime("%d %b %Y %I:%M %p")
+            last_time = datetime.now().strftime("%d-%b-%Y %H:%M:%S")
             
             with open(RESULTS_JSON, 'w') as f:
                 json.dump({'stocks': stocks, 'time': last_time}, f)

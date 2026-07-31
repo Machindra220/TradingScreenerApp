@@ -161,7 +161,7 @@ def stats_dashboard():
         'trade_bars': trade_bars,  # 👈 Add this to template context for daily bars
         'weekly_bars': weekly_bars, # context for weekly bars
         'monthly_bars': monthly_bars,  # context for monthly bars
-        'last_computed': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        'last_computed': datetime.now().strftime("%d-%b-%Y %H:%M:%S")
     }
 
     cache.set(cache_key, context, timeout=300)  # Cache for 5 minutes

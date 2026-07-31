@@ -130,7 +130,7 @@ def rs_roc_us_momentum_process():
                 s["rank_diff"] = diff
                 s["rank_status"] = "up" if diff > 0 else ("down" if diff < 0 else "stable")
         
-        last_time = datetime.now().strftime("%d %b %Y %I:%M %p")
+        last_time = datetime.now().strftime("%d-%b-%Y %H:%M:%S")
         
         # 💾 DISK RESTORATION LOGIC: Save the large data array block cleanly to local disk storage
         snapshot_id = f"snapshot_{uuid.uuid4().hex}"
@@ -166,7 +166,7 @@ def restore_rs_roc_us_snapshot(snapshot_id):
             restored_records = json.load(f)
             
         # Reconstruct the metadata description line context
-        restored_time = datetime.now().strftime("%d %b %Y %I:%M %p") + " (Restored Snapshot)"
+        restored_time = datetime.now().strftime("%d-%b-%Y %H:%M:%S") + " (Restored Snapshot)"
         if os.path.exists(user_cache_file):
             with open(user_cache_file, 'r') as f:
                 meta_list = json.load(f)

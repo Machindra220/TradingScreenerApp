@@ -143,7 +143,7 @@ def stage2_india_view():
                             stocks.append(res)
                     
                     stocks.sort(key=lambda x: x['rs'], reverse=True)
-                    last_run_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    last_run_time = datetime.now().strftime("%d-%b-%Y %H:%M:%S")
                     summary_message = f"✅ Analysis Complete. Found {len(stocks)} Indian Stage 2 stocks."
                     
                     # Cache payload to JSON

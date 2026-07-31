@@ -134,7 +134,7 @@ def ll_lh_view():
                 
                 # Sort weakest stocks first (lowest RS score at top for shorting)
                 stocks.sort(key=lambda x: x['rs'], reverse=False)
-                last_run_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                last_run_time = datetime.now().strftime("%d-%b-%Y %H:%M:%S")
                 
                 cache_payload = {
                     "last_run": last_run_time,
@@ -142,8 +142,8 @@ def ll_lh_view():
                 }
                 with open(RESULTS_JSON, 'w') as f:
                     json.dump(cache_payload, f)
-                    
-                summary_message = f"✅ Bearish Scan Complete using {last_file_name}. Found {len(stocks)} breakdown candidates."
+                display_source = last_file_name if last_file_name and last_file_name != "None" else "Default Stock Universe"
+                summary_message = f"✅ Bearish Scan Complete using {display_source}. Found {len(stocks)} breakdown candidates."
             except Exception as e:
                 summary_message = f"❌ Error: {str(e)}"
     else:
@@ -188,10 +188,11 @@ def ll_lh_view():
             "theme": theme
         })
 
+    display_last_file = last_file_name if last_file_name and last_file_name != "None" else "Nifty 500 Index (Default)"
     return render_template("ll_lh_india.html", 
                            stocks=stocks, 
                            summary_message=summary_message, 
-                           last_file=last_file_name,
+                           last_file=display_last_file,
                            last_run_time=last_run_time,
                            top_sectors=top_sectors_meta,
                            sector_color_map=sector_color_map)

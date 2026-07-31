@@ -123,7 +123,7 @@ def vcp_process():
         stock["tag"] = "✅ VCP"
         enriched.append(stock)
 
-    last_processed_time = datetime.now().strftime("%d %b %Y %I:%M %p")
+    last_processed_time = datetime.now().strftime("%d-%b-%Y %H:%M:%S")
     summary_message = f"✅ Processed {len(enriched)} stocks from {source_name} at {last_processed_time}"
 
     return render_template("vcp.html", results=enriched, summary=summary_message)

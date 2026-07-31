@@ -180,7 +180,7 @@ def ibd_india_scan_process():
             # Analyze a 100-stock sample pool for optimized performance runtime execution
             test_pool = symbols[:100]
             stocks = run_ibd_india_screening_pipeline(test_pool)
-            last_time = datetime.now().strftime("%d %b %Y %I:%M %p")
+            last_time = datetime.now().strftime("%d-%b-%Y %H:%M:%S")
             
             with open(RESULTS_JSON, 'w') as f:
                 json.dump({'stocks': stocks, 'time': last_time}, f)

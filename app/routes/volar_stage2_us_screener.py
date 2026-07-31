@@ -165,7 +165,7 @@ def volar_us_process():
                 stock["rank_status"] = "up" if diff > 0 else ("down" if diff < 0 else "stable")
             enriched.append(stock)
 
-        last_processed_time = datetime.now().strftime("%d %b %Y %I:%M %p")
+        last_processed_time = datetime.now().strftime("%d-%b-%Y %H:%M:%S")
         
         # 💾 THE DISK-CACHE WORKAROUND LOGIC: Write massive payload file states directly to local workspace folders
         snapshot_id = f"snapshot_{uuid.uuid4().hex}"
@@ -210,7 +210,7 @@ def restore_volar_us_snapshot(snapshot_id):
         with open(snapshot_file_path, 'r') as f:
             restored_records = json.load(f)
             
-        restored_time = datetime.now().strftime("%d %b %Y %I:%M %p") + " (Restored Snapshot)"
+        restored_time = datetime.now().strftime("%d-%b-%Y %H:%M:%S") + " (Restored Snapshot)"
         restored_source = "Snapshot"
         
         if os.path.exists(meta_history_file):

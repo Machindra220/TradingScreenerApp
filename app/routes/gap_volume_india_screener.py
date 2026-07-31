@@ -191,7 +191,7 @@ def gap_volume_india_process():
 
         both, vol, gap = execute_pipeline_scan(symbols)
         sections = {"both": both, "vol_only": vol, "gap_only": gap}
-        last_processed_time = datetime.now().strftime("%d %b %Y %I:%M %p")
+        last_processed_time = datetime.now().strftime("%d-%b-%Y %H:%M:%S")
         
         with open(RESULTS_JSON, 'w') as f:
             json.dump({'sections': sections, 'time': last_processed_time, 'source': source_name}, f)

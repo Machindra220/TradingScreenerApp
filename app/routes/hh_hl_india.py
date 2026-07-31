@@ -125,7 +125,7 @@ def hh_hl_view():
                         stocks.append(res)
                 
                 stocks.sort(key=lambda x: x['rs'], reverse=True)
-                last_run_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                last_run_time = datetime.now().strftime("%d-%b-%Y %H:%M:%S")
                 
                 cache_payload = {
                     "last_run": last_run_time,

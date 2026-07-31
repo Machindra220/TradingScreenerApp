@@ -178,7 +178,7 @@ def period_performers_run():
     b200_1m, b200_3m, b200_6m = calculate_multi_period_performance(b200_syms, suffix=".BO", top_n=35, category_prefix="bse_200", previous_ranks=previous_ranks)
     b500_1m, b500_3m, b500_6m = calculate_multi_period_performance(b500_syms, suffix=".BO", top_n=35, category_prefix="bse_500", previous_ranks=previous_ranks)
 
-    last_time = datetime.now().strftime("%d %b %Y %I:%M %p")
+    last_time = datetime.now().strftime("%d-%b-%Y %H:%M:%S")
     summary = f"✅ Analysis Complete. Multi-Period metrics compiled successfully."
 
     payload = {

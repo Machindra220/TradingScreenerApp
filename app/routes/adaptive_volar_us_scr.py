@@ -167,7 +167,7 @@ def volar_us_process():
                 stocks = df.to_dict(orient='records')
                 print(f"Final stocks count: {len(stocks)}")
 
-            last_processed_time = datetime.now().strftime("%Y-%m-%d %H:%M")
+            last_processed_time = datetime.now().strftime("%d-%b-%Y %H:%M:%S")
             source_name = session.get('last_filename_us', 'Unknown')
 
             with open(RESULTS_JSON, 'w') as f:
