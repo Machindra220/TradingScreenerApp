@@ -13,15 +13,21 @@ UPLOAD_ROOT = os.path.abspath(os.path.join(os.getcwd(), 'uploads'))
 
 SCREENER_CONFIG = {
     "NSE": {
-        "HH_HL_Screener": os.path.join(UPLOAD_ROOT, 'india_hhhl', 'last_india_hhhl_results.json'),
+        "Volar_Stage2": os.path.join(UPLOAD_ROOT, 'volar_ind', 'last_volar_results.json'),
         "Adaptive_RS": os.path.join(UPLOAD_ROOT, 'volar_ind_adaptive', 'volar_results_ind_adaptive.json'),
         "RS_ROC_Momentum": os.path.join(UPLOAD_ROOT, 'rs_roc', 'last_rs_roc_results.json'),
-        "Gap_Volume": os.path.join(UPLOAD_ROOT, 'gap_volume_india', 'last_gap_vol_india_results.json')
+        "HH_HL_Screener": os.path.join(UPLOAD_ROOT, 'india_hhhl', 'last_india_hhhl_results.json'),
+        "Gap_Volume": os.path.join(UPLOAD_ROOT, 'gap_volume_india', 'last_gap_vol_india_results.json'),
+        "Stage2_Screener": os.path.join(UPLOAD_ROOT, 'india_screener', 'last_stage2_india_results.json'),
+        "IBD_SmartSelect": os.path.join(UPLOAD_ROOT, 'ibd_india', 'last_ibd_india_results.json')
     },
     "US": {
-        "Stage2_Screener": os.path.join(UPLOAD_ROOT, 'volar_us', 'last_volar_us_results.json'),
+        "Volar_Stage2": os.path.join(UPLOAD_ROOT, 'volar_us', 'last_volar_us_results.json'),
         "Adaptive_RS": os.path.join(UPLOAD_ROOT, 'volar_us_adaptive', 'volar_results_adaptive.json'),
-        "Gap_Volume": os.path.join(UPLOAD_ROOT, 'gap_volume', 'last_gap_vol_results.json')
+        "RS_ROC_Momentum": os.path.join(UPLOAD_ROOT, 'rs_roc', 'last_rs_roc_results.json'),
+        "Stage2_Screener": os.path.join(UPLOAD_ROOT, 'us_screener', 'cached_results.json'),
+        "Gap_Volume": os.path.join(UPLOAD_ROOT, 'gap_volume', 'last_gap_vol_results.json'),
+        "IBD_SmartSelect": os.path.join(UPLOAD_ROOT, 'ibd_us', 'last_ibd_us_results.json')
     }
 }
 
