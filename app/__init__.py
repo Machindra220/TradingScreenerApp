@@ -65,7 +65,9 @@ def create_app():
     from app.routes.chart_carousel import chart_carousel_bp
     from app.routes.chart_weinstein import chart_weinstein_bp
     from app.routes.chart_multiframe import chart_multiframe_bp
+    from app.routes.ai_engine import ai_engine_bp
 
+    app.register_blueprint(ai_engine_bp)
     app.register_blueprint(chart_multiframe_bp)
     app.register_blueprint(chart_weinstein_bp)
     app.register_blueprint(chart_carousel_bp)

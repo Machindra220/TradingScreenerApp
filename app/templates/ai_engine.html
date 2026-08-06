@@ -1,0 +1,203 @@
+{% extends "base_authenticated.html" %}
+{% block title %}Autonomous AI Intelligence Engine{% endblock %}
+{% block content %}
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 font-sans antialiased">
+    
+    <!-- Hidden CSRF Token for Flask Security -->
+    <input type="hidden" id="csrfTokenInput" name="csrf_token" value="{{ csrf_token if csrf_token is defined else '' }}">
+
+    <!-- Hero Header -->
+    <div class="relative overflow-hidden backdrop-blur-xl bg-slate-900/80 border border-slate-800 p-8 rounded-3xl shadow-2xl">
+        <div class="absolute -top-24 -right-24 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
+        <div class="absolute -bottom-24 -left-24 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
+
+        <div class="relative z-10 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
+            <div class="space-y-2 max-w-3xl">
+                <div class="flex items-center gap-2">
+                    <span class="px-2.5 py-1 text-[10px] font-black tracking-widest text-emerald-400 bg-emerald-950/60 border border-emerald-800/80 rounded-lg uppercase">
+                        AI Execution Engine v3.0
+                    </span>
+                    <span class="px-2.5 py-1 text-[10px] font-bold tracking-wider text-indigo-400 bg-indigo-950/60 border border-indigo-800/80 rounded-lg uppercase flex items-center gap-1.5">
+                        <span class="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span> Circuit Breakers Armed
+                    </span>
+                </div>
+                <h1 class="text-3xl sm:text-4xl font-black text-white uppercase tracking-tight">
+                    Autonomous Market Intelligence & Decision Engine
+                </h1>
+                <p class="text-xs sm:text-sm text-slate-400 font-medium leading-relaxed">
+                    Transforming raw unstructured financial news into deterministic, risk-controlled portfolio actions through real-time telemetry processing, LLM event parsing, and automated circuit breaker protection.
+                </p>
+            </div>
+
+            <!-- Status Indicator Card -->
+            <div class="shrink-0 bg-slate-950/80 border border-slate-800 p-4 rounded-2xl flex items-center gap-4">
+                <div class="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-400">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+                </div>
+                <div>
+                    <div class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">System State</div>
+                    <div class="text-xs font-black text-emerald-400 uppercase">Operational & Safeguarded</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Core Capabilities Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="bg-slate-900/60 dark:bg-slate-900 rounded-2xl p-5 border border-slate-800 space-y-2">
+            <div class="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-blue-400 text-sm font-bold">01</div>
+            <h3 class="text-sm font-bold text-white uppercase tracking-wider">Market Telemetry</h3>
+            <p class="text-xs text-slate-400 leading-relaxed font-normal">
+                Real-time data ingestion streams tick prices and depth metrics to validate technical liquidity prior to action execution.
+            </p>
+        </div>
+
+        <div class="bg-slate-900/60 dark:bg-slate-900 rounded-2xl p-5 border border-slate-800 space-y-2">
+            <div class="w-8 h-8 rounded-lg bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-400 text-sm font-bold">02</div>
+            <h3 class="text-sm font-bold text-white uppercase tracking-wider">Event Structuring</h3>
+            <p class="text-xs text-slate-400 leading-relaxed font-normal">
+                Converts raw financial headlines into entity mapping, event classifications, directional vectors, and horizon impacts.
+            </p>
+        </div>
+
+        <div class="bg-slate-900/60 dark:bg-slate-900 rounded-2xl p-5 border border-slate-800 space-y-2">
+            <div class="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 text-sm font-bold">03</div>
+            <h3 class="text-sm font-bold text-white uppercase tracking-wider">Controlled Action</h3>
+            <p class="text-xs text-slate-400 leading-relaxed font-normal">
+                Evaluates structured insights alongside active portfolio risk, cash reserves, and pre-existing asset exposures.
+            </p>
+        </div>
+
+        <div class="bg-slate-900/60 dark:bg-slate-900 rounded-2xl p-5 border border-slate-800 space-y-2">
+            <div class="w-8 h-8 rounded-lg bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400 text-sm font-bold">04</div>
+            <h3 class="text-sm font-bold text-white uppercase tracking-wider">Audit & Recovery</h3>
+            <p class="text-xs text-slate-400 leading-relaxed font-normal">
+                Deterministic circuit breakers, immutable JSON decision logs, and automated fail-safe state rollback protocols.
+            </p>
+        </div>
+    </div>
+
+    <!-- AI Unstructured News Extraction Schema Block -->
+    <div class="bg-slate-900/80 rounded-2xl border border-slate-800 p-6 space-y-6">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-4">
+            <div>
+                <h2 class="text-lg font-bold text-white tracking-tight">Structured Context Extraction Matrix</h2>
+                <p class="text-xs text-slate-400 font-normal">How the engine converts unstructured text into deterministic parameters.</p>
+            </div>
+            <span class="text-[10px] font-mono text-indigo-400 bg-indigo-950/60 border border-indigo-800/60 px-3 py-1 rounded-md">LLM Structured JSON Schema</span>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
+            <div class="p-4 rounded-xl border border-slate-800/80 bg-slate-950/50 space-y-1">
+                <div class="font-bold text-indigo-400 uppercase text-[10px]">01 / Target Entity Mapping</div>
+                <div class="font-semibold text-white text-sm">Affected Companies & Sectors</div>
+                <p class="text-slate-400 leading-relaxed">Identifies specific tickers, broader sector groups, or macro indices directly/indirectly connected to the event.</p>
+            </div>
+
+            <div class="p-4 rounded-xl border border-slate-800/80 bg-slate-950/50 space-y-1">
+                <div class="font-bold text-indigo-400 uppercase text-[10px]">02 / Event Categorization</div>
+                <div class="font-semibold text-white text-sm">Taxonomy Classification</div>
+                <p class="text-slate-400 leading-relaxed">Classifies events into operational types (e.g., Earnings Beat, M&A, FDA Approval, Regulatory Fine, Executive Departure).</p>
+            </div>
+
+            <div class="p-4 rounded-xl border border-slate-800/80 bg-slate-950/50 space-y-1">
+                <div class="font-bold text-indigo-400 uppercase text-[10px]">03 / Vector & Significance</div>
+                <div class="font-semibold text-white text-sm">Directional Multiplier</div>
+                <p class="text-slate-400 leading-relaxed">Assigns directional impact vectors (-1.0 to +1.0) along with expected magnitude and market significance weights.</p>
+            </div>
+
+            <div class="p-4 rounded-xl border border-slate-800/80 bg-slate-950/50 space-y-1">
+                <div class="font-bold text-indigo-400 uppercase text-[10px]">04 / Temporal Horizon</div>
+                <div class="font-semibold text-white text-sm">Duration Classification</div>
+                <p class="text-slate-400 leading-relaxed">Determines whether the volatility impact is immediate intraday noise, a multi-day repricing, or a structural long-term shift.</p>
+            </div>
+
+            <div class="p-4 rounded-xl border border-slate-800/80 bg-slate-950/50 space-y-1">
+                <div class="font-bold text-indigo-400 uppercase text-[10px]">05 / Market Context Relevance</div>
+                <div class="font-semibold text-white text-sm">Regime Compatibility</div>
+                <p class="text-slate-400 leading-relaxed">Cross-references headline data against prevailing market volatility metrics (e.g., VIX regime, rate environment, broader trend).</p>
+            </div>
+
+            <div class="p-4 rounded-xl border border-slate-800/80 bg-slate-950/50 space-y-1">
+                <div class="font-bold text-indigo-400 uppercase text-[10px]">06 / Confidence & Risk Scoring</div>
+                <div class="font-semibold text-white text-sm">Action Threshold Verification</div>
+                <p class="text-slate-400 leading-relaxed">Outputs an explicit confidence interval score (0–100%) and hallucination risk metric before triggering pipeline rules.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Live Simulation Demonstration Module -->
+    <div class="bg-slate-900/80 rounded-2xl border border-slate-800 p-6 space-y-4">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+            <h3 class="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                ⚡ Real-Time Pipeline Processing Sandbox
+            </h3>
+            <span class="text-[11px] text-slate-400 font-mono">Interactive Execution Demo</span>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- Input Terminal -->
+            <div class="space-y-2">
+                <label class="block text-xs font-semibold text-slate-400 uppercase tracking-tight">Raw Unstructured Input Feed</label>
+                <textarea id="sampleNewsInput" rows="5" class="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs font-mono text-slate-300 focus:outline-none focus:border-indigo-500 leading-relaxed">Tech giant Titan Corp announces a surprise $2.5B acquisition of AI infrastructure start-up NeuralGrid to boost cloud server capabilities. Deal expected to close in Q3, increasing annual capex guidance by 15%.</textarea>
+                <button id="runPipelineBtn" onclick="simulateAiPipeline()" class="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold uppercase rounded-xl transition shadow-lg shadow-indigo-600/20 disabled:opacity-50">
+                    Run Structured Parsing & Risk Audit
+                </button>
+            </div>
+
+            <!-- Output Terminal -->
+            <div class="space-y-2">
+                <label class="block text-xs font-semibold text-slate-400 uppercase tracking-tight">Engine Structured Output Log</label>
+                <div id="pipelineOutput" class="w-full h-44 p-3 bg-slate-950 border border-slate-800 rounded-xl text-[11px] font-mono text-emerald-400 overflow-y-auto whitespace-pre-wrap leading-relaxed">
+                    <span class="text-slate-500">// System ready. Click "Run Structured Parsing" to simulate execution pipeline.</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+function simulateAiPipeline() {
+    const rawNews = document.getElementById('sampleNewsInput').value.trim();
+    const outputBox = document.getElementById('pipelineOutput');
+    const runBtn = document.getElementById('runPipelineBtn');
+    const csrfToken = document.getElementById('csrfTokenInput')?.value || '';
+
+    if (!rawNews) {
+        outputBox.innerHTML = '<span class="text-amber-400">[!] Please enter news text to analyze.</span>';
+        return;
+    }
+
+    runBtn.disabled = true;
+    outputBox.innerHTML = '<span class="text-indigo-400 animate-pulse">[+] Ingesting unstructured text feed...</span>\n';
+
+    fetch('/api/v1/analyze-news', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken
+        },
+        body: JSON.stringify({ news: rawNews })
+    })
+    .then(async res => {
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || 'API processing error');
+        return data;
+    })
+    .then(data => {
+        outputBox.innerHTML += '<span class="text-slate-400">[+] Querying Structured LLM Parsing Layer...</span>\n\n';
+        setTimeout(() => {
+            outputBox.innerHTML += '<span class="text-emerald-400">' + JSON.stringify(data, null, 2) + '</span>';
+            outputBox.scrollTop = outputBox.scrollHeight;
+        }, 300);
+    })
+    .catch(err => {
+        outputBox.innerHTML += '\n<span class="text-rose-400">[!] Pipeline Error: ' + err.message + '</span>';
+    })
+    .finally(() => {
+        runBtn.disabled = false;
+    });
+}
+</script>
+{% endblock %}
