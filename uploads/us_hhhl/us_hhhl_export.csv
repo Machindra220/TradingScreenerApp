@@ -1,0 +1,68 @@
+symbol,sector,price,last_swing_low,sl_percent,retracement,rs,rs_trend,rs_change,bars_since_pivot,is_fresh
+BLK,Financials,1129.300048828125,1033.49,8.48,5.93,146.47,🚀 Accelerating,7.1,9,False
+EQIX,Real Estate,1052.8599853515625,1003.52,4.69,6.33,136.56,⚠️ Fading,-1.6,3,True
+DE,Industrials,614.8400268554688,590.06,4.03,8.3,79.75,🟢 Steady,2.9,5,True
+AMP,Financials,559.8200073242188,531.26,5.1,0.93,72.61,🚀 Accelerating,8.9,5,True
+AXON,Industrials,522.4600219726562,502.72,3.78,40.96,67.76,⚠️ Fading,-9.3,5,True
+AMD,Information Technology,489.2799987792969,455.3,6.94,16.32,63.46,⚠️ Fading,-13.8,3,True
+AVGO,Information Technology,420.57000732421875,374.61,10.93,14.9,54.55,🚀 Accelerating,3.3,3,False
+AMGN,Health Care,404.8500061035156,375.96,7.14,3.24,52.51,🚀 Accelerating,9.5,3,True
+CPAY,Financials,398.2799987792969,379.69,4.67,1.89,51.66,🚀 Accelerating,10.7,4,True
+ADI,Information Technology,377.30999755859375,353.11,6.41,15.38,48.94,⚠️ Fading,-6.3,3,True
+AON,Financials,360.75,350.23,2.92,5.43,46.79,⚠️ Fading,-0.5,2,True
+CB,Financials,354.0299987792969,342.22,3.34,3.25,45.92,🟢 Steady,0.0,2,True
+AXP,Financials,342.6000061035156,329.07,3.95,10.86,44.44,⚠️ Fading,-4.0,5,True
+CDNS,Information Technology,338.4200134277344,329.59,2.61,18.78,43.89,⚠️ Fading,-13.5,5,True
+COR,Health Care,325.010009765625,301.23,7.32,13.57,42.15,🚀 Accelerating,5.2,2,True
+AIZ,Financials,296.3999938964844,278.59,6.01,2.48,38.44,🚀 Accelerating,4.4,2,True
+CBOE,Financials,289.1700134277344,287.54,0.56,21.93,37.51,🚀 Accelerating,6.0,4,True
+ECL,Materials,283.4599914550781,272.79,3.76,7.85,36.77,🟢 Steady,1.5,4,True
+ALL,Financials,275.1099853515625,255.11,7.27,0.76,35.68,🚀 Accelerating,7.4,2,True
+FDS,Financials,274.5799865722656,254.99,7.13,29.49,35.61,🚀 Accelerating,9.2,4,True
+ADP,Industrials,273.510009765625,256.9,6.07,9.34,35.47,🚀 Accelerating,11.1,5,True
+CRL,Health Care,265.510009765625,227.38,14.36,0.93,34.44,🚀 Accelerating,11.8,5,False
+AME,Industrials,251.3800048828125,233.99,6.92,2.55,32.6,🚀 Accelerating,5.5,6,True
+CAH,Health Care,237.66000366210938,224.11,5.7,2.94,30.83,⚠️ Fading,-1.0,5,True
+COF,Financials,220.0,205.14,6.75,14.58,28.53,🚀 Accelerating,7.2,5,True
+DRI,Consumer Discretionary,210.94000244140625,202.05,4.21,3.07,27.36,🟢 Steady,1.5,4,True
+DOV,Industrials,210.83999633789062,197.21,6.46,10.82,27.35,⚠️ Fading,-3.8,6,True
+BKNG,Consumer Discretionary,207.38999938964844,190.37,8.21,9.77,26.9,🚀 Accelerating,14.2,2,False
+BIIB,Health Care,206.27999877929688,199.58,3.25,6.12,26.76,🟢 Steady,1.8,3,True
+CTAS,Industrials,202.14999389648438,196.0,3.04,10.0,26.22,🚀 Accelerating,10.6,12,False
+CVX,Energy,189.22999572753906,186.73,1.32,11.06,24.54,🚀 Accelerating,5.4,7,True
+MMM,Industrials,180.7100067138672,173.96,3.74,2.27,23.44,🚀 Accelerating,12.7,5,True
+EXPD,Industrials,178.55999755859375,164.35,7.96,4.89,23.16,🟢 Steady,2.0,5,True
+BDX,Health Care,177.07000732421875,162.45,8.26,4.21,22.97,🚀 Accelerating,14.5,4,False
+ALLE,Industrials,168.6999969482422,153.39,9.08,7.14,21.88,🚀 Accelerating,21.3,5,False
+BNY,Financials,158.82000732421875,151.68,4.5,2.64,20.6,🚀 Accelerating,3.1,6,True
+EMR,Industrials,156.91000366210938,145.1,7.53,4.83,20.35,🚀 Accelerating,11.0,6,True
+ABNB,Consumer Discretionary,151.63999938964844,148.65,1.97,3.11,19.67,🟢 Steady,0.3,2,True
+EXR,Real Estate,149.5399932861328,145.72,2.55,5.88,19.4,🟢 Steady,2.1,4,True
+ARES,Financials,138.1699981689453,121.29,12.22,26.62,17.92,🚀 Accelerating,11.4,4,False
+BX,Financials,133.4499969482422,124.45,6.74,26.95,17.31,🚀 Accelerating,7.6,5,True
+DG,Consumer Staples,127.44999694824219,124.5,2.31,18.66,16.53,🚀 Accelerating,5.3,2,True
+AFL,Financials,126.66000366210938,122.43,3.34,2.73,16.43,🟢 Steady,2.1,12,False
+CSCO,Information Technology,120.87999725341797,111.66,7.63,6.93,15.68,⚠️ Fading,-2.1,5,True
+COP,Energy,116.76000213623047,113.21,3.04,13.43,15.14,🚀 Accelerating,5.2,7,True
+ABT,Health Care,107.95999908447266,102.89,4.7,19.66,14.0,🚀 Accelerating,13.7,4,True
+SCHW,Financials,107.66000366210938,103.07,4.26,1.27,13.96,🟢 Steady,2.6,5,True
+CLX,Consumer Staples,105.5999984741211,94.2,10.8,17.04,13.7,🚀 Accelerating,7.5,4,False
+ACGL,Financials,99.29000091552734,99.14,0.15,7.28,12.88,⚠️ Fading,-3.5,5,True
+KO,Consumer Staples,86.8499984741211,85.16,1.95,4.48,11.26,🟢 Steady,2.2,2,True
+DXCM,Health Care,83.0199966430664,73.24,11.78,5.5,10.77,🚀 Accelerating,8.8,5,False
+ADM,Consumer Staples,77.51000213623047,77.3,0.27,12.38,10.05,⚠️ Fading,-5.3,3,True
+COO,Health Care,73.31999969482422,71.15,2.96,18.38,9.51,🟢 Steady,1.9,4,True
+TECH,Health Care,71.9000015258789,71.45,0.63,0.65,9.33,⚠️ Fading,-0.9,12,False
+BRO,Financials,71.18000030517578,69.28,2.67,27.06,9.23,🚀 Accelerating,3.3,4,True
+BXP,Real Estate,68.80999755859375,67.21,2.33,9.4,8.92,🟢 Steady,1.1,10,True
+BMY,Health Care,64.1500015258789,62.23,2.99,5.8,8.32,🚀 Accelerating,9.5,5,True
+BAC,Financials,63.0,60.91,3.32,1.52,8.17,🚀 Accelerating,3.7,6,True
+BKR,Energy,62.75,54.42,13.27,10.58,8.14,🚀 Accelerating,7.1,12,False
+FAST,Industrials,50.79999923706055,46.35,8.76,0.22,6.59,🚀 Accelerating,8.0,5,False
+CSX,Industrials,50.70000076293945,49.42,2.52,5.41,6.58,🟢 Steady,0.9,2,True
+AMCR,Materials,47.060001373291016,44.41,5.63,4.85,6.1,🚀 Accelerating,7.0,4,True
+DVN,Energy,43.11000061035156,42.41,1.62,17.63,5.59,🟢 Steady,0.3,7,True
+APA,Energy,36.529998779296875,34.12,6.6,18.89,4.74,🚀 Accelerating,8.1,7,True
+DOW,Materials,30.299999237060547,28.69,5.31,28.39,3.93,🟢 Steady,2.6,2,True
+BF-B,Consumer Staples,28.270000457763672,27.12,4.07,9.13,3.67,🚀 Accelerating,6.2,2,True
+BAX,Health Care,27.010000228881836,21.4,20.77,9.97,3.5,🚀 Accelerating,17.2,10,False

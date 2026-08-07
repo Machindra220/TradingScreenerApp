@@ -25,6 +25,7 @@ SCREENER_CONFIG = {
         "Volar_Stage2": os.path.join(UPLOAD_ROOT, 'volar_us', 'last_volar_us_results.json'),
         "Adaptive_RS": os.path.join(UPLOAD_ROOT, 'volar_us_adaptive', 'volar_results_adaptive.json'),
         "RS_ROC_Momentum": os.path.join(UPLOAD_ROOT, 'rs_roc', 'last_rs_roc_results.json'),
+        "HH_HL_Screener": os.path.join(UPLOAD_ROOT, 'us_hhhl', 'last_us_hhhl_results.json'),
         "Stage2_Screener": os.path.join(UPLOAD_ROOT, 'us_screener', 'cached_results.json'),
         "Gap_Volume": os.path.join(UPLOAD_ROOT, 'gap_volume', 'last_gap_vol_results.json'),
         "IBD_SmartSelect": os.path.join(UPLOAD_ROOT, 'ibd_us', 'last_ibd_us_results.json')

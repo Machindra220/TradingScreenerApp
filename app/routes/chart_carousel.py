@@ -3,6 +3,8 @@ import io
 import json
 import numpy as np
 import pandas as pd
+import pytz
+from datetime import datetime
 import yfinance as yf
 from flask import Blueprint, render_template, jsonify, request
 
@@ -25,6 +27,7 @@ SCREENER_CONFIG = {
         "Volar_Stage2": os.path.join(UPLOAD_ROOT, 'volar_us', 'last_volar_us_results.json'),
         "Adaptive_RS": os.path.join(UPLOAD_ROOT, 'volar_us_adaptive', 'volar_results_adaptive.json'),
         "RS_ROC_Momentum": os.path.join(UPLOAD_ROOT, 'rs_roc', 'last_rs_roc_results.json'),
+        "HH_HL_Screener": os.path.join(UPLOAD_ROOT, 'us_hhhl', 'last_us_hhhl_results.json'),
         "Stage2_Screener": os.path.join(UPLOAD_ROOT, 'us_screener', 'cached_results.json'),
         "Gap_Volume": os.path.join(UPLOAD_ROOT, 'gap_volume', 'last_gap_vol_results.json'),
         "IBD_SmartSelect": os.path.join(UPLOAD_ROOT, 'ibd_us', 'last_ibd_us_results.json')
@@ -34,6 +37,13 @@ SCREENER_CONFIG = {
 MARKET_BENCHMARKS = {
     "US":  {"benchmark": "^GSPC", "suffix": ""},
     "NSE": {"benchmark": "^CRSLDX", "suffix": ".NS"}
+}
+
+# Exchange-local timezones, used only to figure out "today" for the
+# live-candle patch below (NSE closes 15:30 IST, US closes 16:00 ET).
+MARKET_TZ = {
+    "US":  pytz.timezone("America/New_York"),
+    "NSE": pytz.timezone("Asia/Kolkata")
 }
 
 RANGE_OPTIONS = {
@@ -60,6 +70,94 @@ def calculate_slope(series, window=5):
         return 0.0
     slope, _ = np.polyfit(x, y, 1)
     return slope
+
+
+# ----------------------------------------------------------------------------
+# Live "today" candle patch
+#
+# yfinance's daily-interval download for NSE/US tickers frequently lags —
+# the current session's daily bar often isn't published until well after
+# the market has closed (sometimes not until the next morning), so the
+# chart appears to be "missing today's candle" even though the session is
+# long over. To fix that without waiting on Yahoo's daily aggregation, we
+# check whether the daily history already contains today's date (in the
+# exchange's own timezone) and, if not, pull today's 5-minute intraday
+# bars and roll them up into a synthetic OHLCV candle to append. This
+# naturally covers both cases — a live/building candle while the market
+# is still open, and a fully-formed one right after the close — and is a
+# no-op on weekends/holidays since there's no intraday data to roll up.
+# ----------------------------------------------------------------------------
+
+def _get_market_today(market):
+    tz = MARKET_TZ.get(market, MARKET_TZ["NSE"])
+    return datetime.now(tz).date()
+
+
+def _fetch_live_today_candle(fetch_symbol, market):
+    """Builds an OHLCV dict for 'today' from intraday bars, or None if no
+    intraday data exists yet for today (holiday/weekend/pre-market)."""
+    try:
+        intraday = yf.download(
+            fetch_symbol, period="2d", interval="5m",
+            auto_adjust=True, progress=False, prepost=False
+        )
+        if intraday.empty:
+            return None
+        if isinstance(intraday.columns, pd.MultiIndex):
+            intraday.columns = intraday.columns.get_level_values(0)
+
+        tz = MARKET_TZ.get(market, MARKET_TZ["NSE"])
+        idx = intraday.index
+        idx = idx.tz_localize('UTC') if idx.tz is None else idx
+        idx_local = idx.tz_convert(tz)
+        today_local = _get_market_today(market)
+
+        today_bars = intraday[idx_local.date == today_local]
+        today_bars = today_bars.dropna(subset=["Open", "High", "Low", "Close"])
+        if today_bars.empty:
+            return None
+
+        return {
+            "open":   float(today_bars["Open"].iloc[0]),
+            "high":   float(today_bars["High"].max()),
+            "low":    float(today_bars["Low"].min()),
+            "close":  float(today_bars["Close"].iloc[-1]),
+            "volume": float(today_bars["Volume"].fillna(0).sum())
+        }
+    except Exception as e:
+        print(f"Live today-candle fetch failed for {fetch_symbol}: {e}")
+        return None
+
+
+def _append_live_today_candle(combined, fetch_symbol, benchmark_symbol, market):
+    """If 'combined' (daily OHLCV+bench frame) doesn't yet have a row for
+    today, appends one built from intraday data. Returns combined unchanged
+    if today's row already exists or intraday data isn't available."""
+    if combined.empty:
+        return combined
+
+    today_local = _get_market_today(market)
+    last_date_in_data = combined.index[-1].date()
+    if last_date_in_data >= today_local:
+        return combined
+
+    stock_today = _fetch_live_today_candle(fetch_symbol, market)
+    if stock_today is None:
+        return combined
+
+    bench_today = _fetch_live_today_candle(benchmark_symbol, market)
+    bench_close_today = bench_today["close"] if bench_today else float(combined["bench"].iloc[-1])
+
+    new_index = pd.Timestamp(today_local)
+    combined.loc[new_index] = {
+        "open":   stock_today["open"],
+        "high":   stock_today["high"],
+        "low":    stock_today["low"],
+        "stock":  stock_today["close"],
+        "bench":  bench_close_today,
+        "volume": stock_today["volume"]
+    }
+    return combined.sort_index()
 
 
 # ----------------------------------------------------------------------------
@@ -233,6 +331,10 @@ def get_carousel_telemetry_data(symbol):
         combined["volume"] = combined["volume"].fillna(0)
         combined = combined.sort_index()
         combined = combined[~combined.index.duplicated(keep='first')]
+
+        # Patch in today's candle from intraday data if the daily download
+        # hasn't published it yet (see _append_live_today_candle docstring).
+        combined = _append_live_today_candle(combined, fetch_symbol, cfg["benchmark"], market)
 
         combined['ema10']  = calculate_ema(combined['stock'], 10)
         combined['ema20']  = calculate_ema(combined['stock'], 20)
