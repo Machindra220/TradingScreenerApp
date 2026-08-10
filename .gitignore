@@ -1,13 +1,49 @@
+# ── Python cache ─────────────────────────────────────────────────────────────
 __pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
 *.pyc
+
+# ── Flask session / instance folder ──────────────────────────────────────────
 instance/
+flask_session/
+
+# ── Environment / secrets ─────────────────────────────────────────────────────
 .env
+*.env
+
 *.db
 *.sqlite3
 .vscode/
 *.log
+# ── Virtual environment ───────────────────────────────────────────────────────
 .venv/
+*.venv
+venv/
+env/
+# ── OS junk ───────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Editor ────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+
+# ── Market data cache (SQLite DBs + daily backups) ──────────────────────────
+data/market_cache/
+uploads/
+
+# ── Scan results & history snapshots (rebuilt on each scan run) ──────────────
+uploads/volar_ind/
+uploads/volar_us/
+uploads/volar_ind_adaptive/
+
 unused-data/
+
+# ── Docker files  ──────────────────────────
 Dockerfile
 docker-compose.yml
 .dockerignore
@@ -19,7 +55,7 @@ backup.sql
 Errors-while-hosting-on-ec2-ubuntu.txt
 electron-app/
 run_server.py 
-*.venv
+
 tray_launcher.py 
 *.iss
 *.tar

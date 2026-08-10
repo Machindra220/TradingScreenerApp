@@ -1,30 +1,75 @@
 {% extends 'base_authenticated.html' %}
 {% block content %}
+<style>
+    .tabular-nums { font-variant-numeric: tabular-nums; }
+    #ind-results-table th[data-sort] { cursor: pointer; user-select: none; }
+    #ind-results-table th[data-sort]:hover { color: #2563eb; }
+    .sort-arrow { display: inline-block; width: 10px; font-size: 9px; opacity: .8; }
+    .momentum-chip[data-active="true"] { background: #2563eb !important; color: #fff !important; }
+    #scan-submit-btn { position: relative; overflow: hidden; }
+    #scan-btn-fill { position: absolute; inset: 0; width: 0%; background: rgba(0,0,0,0.22); transition: width .3s ease-out; }
+    #scan-btn-label { position: relative; z-index: 1; }
+</style>
+
 <div class="max-w-7xl mx-auto px-4 py-8">
 
     <!-- Header -->
-    <div class="flex justify-between items-center mb-8">
+    <div class="flex flex-wrap justify-between items-start gap-4 mb-8">
         <div>
             <h2 class="text-2xl font-black text-blue-900 dark:text-blue-300 uppercase">IND Adaptive RS Screener</h2>
-            <p class="text-[10px] font-bold text-gray-400 dark:text-slate-500 mt-1 uppercase">
-                Last Run: <span class="text-blue-600 dark:text-blue-400">{{ last_processed_time|default('N/A') }}</span>
-                | Source: <span class="text-gray-600 dark:text-slate-400">{{ source_name }}</span>
-                | Benchmark: <span class="text-indigo-500 dark:text-indigo-300">Nifty 500</span>
+            <p class="text-[10px] font-bold text-gray-400 dark:text-slate-500 mt-1 uppercase flex flex-wrap gap-x-2 gap-y-1">
+                <span>Last Run: <span class="text-blue-600 dark:text-blue-400">{{ last_processed_time|default('N/A') }}</span></span>
+                <span class="text-gray-300 dark:text-slate-700">|</span>
+                <span>Source: <span class="text-gray-600 dark:text-slate-400">{{ source_name }}</span></span>
+                <span class="text-gray-300 dark:text-slate-700">|</span>
+                <span>Benchmark: <span class="text-indigo-500 dark:text-indigo-300">{{ benchmark_label|default('N/A') }}</span></span>
+                {% if price_data_asof %}
+                <span class="text-gray-300 dark:text-slate-700">|</span>
+                <span title="The most recent trading-day close actually reflected in the underlying price data — can differ from 'Last Run' if a scan reused cached data or a refresh was skipped.">Price Data As Of: <span class="text-emerald-500 dark:text-emerald-300">{{ price_data_asof }}</span></span>
+                {% endif %}
+                {% if scanned_count %}
+                <span class="text-gray-300 dark:text-slate-700">|</span>
+                <span>Scanned {{ scanned_count }} → {{ stocks|length }} passed
+                    {% if excluded_count %}<span class="text-amber-500 dark:text-amber-400">({{ excluded_count }} excluded: below EMA200 or data gaps)</span>{% endif %}
+                </span>
+                {% endif %}
             </p>
         </div>
-        <button onclick="exportTableCSV('ind-results-table', 'ind_adaptive_rs.csv')"
-                class="bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-slate-300 px-4 py-2 rounded-xl text-[10px] font-bold uppercase hover:bg-gray-200 dark:hover:bg-slate-700 transition">
+        <button onclick="exportTableCSV('ind-results-table', 'IND_Adaptive_RS_Screener')"
+                class="bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-slate-300 px-4 py-2 rounded-xl text-[10px] font-bold uppercase hover:bg-gray-200 dark:hover:bg-slate-700 transition shrink-0">
             📥 Export CSV
         </button>
     </div>
 
+    {% if scan_error %}
+    <div id="scan-error-banner" class="mb-6 px-4 py-3 rounded-xl bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-900 text-[10px] font-bold text-red-600 dark:text-red-300 uppercase">
+        ⚠️ Last scan failed: {{ scan_error }} — you can restore an earlier scan from Scan History below.
+    </div>
+    {% endif %}
+    {% if stale_symbols_count %}
+    <div class="mb-6 px-4 py-3 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-900 text-[10px] font-bold text-amber-600 dark:text-amber-300 uppercase"
+         title="{{ stale_symbols_sample|join(', ') }}{% if stale_symbols_count > (stale_symbols_sample|length) %} and {{ stale_symbols_count - (stale_symbols_sample|length) }} more{% endif %}">
+        ⚠️ {{ stale_symbols_count }} symbol{{ 's' if stale_symbols_count != 1 else '' }} weren't refreshed this run (likely rate-limited) — used their last cached data instead.
+    </div>
+    {% endif %}
+    {% if restored %}
+    <div class="mb-6 px-4 py-3 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-900 text-[10px] font-bold text-emerald-600 dark:text-emerald-300 uppercase">
+        ✅ Restored results from the selected scan.
+    </div>
+    {% endif %}
+    {% if restore_error %}
+    <div class="mb-6 px-4 py-3 rounded-xl bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-900 text-[10px] font-bold text-red-600 dark:text-red-300 uppercase">
+        ⚠️ Could not restore that scan — the snapshot may have been cleaned up.
+    </div>
+    {% endif %}
+
     <!-- Scan Form -->
     <div class="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm dark:shadow-none mb-8">
-        <form method="POST" enctype="multipart/form-data" class="flex flex-col md:flex-row items-end gap-6">
+        <form id="scan-form" method="POST" enctype="multipart/form-data" class="flex flex-col md:flex-row items-end gap-6">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
-            <!-- Fixed period info badges — no manual lookback input needed anymore -->
-            <div class="flex gap-3 items-center">
+            <!-- Fixed period info badges -->
+            <div class="flex gap-3 items-center shrink-0">
                 <div class="px-4 py-3 bg-blue-50 dark:bg-blue-500/10 rounded-xl text-center">
                     <p class="text-[9px] font-black uppercase text-blue-400 dark:text-blue-300 mb-0.5">3M Period</p>
                     <p class="text-sm font-black text-blue-700 dark:text-blue-300">55 days</p>
@@ -35,102 +80,185 @@
                 </div>
             </div>
 
-            <!-- CSV upload — persists in session until changed -->
+            <!-- CSV upload: dropzone with preview + clear -->
             <div class="flex-1 w-full">
-                <label class="block text-[10px] font-black uppercase text-gray-400 dark:text-slate-500 mb-2">Ticker CSV File</label>
-                <input type="file" name="file" class="w-full text-xs text-gray-400 dark:text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-[10px] file:font-bold file:bg-blue-50 dark:file:bg-blue-500/10 file:text-blue-700 dark:file:text-blue-300">
-                {% if active_file %}
-                <p class="text-[9px] text-green-600 dark:text-emerald-400 font-bold mt-2 uppercase tracking-tight">✅ Active: {{ active_file }} — will reuse until you upload a new file</p>
-                {% endif %}
+                <label class="block text-[10px] font-black uppercase text-gray-400 dark:text-slate-500 mb-2">Ticker CSV / XLSX File</label>
+                <div id="dropzone"
+                     class="relative border-2 border-dashed border-gray-200 dark:border-slate-700 rounded-xl px-4 py-4 text-center hover:border-blue-400 dark:hover:border-blue-500 transition cursor-pointer"
+                     onclick="document.getElementById('csv-file-input').click()">
+                    <input id="csv-file-input" type="file" name="file" accept=".csv,.xlsx,.xls" class="hidden">
+                    <div id="dropzone-empty" class="text-[10px] font-bold text-gray-400 dark:text-slate-500 uppercase">
+                        📄 Drag &amp; drop CSV / XLSX here, or click to browse
+                    </div>
+                    <div id="dropzone-filled" class="hidden items-center justify-center gap-3">
+                        <span class="text-lg">📄</span>
+                        <div class="text-left">
+                            <p id="dropzone-filename" class="text-xs font-black text-blue-700 dark:text-blue-300"></p>
+                            <p id="dropzone-filesize" class="text-[9px] text-gray-400 dark:text-slate-500 uppercase"></p>
+                        </div>
+                        <button type="button" onclick="clearDropzone(event)"
+                                class="ml-2 w-5 h-5 flex items-center justify-center rounded-full text-gray-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-500/10 text-xs font-black transition">✕</button>
+                    </div>
+                </div>
+
+                <!-- Active source indicator -->
+                <div class="mt-2 flex flex-wrap items-center gap-2 text-[9px]">
+                    {% if is_default_source %}
+                    <span class="font-bold text-blue-500 dark:text-blue-400 uppercase">📊 Source: {{ default_label }}</span>
+                    {% else %}
+                    <span class="font-bold text-green-600 dark:text-emerald-400 uppercase">✅ Source: {{ active_file }}</span>
+                    <button type="button"
+                            onclick="document.getElementById('useDefaultAdp').value='1'; document.getElementById('scan-form').requestSubmit();"
+                            class="px-2.5 py-1 rounded-full border border-blue-200 dark:border-blue-500/30 text-blue-600 dark:text-blue-400 font-black uppercase hover:bg-blue-50 dark:hover:bg-blue-500/10 transition">
+                        📊 Use Default
+                    </button>
+                    <form method="POST" action="{{ url_for('volar_ind_adaptive_bp.volar_ind_clear_source') }}" class="inline">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <button type="submit"
+                                onclick="return confirm('Clear uploaded file? Next scan will use Nifty 500 default.');"
+                                class="px-2.5 py-1 rounded-full border border-red-200 dark:border-red-500/30 text-red-500 dark:text-red-400 font-black uppercase hover:bg-red-50 dark:hover:bg-red-500/10 transition">
+                            ✕ Clear
+                        </button>
+                    </form>
+                    {% endif %}
+                </div>
+                <input type="hidden" id="useDefaultAdp" name="use_default" value="0">
             </div>
 
-            <button type="submit" class="bg-blue-600 text-white px-8 py-3 rounded-xl font-black text-xs uppercase hover:bg-blue-700 shadow-lg shadow-blue-100 dark:shadow-blue-950/40 transition">
-                Run Adaptive Scan
+            <!-- Scan button doubles as the progress indicator: label + inline fill -->
+            <button id="scan-submit-btn" type="submit"
+                    class="bg-blue-600 text-white px-8 py-3 rounded-xl font-black text-xs uppercase hover:bg-blue-700 shadow-lg shadow-blue-100 dark:shadow-blue-950/40 transition shrink-0">
+                <span id="scan-btn-fill"></span>
+                <span id="scan-btn-label">Run Adaptive Scan</span>
             </button>
         </form>
+    </div>
+
+    <!-- Momentum filters + search + display controls -->
+    <div class="flex flex-wrap items-center justify-between gap-4 mb-4">
+        <div class="flex flex-wrap items-center gap-2">
+            <span class="text-[9px] font-black uppercase text-gray-400 dark:text-slate-500 mr-1">Momentum:</span>
+            <button class="momentum-chip px-3 py-1.5 rounded-full text-[9px] font-black uppercase bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400 transition" data-filter="all" data-active="true" onclick="setMomentumFilter('all', this)">All</button>
+            <button class="momentum-chip px-3 py-1.5 rounded-full text-[9px] font-black uppercase bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400 transition" data-filter="both" onclick="setMomentumFilter('both', this)">🔥 3M &amp; 6M Rising</button>
+            <button class="momentum-chip px-3 py-1.5 rounded-full text-[9px] font-black uppercase bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400 transition" data-filter="3m" onclick="setMomentumFilter('3m', this)">3M Rising</button>
+            <button class="momentum-chip px-3 py-1.5 rounded-full text-[9px] font-black uppercase bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400 transition" data-filter="6m" onclick="setMomentumFilter('6m', this)">6M Rising</button>
+        </div>
+        <div class="flex flex-wrap items-center gap-3">
+            <input id="symbol-search" type="text" placeholder="🔎 Filter symbol…"
+                   class="text-[10px] px-3 py-2 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-400 w-40"
+                   oninput="setSearchTerm(this.value)">
+            <div class="flex items-center gap-1 text-[9px] font-black uppercase">
+                <button id="limit-50-btn" class="px-3 py-1.5 rounded-full bg-blue-600 text-white" onclick="setShowLimit(50, this)">Top 50</button>
+                <button id="limit-all-btn" class="px-3 py-1.5 rounded-full bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400" onclick="setShowLimit('all', this)">Show All</button>
+            </div>
+            <span class="text-[9px] font-bold text-gray-400 dark:text-slate-500 uppercase">Showing <span id="visible-count">0</span> / {{ stocks|length }}</span>
+        </div>
     </div>
 
     <!-- Results Table -->
     <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm dark:shadow-none overflow-x-auto mb-8">
         <table id="ind-results-table" class="min-w-full text-left text-xs">
-            <thead class="bg-gray-50 dark:bg-slate-800/60 border-b border-gray-100 dark:border-slate-800">
+            <thead class="bg-gray-50 dark:bg-slate-800/60 border-b border-gray-100 dark:border-slate-800 sticky top-0 z-10">
                 <tr>
-                    <th class="px-4 py-4 font-bold uppercase text-gray-400 dark:text-slate-400">Rank</th>
-                    <th class="px-4 py-4 font-bold uppercase text-gray-400 dark:text-slate-400">Symbol</th>
-                    <th class="px-4 py-4 font-bold uppercase text-gray-400 dark:text-slate-400">Price</th>
-                    <!-- 3M RS column -->
-                    <th class="px-4 py-4 font-bold uppercase text-blue-400 dark:text-blue-300 text-center">RS %tile ( 3M )</th>
-                    <!-- 6M RS column — new -->
-                    <th class="px-4 py-4 font-bold uppercase text-indigo-400 dark:text-indigo-300 text-center">RS %tile ( 6M )</th>
-                    <!-- VOLAR shows 3M value + history -->
-                    <th class="px-4 py-4 font-bold uppercase text-gray-400 dark:text-slate-400">VOLAR 3M / 6M</th>
-                    <!-- Perf shows 3M value + history -->
-                    <th class="px-4 py-4 font-bold uppercase text-gray-400 dark:text-slate-400 text-right">Perf % 3M / 6M</th>
+                    <th class="px-4 py-4 font-bold uppercase text-gray-400 dark:text-slate-400" data-sort="rank" data-type="num">Rank <span class="sort-arrow">▲</span></th>
+                    <th class="px-4 py-4 font-bold uppercase text-gray-400 dark:text-slate-400 text-center" data-sort="rankdelta" data-type="num">
+                        Δ Rank <span class="sort-arrow"></span>
+                        <span class="ml-1 cursor-help" title="Change in rank position vs. the previous scan only (not a 5-scan trend). A fast way to spot movers before they've built a full RS %tile streak. Note: rank position is also affected by the shortlist size changing scan to scan — cross-check against the RS %tile bars.">ⓘ</span>
+                    </th>
+                    <th class="px-4 py-4 font-bold uppercase text-gray-400 dark:text-slate-400" data-sort="symbol" data-type="text">Symbol <span class="sort-arrow"></span></th>
+                    <th class="px-4 py-4 font-bold uppercase text-gray-400 dark:text-slate-400 text-right tabular-nums" data-sort="price" data-type="num">Price (₹) <span class="sort-arrow"></span></th>
+                    <th class="px-4 py-4 font-bold uppercase text-blue-400 dark:text-blue-300 text-center" data-sort="rs3" data-type="num">
+                        RS %tile (3M) <span class="sort-arrow"></span>
+                        <span class="ml-1 cursor-help" title="Percentile rank within today's Stage-2 shortlist only — not the full Nifty 500 universe. The shortlist size changes scan to scan, so a stock's percentile can shift even if its own performance hasn't.">ⓘ</span>
+                    </th>
+                    <th class="px-4 py-4 font-bold uppercase text-indigo-400 dark:text-indigo-300 text-center" data-sort="rs6" data-type="num">
+                        RS %tile (6M) <span class="sort-arrow"></span>
+                        <span class="ml-1 cursor-help" title="Percentile rank within today's Stage-2 shortlist only — not the full Nifty 500 universe.">ⓘ</span>
+                    </th>
+                    <th class="px-4 py-4 font-bold uppercase text-gray-400 dark:text-slate-400 text-right tabular-nums" data-sort="volar3" data-type="num">VOLAR 3M <span class="sort-arrow"></span></th>
+                    <th class="px-4 py-4 font-bold uppercase text-gray-400 dark:text-slate-400 text-right tabular-nums" data-sort="volar6" data-type="num">VOLAR 6M <span class="sort-arrow"></span></th>
+                    <th class="px-4 py-4 font-bold uppercase text-gray-400 dark:text-slate-400 text-right tabular-nums" data-sort="perf3" data-type="num">Perf % 3M <span class="sort-arrow"></span></th>
+                    <th class="px-4 py-4 font-bold uppercase text-gray-400 dark:text-slate-400 text-right tabular-nums" data-sort="perf6" data-type="num">Perf % 6M <span class="sort-arrow"></span></th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-gray-50 dark:divide-slate-800">
                 {% for stock in stocks %}
-                <tr class="hover:bg-blue-50/30 dark:hover:bg-blue-500/10 transition">
-                    <td class="px-4 py-4 font-bold text-gray-400 dark:text-slate-500">{{ stock.rank }}</td>
-                    <td class="px-4 py-4 font-black text-blue-700 dark:text-blue-300">{{ stock.symbol }}
-                        <button onclick="navigator.clipboard.writeText('{{ stock.symbol }}')" class="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded opacity-40 group-hover:opacity-100 transition-opacity focus:opacity-100" title="Copy Ticker">
-                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0A2.25 2.25 0 0113.5 4.5h-3a2.25 2.25 0 01-2.166-1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.75c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 011.927-.184"></path></svg>
+                <tr class="hover:bg-blue-50/30 dark:hover:bg-blue-500/10 transition"
+                    data-symbol="{{ stock.symbol }}"
+                    data-rank="{{ stock.rank }}"
+                    data-price="{{ stock.price }}"
+                    data-rs3="{{ stock.rs3_pct }}"
+                    data-rs6="{{ stock.rs6_pct }}"
+                    data-volar3="{{ stock.volar_3m }}"
+                    data-volar6="{{ stock.volar_6m }}"
+                    data-perf3="{{ stock.perf_3m }}"
+                    data-perf6="{{ stock.perf_6m }}"
+                    data-rs3up="{{ '1' if stock.rs3_up else '0' }}"
+                    data-rs6up="{{ '1' if stock.rs6_up else '0' }}"
+                    data-rankdelta="{{ (stock.rank_delta|default(none)) if (stock.rank_delta|default(none)) is not none else 0 }}">
+
+                    <td class="px-4 py-4 font-bold text-gray-400 dark:text-slate-500 tabular-nums">
+                        {{ stock.rank }}
+                        {% if stock.rs3_up and stock.rs6_up %}
+                        <span class="ml-1" title="Double momentum: both 3M and 6M RS percentile rising every scan">🔥</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-4 text-center tabular-nums text-[10px] font-bold">
+                        {% set rd = stock.rank_delta|default(none) %}
+                        {% if rd is none %}
+                        <span class="text-gray-300 dark:text-slate-600">New</span>
+                        {% elif rd > 0 %}
+                        <span class="text-green-600 dark:text-emerald-400">▲ {{ rd }}</span>
+                        {% elif rd < 0 %}
+                        <span class="text-red-500 dark:text-red-400">▼ {{ -rd }}</span>
+                        {% else %}
+                        <span class="text-gray-400 dark:text-slate-500">— 0</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-4 font-black text-blue-700 dark:text-blue-300">
+                        {{ stock.symbol }}
+                        <button type="button" onclick="copyTicker(this, '{{ stock.symbol }}')" class="copy-ticker-btn p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded transition-colors" title="Copy Ticker">
+                            <svg class="w-3 h-3 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0A2.25 2.25 0 0113.5 4.5h-3a2.25 2.25 0 01-2.166-1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.75c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 011.927-.184"></path></svg>
                         </button>
                     </td>
-                    <td class="px-4 py-4 font-bold text-gray-900 dark:text-slate-100">₹{{ stock.price }}</td>
+                    <td class="px-4 py-4 font-bold text-gray-900 dark:text-slate-100 text-right tabular-nums">{{ stock.price }}</td>
 
-                    <!-- 3M RS percentile — green badge if rs3_up (strictly rising across scans) -->
+                    <!-- 3M RS percentile: badge + growing-bars trend (all green when rising) -->
                     <td class="px-4 py-4 text-center">
-                        <div class="inline-block px-3 py-1 rounded-full text-[10px] font-black
+                        <div class="inline-block px-3 py-1 rounded-full text-[10px] font-black min-w-[38px]
                              {% if stock.rs3_up %}bg-green-500 text-white shadow-sm{% elif stock.rs3_pct|default(0) >= 90 %}bg-blue-600 text-white shadow-sm{% elif stock.rs3_pct|default(0) >= 70 %}bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300{% else %}bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400{% endif %}">
                             {{ stock.rs3_pct|default('—') }}
-                            {% if stock.rs3_up %} ↑{% endif %}
                         </div>
-                        <div class="text-[9px] text-gray-400 dark:text-slate-500 font-mono mt-1 tracking-tighter">
-                            {% for val in stock.rs3_h %}{{ val }}{% if not loop.last %} → {% endif %}{% endfor %}
+                        <div class="flex items-end justify-center gap-0.5 h-4 mt-1">
+                            {% for h in stock.rs3_bars|default([]) %}
+                            <div class="w-1 rounded-sm {% if stock.rs3_up %}bg-green-500{% else %}bg-blue-200 dark:bg-blue-500/30{% endif %}" style="height:{{ h }}px;"></div>
+                            {% endfor %}
                         </div>
                     </td>
 
-                    <!-- 6M RS percentile — purple badge if rs6_up -->
+                    <!-- 6M RS percentile: badge + growing-bars trend -->
                     <td class="px-4 py-4 text-center">
-                        <div class="inline-block px-3 py-1 rounded-full text-[10px] font-black
+                        <div class="inline-block px-3 py-1 rounded-full text-[10px] font-black min-w-[38px]
                              {% if stock.rs6_up %}bg-purple-500 text-white shadow-sm{% elif stock.rs6_pct|default(0) >= 90 %}bg-indigo-600 text-white shadow-sm{% elif stock.rs6_pct|default(0) >= 70 %}bg-indigo-100 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300{% else %}bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400{% endif %}">
                             {{ stock.rs6_pct|default('—') }}
-                            {% if stock.rs6_up %} ↑{% endif %}
                         </div>
-                        <div class="text-[9px] text-gray-400 dark:text-slate-500 font-mono mt-1 tracking-tighter">
-                            {% for val in stock.rs6_h %}{{ val }}{% if not loop.last %} → {% endif %}{% endfor %}
-                        </div>
-                    </td>
-
-                    <!-- VOLAR: current 3M | 6M + history -->
-                    <td class="px-4 py-4">
-                        <div class="font-black text-indigo-600 dark:text-indigo-300">
-                            {{ stock.volar_3m }} <span class="text-gray-300 dark:text-slate-600 font-normal">|</span>
-                            <span class="text-purple-500 dark:text-purple-300">{{ stock.volar_6m }}</span>
-                        </div>
-                        <div class="text-[9px] text-gray-400 dark:text-slate-500 font-mono tracking-tighter mt-0.5">
-                            {% for v in stock.vol_h %}{{ v }}{% if not loop.last %} · {% endif %}{% endfor %}
+                        <div class="flex items-end justify-center gap-0.5 h-4 mt-1">
+                            {% for h in stock.rs6_bars|default([]) %}
+                            <div class="w-1 rounded-sm {% if stock.rs6_up %}bg-purple-500{% else %}bg-indigo-200 dark:bg-indigo-500/30{% endif %}" style="height:{{ h }}px;"></div>
+                            {% endfor %}
                         </div>
                     </td>
 
-                    <!-- Perf %: current 3M | 6M + history -->
-                    <td class="px-4 py-4 text-right">
-                        <div class="font-bold">
-                            <span class="{% if stock.perf_3m > 0 %}text-green-600 dark:text-emerald-400{% else %}text-red-500 dark:text-red-400{% endif %}">{{ stock.perf_3m }}%</span>
-                            <span class="text-gray-300 dark:text-slate-600 font-normal mx-1">|</span>
-                            <span class="{% if stock.perf_6m > 0 %}text-green-700 dark:text-emerald-300{% else %}text-red-600 dark:text-red-300{% endif %}">{{ stock.perf_6m }}%</span>
-                        </div>
-                        <div class="text-[9px] text-gray-400 dark:text-slate-500 font-mono tracking-tighter mt-0.5">
-                            {% for p in stock.perf_h %}{{ p }}%{% if not loop.last %} · {% endif %}{% endfor %}
-                        </div>
-                    </td>
+                    <td class="px-4 py-4 text-right font-black text-indigo-600 dark:text-indigo-300 tabular-nums">{{ stock.volar_3m }}</td>
+                    <td class="px-4 py-4 text-right font-black text-purple-500 dark:text-purple-300 tabular-nums">{{ stock.volar_6m }}</td>
+                    <td class="px-4 py-4 text-right font-bold tabular-nums {% if stock.perf_3m > 0 %}text-green-600 dark:text-emerald-400{% else %}text-red-500 dark:text-red-400{% endif %}">{{ stock.perf_3m }}</td>
+                    <td class="px-4 py-4 text-right font-bold tabular-nums {% if stock.perf_6m > 0 %}text-green-700 dark:text-emerald-300{% else %}text-red-600 dark:text-red-300{% endif %}">{{ stock.perf_6m }}</td>
                 </tr>
                 {% endfor %}
 
                 {% if not stocks %}
                 <tr>
-                    <td colspan="7" class="px-6 py-12 text-center text-gray-400 dark:text-slate-500 italic">
+                    <td colspan="10" class="px-6 py-12 text-center text-gray-400 dark:text-slate-500 italic">
                         No stocks found. Upload a CSV and run the scan.
                     </td>
                 </tr>
@@ -140,34 +268,281 @@
     </div>
 
     <!-- Legend -->
-    <div class="flex flex-wrap gap-3 mb-8 text-[9px] font-bold uppercase">
+    <div class="flex flex-wrap gap-3 mb-6 text-[9px] font-bold uppercase">
         <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-green-500 inline-block"></span> 3M RS Rising (↑ every scan)</span>
         <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-purple-500 inline-block"></span> 6M RS Rising (↑ every scan)</span>
         <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-blue-600 inline-block"></span> 3M RS ≥ 90th %tile</span>
         <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-indigo-600 inline-block"></span> 6M RS ≥ 90th %tile</span>
-        <span class="text-gray-400 dark:text-slate-500">· Trend history = last 5 scans · All stocks above EMA200</span>
+        <span class="flex items-center gap-1.5">🔥 Both 3M &amp; 6M Rising (highest conviction)</span>
+        <span class="text-gray-400 dark:text-slate-500">· Bars = last 5 scans · All stocks above EMA200 · Click any column header to sort</span>
     </div>
 
-    <!-- Scan History -->
-    <div class="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm dark:shadow-none">
-        <h3 class="text-[10px] font-black text-gray-400 dark:text-slate-500 uppercase tracking-widest mb-4">🕒 Scan History</h3>
-        <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
+    <!-- Scan History — always visible, compact, one line per scan, with restore -->
+    <div class="bg-white dark:bg-slate-900 rounded-xl border border-gray-100 dark:border-slate-800 shadow-sm dark:shadow-none">
+        <p class="px-4 py-2.5 text-[9px] font-black text-gray-400 dark:text-slate-500 uppercase tracking-widest border-b border-gray-50 dark:border-slate-800">
+            🕒 Scan History ({{ history|length }})
+        </p>
+        <div class="divide-y divide-gray-50 dark:divide-slate-800">
             {% for entry in history %}
-            <div class="p-4 bg-gray-50 dark:bg-slate-800/60 rounded-xl border border-gray-100 dark:border-slate-800 hover:shadow-md dark:hover:shadow-black/30 transition">
-                <p class="text-[9px] font-black text-blue-500 dark:text-blue-400 uppercase mb-1">{{ entry.time }}</p>
-                <p class="text-xs font-black text-gray-800 dark:text-slate-200 truncate">{{ entry.source }}</p>
-                <p class="text-[9px] font-bold text-gray-400 dark:text-slate-500 mt-1 uppercase">{{ entry.count }} Tickers Found</p>
+            <div class="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2 text-[10px]">
+                <span class="font-black text-blue-500 dark:text-blue-400 w-36 shrink-0">{{ entry.time }}</span>
+                <span class="font-bold text-gray-700 dark:text-slate-300 truncate flex-1 min-w-[100px]">{{ entry.source }}</span>
+                <span class="text-gray-400 dark:text-slate-500 shrink-0">{{ entry.benchmark_label|default('—') }}</span>
+                <span class="font-black text-gray-800 dark:text-slate-200 shrink-0">{{ entry.count }} found</span>
+                {% if entry.snapshot_file %}
+                <form method="POST" action="{{ url_for('volar_ind_adaptive_bp.volar_ind_restore', snapshot_file=entry.snapshot_file) }}" class="shrink-0">
+                    <button type="submit"
+                            onclick="return confirm('Restore results from this scan? This replaces what is currently displayed.');"
+                            class="text-[9px] font-black uppercase text-blue-500 hover:text-white hover:bg-blue-600 px-2.5 py-1 rounded-full border border-blue-200 dark:border-blue-500/30 transition">
+                        ↺ Restore
+                    </button>
+                </form>
+                {% endif %}
             </div>
             {% endfor %}
+            {% if not history %}
+            <p class="px-4 py-3 text-[10px] text-gray-400 dark:text-slate-500 italic">No scans yet.</p>
+            {% endif %}
         </div>
     </div>
 </div>
 
 <script>
-function exportTableCSV(tableId, filename) {
+const PROGRESS_URL = "{{ url_for('volar_ind_adaptive_bp.volar_ind_progress') }}";
+const scanBtn = document.getElementById('scan-submit-btn');
+const scanBtnFill = document.getElementById('scan-btn-fill');
+const scanBtnLabel = document.getElementById('scan-btn-label');
+
+function setButtonScanning(isScanning) {
+    scanBtn.disabled = isScanning;
+    scanBtn.classList.toggle('cursor-not-allowed', isScanning);
+    scanBtn.classList.toggle('opacity-90', isScanning);
+}
+
+function updateButtonProgress(pct, label) {
+    scanBtnFill.style.width = pct + '%';
+    scanBtnLabel.textContent = label;
+}
+
+function pollButtonProgress() {
+    fetch(PROGRESS_URL)
+        .then(r => r.json())
+        .then(data => {
+            const pct = data.total > 0 ? Math.round((data.processed / data.total) * 100) : 0;
+
+            if (data.stage === 'fetching_index') {
+                updateButtonProgress(6, 'Fetching Benchmark…');
+            } else if (data.stage === 'fetching_prices') {
+                updateButtonProgress(Math.max(pct, 3), `Fetching Prices… ${pct}% (${data.processed}/${data.total})`);
+            } else if (data.stage === 'error') {
+                updateButtonProgress(0, '⚠️ Scan Failed');
+                setTimeout(() => window.location.href = window.location.pathname, 1200);
+                return;
+            } else if (data.active) {
+                updateButtonProgress(pct, `Scanning… ${pct}%`);
+            } else {
+                updateButtonProgress(100, '✅ Complete');
+                setTimeout(() => window.location.href = window.location.pathname, 500);
+                return;
+            }
+            setTimeout(pollButtonProgress, 700);
+        })
+        .catch(() => setTimeout(pollButtonProgress, 1500));
+}
+
+// Submit via fetch so the page (and current results table) never navigates
+// away or gets blocked while the scan runs — only the button changes state.
+document.getElementById('scan-form').addEventListener('submit', function (e) {
+    e.preventDefault();
+    const form = e.target;
+    const formData = new FormData(form);
+
+    setButtonScanning(true);
+    updateButtonProgress(2, 'Starting…');
+
+    fetch(window.location.pathname, { method: 'POST', body: formData })
+        .then(() => pollButtonProgress())
+        .catch(() => pollButtonProgress());
+});
+
+// If the page loads mid-scan (e.g. a manual refresh), resume tracking.
+{% if is_scanning %}
+setButtonScanning(true);
+pollButtonProgress();
+{% endif %}
+
+// ---------- Copy ticker: silent (no alert/toast), brief color-pulse confirmation ----------
+function copyTicker(btn, symbol) {
+    navigator.clipboard.writeText(symbol).then(() => {
+        btn.classList.add('text-emerald-500', 'dark:text-emerald-400');
+        setTimeout(() => btn.classList.remove('text-emerald-500', 'dark:text-emerald-400'), 600);
+    }).catch(() => {});
+}
+
+// ---------- Dropzone: click/drag-drop file select, preview, clear ----------
+const fileInput = document.getElementById('csv-file-input');
+const dropzone = document.getElementById('dropzone');
+const dzEmpty = document.getElementById('dropzone-empty');
+const dzFilled = document.getElementById('dropzone-filled');
+const dzName = document.getElementById('dropzone-filename');
+const dzSize = document.getElementById('dropzone-filesize');
+
+function formatBytes(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+function showFile(file) {
+    dzName.textContent = file.name;
+    dzSize.textContent = formatBytes(file.size);
+    dzEmpty.classList.add('hidden');
+    dzFilled.classList.remove('hidden');
+    dzFilled.classList.add('flex');
+}
+
+fileInput.addEventListener('change', () => {
+    if (fileInput.files.length) showFile(fileInput.files[0]);
+});
+
+function clearDropzone(evt) {
+    evt.stopPropagation();
+    fileInput.value = '';
+    dzFilled.classList.add('hidden');
+    dzFilled.classList.remove('flex');
+    dzEmpty.classList.remove('hidden');
+}
+
+['dragenter', 'dragover'].forEach(evt => {
+    dropzone.addEventListener(evt, (e) => {
+        e.preventDefault();
+        dropzone.classList.add('border-blue-400', 'dark:border-blue-500');
+    });
+});
+['dragleave', 'drop'].forEach(evt => {
+    dropzone.addEventListener(evt, (e) => {
+        e.preventDefault();
+        dropzone.classList.remove('border-blue-400', 'dark:border-blue-500');
+    });
+});
+dropzone.addEventListener('drop', (e) => {
+    const files = e.dataTransfer.files;
+    if (files.length && files[0].name.toLowerCase().endsWith('.csv')) {
+        fileInput.files = files;
+        showFile(files[0]);
+    }
+});
+
+// ---------- Column sorting ----------
+let currentSort = { key: 'rank', dir: 1 };
+
+document.querySelectorAll('#ind-results-table th[data-sort]').forEach(th => {
+    th.addEventListener('click', () => sortTable(th.dataset.sort, th.dataset.type));
+});
+
+function sortTable(key, type) {
+    const tbody = document.querySelector('#ind-results-table tbody');
+    const rows = Array.from(tbody.querySelectorAll('tr[data-symbol]'));
+    if (!rows.length) return;
+
+    const dir = (currentSort.key === key) ? -currentSort.dir : 1;
+    currentSort = { key, dir };
+
+    rows.sort((a, b) => {
+        let va = a.dataset[key], vb = b.dataset[key];
+        if (type === 'num') {
+            va = parseFloat(va); vb = parseFloat(vb);
+        } else {
+            va = va.toLowerCase(); vb = vb.toLowerCase();
+        }
+        if (va < vb) return -1 * dir;
+        if (va > vb) return 1 * dir;
+        return 0;
+    });
+
+    rows.forEach(r => tbody.appendChild(r));
+    updateSortIndicators(key, dir);
+    applyFilters();
+}
+
+function updateSortIndicators(key, dir) {
+    document.querySelectorAll('#ind-results-table th[data-sort]').forEach(th => {
+        const arrow = th.querySelector('.sort-arrow');
+        if (!arrow) return;
+        arrow.textContent = th.dataset.sort === key ? (dir === 1 ? '▲' : '▼') : '';
+    });
+}
+
+// ---------- Momentum filter / search / show-limit ----------
+let momentumFilter = 'all';
+let searchTerm = '';
+let showLimit = 50;
+
+function setMomentumFilter(val, btnEl) {
+    momentumFilter = val;
+    document.querySelectorAll('.momentum-chip').forEach(b => b.dataset.active = 'false');
+    btnEl.dataset.active = 'true';
+    applyFilters();
+}
+
+function setSearchTerm(val) {
+    searchTerm = val.trim().toLowerCase();
+    applyFilters();
+}
+
+function setShowLimit(val, btnEl) {
+    showLimit = val;
+    document.getElementById('limit-50-btn').className = 'px-3 py-1.5 rounded-full bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400';
+    document.getElementById('limit-all-btn').className = 'px-3 py-1.5 rounded-full bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400';
+    btnEl.className = 'px-3 py-1.5 rounded-full bg-blue-600 text-white';
+    applyFilters();
+}
+
+function applyFilters() {
+    const rows = document.querySelectorAll('#ind-results-table tbody tr[data-symbol]');
+    let shown = 0;
+    rows.forEach(row => {
+        const symbol = row.dataset.symbol.toLowerCase();
+        const rs3up = row.dataset.rs3up === '1';
+        const rs6up = row.dataset.rs6up === '1';
+
+        let momentumMatch = true;
+        if (momentumFilter === 'both') momentumMatch = rs3up && rs6up;
+        else if (momentumFilter === '3m') momentumMatch = rs3up;
+        else if (momentumFilter === '6m') momentumMatch = rs6up;
+
+        const searchMatch = !searchTerm || symbol.includes(searchTerm);
+        const passesBaseFilter = momentumMatch && searchMatch;
+        const withinLimit = showLimit === 'all' || shown < showLimit;
+
+        if (passesBaseFilter && withinLimit) {
+            row.style.display = '';
+            shown++;
+        } else {
+            row.style.display = 'none';
+        }
+    });
+    const counter = document.getElementById('visible-count');
+    if (counter) counter.textContent = shown;
+}
+
+applyFilters();
+
+// ---------- CSV export (values already unit-free since headers carry units) ----------
+// Filename pattern: <ScannerName>_<YYYYMMDD>_<HHMMSS>.csv — timestamp reflects
+// the moment of export, so re-exporting after a fresh scan never overwrites
+// an earlier download of the same page.
+function buildExportFilename(scannerName) {
+    const now = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+    return `${scannerName}_${stamp}.csv`;
+}
+
+function exportTableCSV(tableId, scannerName) {
     const table = document.getElementById(tableId);
     if (!table) return;
-    const rows = Array.from(table.querySelectorAll('tr'));
+    const rows = Array.from(table.querySelectorAll('tr')).filter(r => r.style.display !== 'none');
     const csv = rows.map(row =>
         Array.from(row.querySelectorAll('th, td'))
             .map(cell => '"' + cell.innerText.replace(/"/g, '""').replace(/\n/g, ' ').trim() + '"')
@@ -176,7 +551,7 @@ function exportTableCSV(tableId, filename) {
     const blob = new Blob([csv], { type: 'text/csv' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = filename;
+    a.download = buildExportFilename(scannerName);
     a.click();
 }
 </script>

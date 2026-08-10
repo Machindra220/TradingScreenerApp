@@ -2,10 +2,9 @@ import os
 import json
 import threading
 import pandas as pd
+import yfinance as yf
 from datetime import datetime, timedelta
 from flask import Blueprint, render_template, request, session, jsonify, redirect, url_for
-
-from app.services.market_data_cache import get_price_history_bulk, latest_bar_date  # shared cross-page price cache
 
 volar_ind_adaptive_bp = Blueprint('volar_ind_adaptive_bp', __name__)
 
@@ -19,9 +18,6 @@ HISTORY_JSON = os.path.join(UPLOAD_FOLDER, 'scan_history_ind_adaptive.json')
 
 # How many past scans to keep browsable/restorable
 HISTORY_LIMIT = 5
-
-DEFAULT_ADP_CSV   = os.path.abspath(os.path.join(os.getcwd(), 'data', 'nifty_500.csv'))
-DEFAULT_ADP_LABEL = "Nifty 500 Default (nifty_500.csv)"
 
 # Fixed lookback periods (trading days)
 LB_3M = 55    # ~3 months
@@ -47,7 +43,7 @@ SCAN_PROGRESS = {
     "processed": 0,
     "total": 0,
     "current_symbol": "",
-    "stage": "idle",   # idle | fetching_index | fetching_prices | scanning | done | error
+    "stage": "idle",   # idle | fetching_index | scanning | done | error
     "error": None,
 }
 
@@ -85,37 +81,40 @@ def make_bar_heights(values, max_height=14, min_height=2):
     return [round(min_height + (max(0, min(100, v)) / 100) * (max_height - min_height), 1) for v in values]
 
 
-def fetch_index_data():
+def fetch_index_data(start_date):
     """
-    Resolve the benchmark via the shared cache (so it's only genuinely
-    re-fetched from yfinance once a day, across BOTH this page and the
-    Stage 2 screener, instead of once per scan per page). Tries Nifty 500
-    first, falls back to Nifty 50. Returns (close_series, label) or
-    (None, None) if both fail.
+    Fetch the benchmark ONCE per scan (not per stock — repeated per-stock
+    fetches were tripping yfinance rate limits mid-scan and corrupting
+    results with NaNs). Tries Nifty 500 first, falls back to Nifty 50.
+    Returns (close_series, label) or (None, None) if both fail.
     """
     for ticker_sym, label in (PRIMARY_INDEX, FALLBACK_INDEX):
         try:
-            idx_df = get_price_history_bulk([ticker_sym], interval='1d', lookback_days=LB_6M + 220)[0].get(ticker_sym)
-            if idx_df is not None and len(idx_df) >= LB_6M:
+            idx_df = yf.Ticker(ticker_sym).history(start=start_date)
+            if len(idx_df) >= LB_6M:
                 return idx_df['Close'].dropna(), f"{label} ({ticker_sym})"
         except Exception as e:
             print(f"  Benchmark fetch failed for {ticker_sym}: {e}")
     return None, None
 
 
-def is_volar_adaptive_ind(symbol, idx_close, stock_df):
+def is_volar_adaptive_ind(symbol, idx_close):
     """
     Computes RS and VOLAR for both 3M (55-day) and 6M (122-day) lookback
-    periods against a pre-fetched benchmark series, using a price history
-    DataFrame that was already pulled from the shared cache (not fetched
-    here — this function does no network I/O of its own). Returns None if
-    the stock fails the EMA200 filter or lacks clean data.
+    periods against a pre-fetched benchmark series. Returns None if the
+    stock fails the EMA200 filter or lacks clean data.
     """
     try:
-        if stock_df is None or stock_df.empty or len(stock_df) < LB_6M:
+        ticker_symbol = f"{symbol}.NS" if not symbol.endswith(".NS") else symbol
+
+        fetch_days = LB_6M + 220
+        start_date = (datetime.today() - timedelta(days=fetch_days)).strftime("%Y-%m-%d")
+
+        df = yf.Ticker(ticker_symbol).history(start=start_date)
+        if len(df) < LB_6M:
             return None
 
-        close = stock_df['Close'].dropna()
+        close = df['Close'].dropna()
         if len(close) < LB_6M:
             return None
         curr = close.iloc[-1]
@@ -224,35 +223,21 @@ def run_scan(symbols, source_name):
     _set_progress(active=True, processed=0, total=len(symbols), current_symbol="",
                   stage="fetching_index", error=None)
 
-    idx_close, benchmark_label = fetch_index_data()
+    fetch_days = LB_6M + 220
+    start_date = (datetime.today() - timedelta(days=fetch_days)).strftime("%Y-%m-%d")
+    idx_close, benchmark_label = fetch_index_data(start_date)
 
     if idx_close is None:
         _set_progress(active=False, stage="error",
                        error="Could not fetch benchmark index data. Scan aborted — previous results kept.")
         return
 
-    _set_progress(stage="fetching_prices", processed=0, total=len(symbols))
-    ticker_symbols = [f"{s}.NS" if not s.endswith(".NS") else s for s in symbols]
-
-    # progress_callback is what actually moves the button's progress bar
-    # during this call — this is where the real wall-clock time goes on a
-    # cold/stale cache, not the (fast, in-memory) loop below. Without this,
-    # the button sits frozen at 0% for the entire fetch, then jumps straight
-    # to 100% once the screening loop runs.
-    def _fetch_progress(i, total, sym):
-        _set_progress(processed=i, total=total, current_symbol=sym)
-
-    price_data, fetch_report = get_price_history_bulk(
-        ticker_symbols, interval='1d', lookback_days=LB_6M + 220, progress_callback=_fetch_progress
-    )
-    price_data_asof = latest_bar_date(price_data)
-
-    _set_progress(stage="scanning", processed=0, total=len(symbols), current_symbol="")
+    _set_progress(stage="scanning")
 
     raw_results = []
-    for i, (sym, ticker_symbol) in enumerate(zip(symbols, ticker_symbols)):
+    for i, sym in enumerate(symbols):
         _set_progress(processed=i, current_symbol=sym)
-        result = is_volar_adaptive_ind(sym, idx_close, price_data.get(ticker_symbol))
+        result = is_volar_adaptive_ind(sym, idx_close)
         if result:
             raw_results.append(result)
     _set_progress(processed=len(symbols), current_symbol="")
@@ -328,17 +313,6 @@ def run_scan(symbols, source_name):
         'benchmark_label': benchmark_label,
         'scanned_count': len(symbols),
         'excluded_count': excluded_count,
-        # Symbols the shared price cache couldn't refresh this run (e.g. hit
-        # a 429 after retries) — their scan result, if any, used whatever
-        # data was already cached rather than being dropped or blocked on.
-        'stale_symbols_count': len(fetch_report['failed']),
-        'stale_symbols_sample': [s.replace('.NS', '') for s in fetch_report['failed'][:10]],
-        # Most recent trading-day close actually reflected in the price data
-        # used for this scan — distinct from 'time' above (when the scan
-        # ran). The scan can complete instantly off cached data that's a day
-        # or more old if a refresh was skipped/failed, so this is the real
-        # "how current is this data" answer.
-        'price_data_asof': price_data_asof,
     }
 
     # Snapshot this scan to disk BEFORE overwriting the active results, so a
@@ -377,56 +351,20 @@ def volar_ind_process():
             return redirect(url_for('volar_ind_adaptive_bp.volar_ind_process', scanning=1))
 
         file = request.files.get('file')
-        use_default = request.form.get('use_default') == '1'
-
         if file and file.filename != '':
-            from werkzeug.utils import secure_filename
-            filename      = secure_filename(file.filename)
-            ext           = os.path.splitext(filename)[1].lower()
-            save_filename = f"uploaded_adaptive_ind_tickers{ext}"
-            filepath      = os.path.join(UPLOAD_FOLDER, save_filename)
+            filepath = os.path.join(UPLOAD_FOLDER, file.filename)
             file.save(filepath)
             session['last_uploaded_csv_ind'] = filepath
-            session['last_filename_ind'] = filename
+            session['last_filename_ind'] = file.filename
             session.modified = True
 
-        if use_default:
-            # Explicit default chosen — bypass session-pinned file
-            saved_path  = DEFAULT_ADP_CSV
-            source_name = DEFAULT_ADP_LABEL
-            # Also clear session pin so subsequent runs also use default
-            session.pop('last_uploaded_csv_ind', None)
-            session.pop('last_filename_ind', None)
-            session.modified = True
-        else:
-            saved_path  = session.get('last_uploaded_csv_ind')
-            source_name = session.get('last_filename_ind', 'Unknown')
-
+        saved_path = session.get('last_uploaded_csv_ind')
         if not saved_path or not os.path.exists(saved_path):
-            err = (f"Default file not found: {DEFAULT_ADP_CSV}. "
-                   f"Please place nifty_500.csv in data/ or upload a custom file.")
-            _set_progress(active=False, stage="error", error=err)
             return redirect(url_for('volar_ind_adaptive_bp.volar_ind_process'))
 
-        ext_saved = os.path.splitext(saved_path)[1].lower()
-        try:
-            if ext_saved in ('.xlsx', '.xls'):
-                df_input = pd.read_excel(saved_path)
-            else:
-                df_input = pd.read_csv(saved_path)
-        except Exception as e:
-            _set_progress(active=False, stage="error", error=f"Could not read file: {e}")
-            return redirect(url_for('volar_ind_adaptive_bp.volar_ind_process'))
-
-        col_map  = {c.lower(): c for c in df_input.columns}
-        col_name = next((col_map[k] for k in ('symbol', 'ticker', 'symbols', 'tickers') if k in col_map), None)
-        if col_name is None:
-            _set_progress(active=False, stage="error",
-                          error=f"File must have a Symbol or Ticker column. Found: {', '.join(df_input.columns.tolist())}")
-            return redirect(url_for('volar_ind_adaptive_bp.volar_ind_process'))
-
-        raw_symbols = (str(s).strip().upper() for s in df_input[col_name].dropna().unique())
-        symbols = [s.replace('.NS', '') for s in raw_symbols if str(s).strip()]
+        df_input = pd.read_csv(saved_path)
+        symbols = df_input['symbol'].dropna().unique().tolist()
+        source_name = session.get('last_filename_ind', 'Unknown')
 
         thread = threading.Thread(target=run_scan, args=(symbols, source_name), daemon=True)
         thread.start()
@@ -436,8 +374,6 @@ def volar_ind_process():
     # --- GET ---
     stocks, last_processed_time, source_name = [], None, "None"
     benchmark_label, excluded_count, scanned_count = None, 0, 0
-    stale_symbols_count, stale_symbols_sample = 0, []
-    price_data_asof = None
 
     if os.path.exists(RESULTS_JSON):
         try:
@@ -449,18 +385,12 @@ def volar_ind_process():
                 benchmark_label = cache.get('benchmark_label')
                 excluded_count = cache.get('excluded_count', 0)
                 scanned_count = cache.get('scanned_count', 0)
-                stale_symbols_count = cache.get('stale_symbols_count', 0)
-                stale_symbols_sample = cache.get('stale_symbols_sample', [])
-                price_data_asof = cache.get('price_data_asof')
         except (json.JSONDecodeError, OSError):
             pass
 
     history = _load_history()
     progress = _get_progress()
     is_scanning = progress["active"] or request.args.get('scanning') == '1'
-
-    active_file      = session.get('last_filename_ind')
-    is_default_source = not bool(active_file)
 
     return render_template(
         "stage2_adaptive_volar_ind_scr.html",
@@ -470,27 +400,13 @@ def volar_ind_process():
         benchmark_label=benchmark_label,
         excluded_count=excluded_count,
         scanned_count=scanned_count,
-        stale_symbols_count=stale_symbols_count,
-        stale_symbols_sample=stale_symbols_sample,
-        price_data_asof=price_data_asof,
         history=history,
-        active_file=active_file,
-        is_default_source=is_default_source,
-        default_label=DEFAULT_ADP_LABEL,
+        active_file=session.get('last_filename_ind'),
         is_scanning=is_scanning,
         scan_error=progress.get("error"),
         restored=request.args.get('restored') == '1',
         restore_error=request.args.get('restore_error') == '1',
     )
-
-
-@volar_ind_adaptive_bp.route("/volar-ind-adaptive/clear-source", methods=["POST"])
-def volar_ind_clear_source():
-    """Remove the pinned CSV from session so the next scan uses Nifty 500 default."""
-    session.pop('last_uploaded_csv_ind', None)
-    session.pop('last_filename_ind', None)
-    session.modified = True
-    return redirect(url_for('volar_ind_adaptive_bp.volar_ind_process'))
 
 
 @volar_ind_adaptive_bp.route("/volar-ind-adaptive/progress")
