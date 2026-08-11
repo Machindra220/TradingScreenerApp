@@ -64,6 +64,14 @@
                 <span class="text-gray-300 dark:text-slate-700">|</span>
                 <span title="The most recent trading-day close actually reflected in the underlying price data — can differ from 'Last Run' if a scan reused cached data or a refresh was skipped.">Price Data As Of: <span class="text-emerald-500 dark:text-emerald-300">{{ price_data_asof }}</span></span>
                 {% endif %}
+                {% if cache_hits is defined and (cache_hits > 0 or yf_fetches > 0) %}
+                <span class="text-gray-300 dark:text-slate-700">|</span>
+                <span title="Symbols served from the local SQLite cache vs re-fetched from yfinance on the last scan">
+                    💾 Cache: <span class="text-emerald-500 dark:text-emerald-300">{{ cache_hits }} hits</span>
+                    <span class="text-gray-400 dark:text-slate-500">·</span>
+                    <span class="{% if yf_fetches > 0 %}text-amber-500 dark:text-amber-400{% else %}text-gray-400 dark:text-slate-500{% endif %}">{{ yf_fetches }} from yfinance</span>
+                </span>
+                {% endif %}
                 {% if scanned_count %}
                 <span class="text-gray-300 dark:text-slate-700">|</span>
                 <span>Scanned {{ scanned_count }} → {{ stocks|length }} passed
@@ -112,50 +120,55 @@
     </div>
     {% endif %}
 
-    <div class="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm dark:shadow-none mb-8">
-        <form method="POST" enctype="multipart/form-data" id="scanForm" class="flex flex-col md:flex-row items-stretch md:items-end gap-4">
+    <div class="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm dark:shadow-none mb-8">
+        <!-- Clear-source form lives OUTSIDE the scan form — nested forms are
+             invalid HTML and cause both to submit simultaneously (Clear also
+             triggers a scan). Kept separate, submitted via JS button. -->
+        {% if not is_default_source %}
+        <form id="clearSourceFormInd" method="POST" action="{{ url_for('volar_ind.volar_ind_clear_source') }}" class="hidden">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <div class="flex-1 w-full text-xs">
-                <label class="block text-[10px] font-bold uppercase text-gray-400 dark:text-slate-500 mb-2 tracking-widest">Ticker CSV (Optional)</label>
+        </form>
+        {% endif %}
+
+        <form method="POST" enctype="multipart/form-data" id="scanForm" class="flex flex-row items-center gap-3">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" id="useDefaultInd" name="use_default" value="0">
+
+            <div class="flex-1 min-w-0">
                 <label id="csvDropZone" for="csvFileInput"
-                       class="flex items-center gap-3 border-2 border-dashed border-gray-200 dark:border-slate-700 hover:border-blue-400 dark:hover:border-blue-500 rounded-xl px-4 py-3 cursor-pointer transition group bg-gray-50/60 dark:bg-slate-800/40">
-                    <span class="text-lg leading-none">📁</span>
-                    <span class="text-xs whitespace-nowrap">
-                        <span class="font-bold text-blue-600 dark:text-blue-400 group-hover:underline">Choose CSV / XLSX</span>
-                        <span class="text-gray-400 dark:text-slate-500 hidden sm:inline"> or drag &amp; drop</span>
-                    </span>
-                    <span id="fileNameDisplay" class="ml-auto text-[10px] font-bold text-gray-400 dark:text-slate-500 italic truncate max-w-[220px]">No file chosen — will use Nifty 500 default</span>
-                    <input type="file" id="csvFileInput" name="file" accept=".csv,.xlsx,.xls" class="hidden" onchange="updateFileName(this)">
+                       class="flex items-center gap-2 border-2 border-dashed border-gray-200 dark:border-slate-700 hover:border-blue-400 dark:hover:border-blue-500 rounded-xl px-3 py-2.5 cursor-pointer transition group bg-gray-50/60 dark:bg-slate-800/40">
+                    <span class="text-base leading-none shrink-0">📁</span>
+                    <span class="text-[10px] font-bold text-blue-600 dark:text-blue-400 group-hover:underline whitespace-nowrap shrink-0">Choose CSV / XLSX</span>
+                    <span class="text-[10px] text-gray-400 dark:text-slate-500 hidden lg:inline shrink-0">or drag &amp; drop</span>
+                    <span id="fileNameDisplay" class="ml-auto text-[9px] font-bold text-gray-400 dark:text-slate-500 italic truncate">No file chosen — will use Nifty 500 default</span>
+                    <input type="file" id="csvFileInput" name="file" accept=".csv,.xlsx,.xls" class="hidden">
                 </label>
 
-                <!-- Active source indicator -->
-                <div class="mt-2 flex flex-wrap items-center gap-2 text-[9px]">
+                <!-- Active source row -->
+                <div class="mt-1.5 flex flex-wrap items-center gap-2 text-[9px]">
                     {% if is_default_source %}
                     <span class="font-bold text-blue-500 dark:text-blue-400 uppercase">📊 Source: {{ default_label }}</span>
                     {% else %}
                     <span class="font-bold text-green-600 dark:text-emerald-400 uppercase">✅ Source: {{ active_file }}</span>
                     <button type="button"
                             onclick="document.getElementById('useDefaultInd').value='1'; document.getElementById('scanForm').requestSubmit();"
-                            class="px-2.5 py-1 rounded-full border border-blue-200 dark:border-blue-500/30 text-blue-600 dark:text-blue-400 font-black uppercase hover:bg-blue-50 dark:hover:bg-blue-500/10 transition"
-                            title="Run against the built-in Nifty 500 default for this scan only">
+                            class="px-2 py-0.5 rounded-full border border-blue-200 dark:border-blue-500/30 text-blue-600 dark:text-blue-400 font-black uppercase hover:bg-blue-50 dark:hover:bg-blue-500/10 transition"
+                            title="Run this scan against the built-in Nifty 500 default without clearing your pinned file">
                         📊 Use Default
                     </button>
-                    <form method="POST" action="{{ url_for('volar_ind.volar_ind_clear_source') }}" class="inline">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                        <button type="submit"
-                                onclick="return confirm('Clear uploaded file? Next scan will use Nifty 500 default.');"
-                                class="px-2.5 py-1 rounded-full border border-red-200 dark:border-red-500/30 text-red-500 dark:text-red-400 font-black uppercase hover:bg-red-50 dark:hover:bg-red-500/10 transition">
-                            ✕ Clear
-                        </button>
-                    </form>
+                    <button type="button"
+                            onclick="if(confirm('Clear uploaded file? Next scan will use Nifty 500 default.')) document.getElementById('clearSourceFormInd').submit();"
+                            class="px-2 py-0.5 rounded-full border border-red-200 dark:border-red-500/30 text-red-500 dark:text-red-400 font-black uppercase hover:bg-red-50 dark:hover:bg-red-500/10 transition">
+                        ✕ Clear
+                    </button>
                     {% endif %}
                 </div>
-                <input type="hidden" id="useDefaultInd" name="use_default" value="0">
             </div>
+
             <button type="submit" id="runScanBtn"
-                    class="bg-blue-600 text-white px-8 py-3 rounded-xl font-black text-xs uppercase hover:bg-blue-700 transition flex items-center justify-center gap-2 shadow-lg shadow-blue-200 dark:shadow-blue-950/40 disabled:opacity-90 disabled:cursor-not-allowed">
-                <span id="runScanBtnFill"></span>
-                <span id="runScanLabel">🚀 Run Scan</span>
+                    class="shrink-0 bg-blue-600 text-white px-6 py-2.5 rounded-xl font-black text-xs uppercase hover:bg-blue-700 transition shadow-lg shadow-blue-200 dark:shadow-blue-950/40 disabled:opacity-90 disabled:cursor-not-allowed relative overflow-hidden">
+                <span id="runScanBtnFill" class="absolute inset-0 w-0 bg-black/20 transition-all duration-300 ease-out"></span>
+                <span id="runScanLabel" class="relative z-10">🚀 Run Scan</span>
             </button>
         </form>
     </div>
@@ -460,25 +473,27 @@ function updateFileName(input) {
     if (input.files.length > 0) {
         display.textContent = input.files[0].name;
         display.classList.remove('italic', 'text-gray-400', 'dark:text-slate-500');
-        display.classList.add('text-blue-600', 'dark:text-blue-400', 'font-bold');
+        display.classList.add('text-blue-600', 'font-bold');
     } else {
         display.textContent = 'No file chosen — will use Nifty 500 default';
         display.classList.add('italic', 'text-gray-400', 'dark:text-slate-500');
-        display.classList.remove('text-blue-600', 'dark:text-blue-400', 'font-bold');
+        display.classList.remove('text-blue-600', 'font-bold');
     }
 }
 
 (function setupCsvDropZone() {
-    const zone = document.getElementById('csvDropZone');
+    const zone  = document.getElementById('csvDropZone');
     const input = document.getElementById('csvFileInput');
     if (!zone || !input) return;
+    // Wire change event via JS (not inline onchange) to keep form clean
+    input.addEventListener('change', () => updateFileName(input));
     ['dragover', 'dragleave', 'drop'].forEach(evt => {
         zone.addEventListener(evt, e => e.preventDefault());
     });
-    zone.addEventListener('dragover', () => zone.classList.add('border-blue-400', 'dark:border-blue-500'));
-    zone.addEventListener('dragleave', () => zone.classList.remove('border-blue-400', 'dark:border-blue-500'));
+    zone.addEventListener('dragover', () => zone.classList.add('border-blue-400'));
+    zone.addEventListener('dragleave', () => zone.classList.remove('border-blue-400'));
     zone.addEventListener('drop', e => {
-        zone.classList.remove('border-blue-400', 'dark:border-blue-500');
+        zone.classList.remove('border-blue-400');
         const dt = e.dataTransfer;
         if (dt && dt.files && dt.files.length) {
             input.files = dt.files;

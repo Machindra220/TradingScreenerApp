@@ -11,7 +11,9 @@ from app.services.market_data_cache import us_cache, latest_bar_date  # US marke
 
 volar_us_bp = Blueprint("volar_us", __name__)
 
-UPLOAD_FOLDER    = os.path.abspath(os.path.join(os.getcwd(), 'uploads', 'volar_us'))
+# Anchor all paths to __file__ (app/routes/volar_stage2_us_screener.py)
+_PROJECT_ROOT    = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+UPLOAD_FOLDER    = os.path.join(_PROJECT_ROOT, 'uploads', 'volar_us')
 RESULTS_JSON     = os.path.join(UPLOAD_FOLDER, 'last_volar_us_results.json')
 LAST_CSV_CONFIG  = os.path.join(UPLOAD_FOLDER, 'last_csv_path.json')
 HISTORY_CACHE_DIR = os.path.join(UPLOAD_FOLDER, 'history_cache')
@@ -20,7 +22,7 @@ os.makedirs(HISTORY_CACHE_DIR, exist_ok=True)
 
 HISTORY_LIMIT = 5
 US_INDEX = ("^GSPC", "S&P 500")
-DEFAULT_US_CSV   = os.path.abspath(os.path.join(os.getcwd(), 'data', 'sp500.csv'))
+DEFAULT_US_CSV   = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'sp500.csv'))
 DEFAULT_US_LABEL = "S&P 500 Default (sp500.csv)"
 
 
@@ -246,6 +248,26 @@ def run_scan_us(filepath, source_name):
     )
     price_data_asof = latest_bar_date(price_data)
 
+    # ── Cache source log ─────────────────────────────────────────────────────
+    # Printed to the terminal so you can verify whether each symbol is served
+    # from the local SQLite cache (fast, no network) or re-fetched from yfinance.
+    _n  = len(symbols)
+    _ch = fetch_report["from_cache"]
+    _yf = fetch_report["fetched"]
+    _fl = fetch_report["failed"]
+    print(f"\n{'='*55}")
+    print(f"  [CACHE] {source_name} — price data source summary")
+    print(f"{'='*55}")
+    print(f"  Total symbols   : {_n}")
+    print(f"  From DB cache   : {_ch} ({round(_ch/_n*100) if _n else 0}%)  <- no yfinance call")
+    print(f"  Fetched fresh   : {_yf}  ({round(_yf/_n*100) if _n else 0}%)  <- yfinance hit + DB updated")
+    print(f"  Failed (429/err): {len(_fl)}")
+    if _fl:
+        extra = f" ...+{len(_fl)-10} more" if len(_fl) > 10 else ""
+        print(f"  Failed symbols  : {', '.join(_fl[:10])}{extra}")
+    print(f"  Price data as of: {price_data_asof}")
+    print(f"{'='*55}\n")
+
     # Load old ranks so we can compute rank_delta this scan
     old_ranks = {}
     if os.path.exists(RESULTS_JSON):
@@ -334,6 +356,8 @@ def run_scan_us(filepath, source_name):
         'excluded_count':       excluded_count,
         'stale_symbols_count':  len(fetch_report['failed']),
         'stale_symbols_sample': fetch_report['failed'][:10],
+        'cache_hits':           fetch_report['from_cache'],
+        'yf_fetches':           fetch_report['fetched'],
         'price_data_asof':      price_data_asof,
     }
 
@@ -412,6 +436,7 @@ def volar_us_process():
     stocks, last_processed_time, source_name = [], None, "None"
     benchmark_label, excluded_count, scanned_count = None, 0, 0
     stale_symbols_count, stale_symbols_sample, price_data_asof = 0, [], None
+    cache_hits, yf_fetches = 0, 0
 
     if os.path.exists(RESULTS_JSON):
         try:
@@ -425,6 +450,8 @@ def volar_us_process():
                 scanned_count       = cache.get('scanned_count',  0)
                 stale_symbols_count = cache.get('stale_symbols_count', 0)
                 stale_symbols_sample = cache.get('stale_symbols_sample', [])
+                cache_hits          = cache.get('cache_hits', 0)
+                yf_fetches          = cache.get('yf_fetches', 0)
                 price_data_asof     = cache.get('price_data_asof')
         except (json.JSONDecodeError, OSError):
             pass
@@ -452,6 +479,8 @@ def volar_us_process():
         stale_symbols_count  = stale_symbols_count,
         stale_symbols_sample = stale_symbols_sample,
         price_data_asof      = price_data_asof,
+        cache_hits           = cache_hits,
+        yf_fetches           = yf_fetches,
         history              = history_meta,
         compare_mode         = compare_mode,
         is_scanning          = is_scanning,

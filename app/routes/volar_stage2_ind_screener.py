@@ -12,7 +12,9 @@ from app.services.market_data_cache import get_price_history_bulk, latest_bar_da
 volar_bp = Blueprint("volar_ind", __name__)
 
 # --- PATH LOGIC (Root Level) ---
-UPLOAD_FOLDER = os.path.abspath(os.path.join(os.getcwd(), 'uploads', 'volar_ind'))
+# Anchor all paths to __file__ (app/routes/volar_stage2_ind_screener.py)
+_PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+UPLOAD_FOLDER = os.path.join(_PROJECT_ROOT, 'uploads', 'volar_ind')
 RESULTS_JSON = os.path.join(UPLOAD_FOLDER, 'last_volar_results.json')
 LAST_CSV_CONFIG = os.path.join(UPLOAD_FOLDER, 'last_csv_path.json')
 HISTORY_CACHE_DIR = os.path.join(UPLOAD_FOLDER, 'history_cache')
@@ -20,7 +22,7 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(HISTORY_CACHE_DIR, exist_ok=True)
 
 HISTORY_LIMIT = 5
-DEFAULT_IND_CSV   = os.path.abspath(os.path.join(os.getcwd(), 'data', 'nifty_500.csv'))
+DEFAULT_IND_CSV   = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'nifty_500.csv'))
 DEFAULT_IND_LABEL = "Nifty 500 Default (nifty_500.csv)"
 
 
@@ -297,6 +299,25 @@ def run_scan(filepath, source_name):
     _set_progress(stage="scanning")
     results, fetch_report, price_data_asof = screen_volar(symbols, index_df)
 
+    # ── Cache source log ─────────────────────────────────────────────────────
+    _n  = len(symbols)
+    _ch = fetch_report["from_cache"]
+    _yf = fetch_report["fetched"]
+    _fl = fetch_report["failed"]
+    sep = "=" * 55
+    print(f"\n{sep}")
+    print(f"  [CACHE] IND Stage2 {source_name} — price data source summary")
+    print(f"{sep}")
+    print(f"  Total symbols   : {_n}")
+    print(f"  From DB cache   : {_ch} ({round(_ch/_n*100) if _n else 0}%)  <- no yfinance call")
+    print(f"  Fetched fresh   : {_yf}  ({round(_yf/_n*100) if _n else 0}%)  <- yfinance hit + DB updated")
+    print(f"  Failed (429/err): {len(_fl)}")
+    if _fl:
+        extra = f" ...+{len(_fl)-10} more" if len(_fl) > 10 else ""
+        print(f"  Failed symbols  : {', '.join(_fl[:10])}{extra}")
+    print(f"  Price data as of: {price_data_asof}")
+    print(f"{sep}\n")
+
     enriched = []
     leaders_90 = []
     for stock in results:
@@ -364,6 +385,8 @@ def run_scan(filepath, source_name):
             # cached rather than being dropped or blocking the scan.
             'stale_symbols_count': len(fetch_report['failed']),
             'stale_symbols_sample': [s.replace('.NS', '') for s in fetch_report['failed'][:10]],
+        'cache_hits':           fetch_report['from_cache'],
+        'yf_fetches':           fetch_report['fetched'],
             # The most recent trading-day close actually reflected in the
             # underlying price data used for this scan — distinct from
             # 'time' above (when the scan itself ran). A scan can complete
@@ -437,6 +460,8 @@ def volar_process():
                 scanned_count = cache.get('scanned_count', 0)
                 stale_symbols_count = cache.get('stale_symbols_count', 0)
                 stale_symbols_sample = cache.get('stale_symbols_sample', [])
+                cache_hits          = cache.get('cache_hits', 0)
+                yf_fetches          = cache.get('yf_fetches', 0)
                 price_data_asof = cache.get('price_data_asof')
         except (json.JSONDecodeError, OSError):
             pass
@@ -470,6 +495,8 @@ def volar_process():
         excluded_count=excluded_count,
         scanned_count=scanned_count,
         stale_symbols_count=stale_symbols_count,
+        cache_hits=cache_hits,
+        yf_fetches=yf_fetches,
         stale_symbols_sample=stale_symbols_sample,
         price_data_asof=price_data_asof,
         history=history_meta,
@@ -626,7 +653,7 @@ def add_to_strategy():
     symbol = request.form.get('symbol')
     strategy = request.form.get('strategy')
     market = request.form.get('market')
-    folder = UPLOAD_FOLDER if market == 'india' else os.path.join(os.getcwd(), 'uploads', 'volar_us')
+    folder = UPLOAD_FOLDER if market == 'india' else os.path.join(_PROJECT_ROOT, 'uploads', 'volar_us')
     fav_path = os.path.join(folder, f'strategy_{strategy.lower().replace(" ", "_")}.json')
     yf_sym = symbol if market == 'us' else (symbol if symbol.endswith(".NS") else f"{symbol}.NS")
     ticker = yf.Ticker(yf_sym)
@@ -654,7 +681,7 @@ def view_strategy(name):
     # a TypeError ("unexpected keyword argument 'n'") every time this route
     # was hit. Fixed by matching the two.
     market = request.args.get('market', 'india')
-    folder = UPLOAD_FOLDER if market == 'india' else os.path.join(os.getcwd(), 'uploads', 'volar_us')
+    folder = UPLOAD_FOLDER if market == 'india' else os.path.join(_PROJECT_ROOT, 'uploads', 'volar_us')
     file_path = os.path.join(folder, f'strategy_{name.lower()}.json')
     performance_data = []
     if os.path.exists(file_path):

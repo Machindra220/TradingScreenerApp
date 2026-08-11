@@ -50,7 +50,12 @@ from datetime import datetime, timedelta, date
 import pandas as pd
 import yfinance as yf
 
-DATA_DIR   = os.path.join(os.getcwd(), 'data', 'market_cache')
+# Anchor to __file__ (app/services/market_data_cache.py → project root is two levels up)
+# Using os.getcwd() here is fragile: the Werkzeug reloader can run in a different
+# working directory than the main process, causing the DB to be created/looked for
+# in the wrong place after a hot-reload.
+_PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+DATA_DIR   = os.path.join(_PROJECT_ROOT, 'data', 'market_cache')
 BACKUP_DIR = os.path.join(DATA_DIR, 'backups')
 BACKUP_LIMIT = 5
 INTRADAY_MAX_DAYS = 729  # Yahoo hard-cap for intraday history

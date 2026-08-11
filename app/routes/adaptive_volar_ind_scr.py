@@ -9,7 +9,12 @@ from app.services.market_data_cache import get_price_history_bulk, latest_bar_da
 
 volar_ind_adaptive_bp = Blueprint('volar_ind_adaptive_bp', __name__)
 
-UPLOAD_FOLDER = os.path.join(os.getcwd(), 'uploads', 'volar_ind_adaptive')
+# Anchor all paths to __file__ (app/routes/adaptive_volar_ind_scr.py) so
+# they resolve correctly regardless of where Flask was started from — using
+# os.getcwd() at module-import time is fragile because the Werkzeug reloader
+# can run in a different working directory than the main process.
+_PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+UPLOAD_FOLDER = os.path.join(_PROJECT_ROOT, 'uploads', 'volar_ind_adaptive')
 SNAPSHOT_DIR = os.path.join(UPLOAD_FOLDER, 'snapshots')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(SNAPSHOT_DIR, exist_ok=True)
@@ -20,7 +25,7 @@ HISTORY_JSON = os.path.join(UPLOAD_FOLDER, 'scan_history_ind_adaptive.json')
 # How many past scans to keep browsable/restorable
 HISTORY_LIMIT = 5
 
-DEFAULT_ADP_CSV   = os.path.abspath(os.path.join(os.getcwd(), 'data', 'nifty_500.csv'))
+DEFAULT_ADP_CSV   = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'nifty_500.csv'))
 DEFAULT_ADP_LABEL = "Nifty 500 Default (nifty_500.csv)"
 
 # Fixed lookback periods (trading days)
@@ -247,6 +252,25 @@ def run_scan(symbols, source_name):
     )
     price_data_asof = latest_bar_date(price_data)
 
+    # ── Cache source log ─────────────────────────────────────────────────────
+    _n  = len(symbols)
+    _ch = fetch_report['from_cache']
+    _yf = fetch_report['fetched']
+    _fl = fetch_report['failed']
+    sep = "=" * 55
+    print(f"\n{sep}")
+    print(f"  [CACHE] IND Adaptive {source_name} — price data source summary")
+    print(f"{sep}")
+    print(f"  Total symbols   : {_n}")
+    print(f"  From DB cache   : {_ch} ({round(_ch/_n*100) if _n else 0}%)  <- no yfinance call")
+    print(f"  Fetched fresh   : {_yf}  ({round(_yf/_n*100) if _n else 0}%)  <- yfinance hit + DB updated")
+    print(f"  Failed (429/err): {len(_fl)}")
+    if _fl:
+        extra = f" ...+{len(_fl)-10} more" if len(_fl) > 10 else ""
+        print(f"  Failed symbols  : {', '.join(_fl[:10])}{extra}")
+    print(f"  Price data as of: {price_data_asof}")
+    print(f"{sep}\n")
+
     _set_progress(stage="scanning", processed=0, total=len(symbols), current_symbol="")
 
     raw_results = []
@@ -333,6 +357,8 @@ def run_scan(symbols, source_name):
         # data was already cached rather than being dropped or blocked on.
         'stale_symbols_count': len(fetch_report['failed']),
         'stale_symbols_sample': [s.replace('.NS', '') for s in fetch_report['failed'][:10]],
+        'cache_hits':           fetch_report['from_cache'],
+        'yf_fetches':           fetch_report['fetched'],
         # Most recent trading-day close actually reflected in the price data
         # used for this scan — distinct from 'time' above (when the scan
         # ran). The scan can complete instantly off cached data that's a day
@@ -451,6 +477,8 @@ def volar_ind_process():
                 scanned_count = cache.get('scanned_count', 0)
                 stale_symbols_count = cache.get('stale_symbols_count', 0)
                 stale_symbols_sample = cache.get('stale_symbols_sample', [])
+                cache_hits          = cache.get('cache_hits', 0)
+                yf_fetches          = cache.get('yf_fetches', 0)
                 price_data_asof = cache.get('price_data_asof')
         except (json.JSONDecodeError, OSError):
             pass
@@ -471,6 +499,8 @@ def volar_ind_process():
         excluded_count=excluded_count,
         scanned_count=scanned_count,
         stale_symbols_count=stale_symbols_count,
+        cache_hits=cache_hits,
+        yf_fetches=yf_fetches,
         stale_symbols_sample=stale_symbols_sample,
         price_data_asof=price_data_asof,
         history=history,
