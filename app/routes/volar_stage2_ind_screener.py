@@ -80,9 +80,11 @@ def fetch_index_data():
     (None, None) if both fail."""
     for ticker_sym, label in (PRIMARY_INDEX, FALLBACK_INDEX):
         try:
-            results, _ = get_price_history_bulk([ticker_sym], interval='1d', lookback_days=500)
-            idx_df = results.get(ticker_sym)
-            if idx_df is not None and not idx_df.empty and len(idx_df) >= 200:
+            results, _ = get_price_history_bulk([ticker_sym], interval="1d", lookback_days=500,
+                                        progress_callback=lambda *a: None)
+            idx_df_raw = results.get(ticker_sym)
+            idx_df = _normalise_df(idx_df_raw, ticker_sym)
+            if idx_df is not None and not idx_df.empty and 'Close' in idx_df.columns and len(idx_df) >= 200:
                 return idx_df, f"{label} ({ticker_sym})"
         except Exception as e:
             print(f"  Benchmark fetch failed for {ticker_sym}: {e}")
@@ -117,12 +119,58 @@ def compute_relative_strength(stock_close, index_close):
     return ((1 + stock_return) / (1 + index_return)) - 1
 
 
+
+def _normalise_df(df, sym=None):
+    """
+    Handles all three DataFrame formats from cache / yfinance:
+      - yf.Ticker(sym).history()     → simple string cols ('Close', etc.)
+      - yf.download([sym1, sym2...]) → MultiIndex tuple cols ('Close','TCS.NS')
+      - cache bulk fetch             → either of the above
+    Without this, MultiIndex DataFrames returned by the bulk fetch fail
+    silently on stock_df["Close"], causing most symbols to be skipped.
+    """
+    if df is None or df.empty:
+        return None
+    cols = df.columns
+    if isinstance(cols, pd.MultiIndex) or (len(cols) > 0 and isinstance(cols[0], tuple)):
+        if sym is not None:
+            for cand in [sym, sym.replace('.NS', ''), sym + '.NS']:
+                try:
+                    sliced = df.xs(cand, axis=1, level=1)
+                    sliced.columns = [c.title() for c in sliced.columns]
+                    return sliced
+                except KeyError:
+                    pass
+        flat_cols = {}
+        for c in cols:
+            field = c[0] if isinstance(c, tuple) else c
+            if field.lower() in ('open', 'high', 'low', 'close', 'volume'):
+                flat_cols[c] = field.title()
+        if flat_cols:
+            df = df[list(flat_cols.keys())].copy()
+            df.columns = list(flat_cols.values())
+            return df
+        return None
+    df = df.copy()
+    df.columns = [c.title() if isinstance(c, str) and
+                  c.lower() in ('open', 'high', 'low', 'close', 'volume')
+                  else c for c in df.columns]
+    return df
+
+
 def is_volar_candidate(symbol, index_df, stock_df):
     """Evaluates a single symbol against the Stage-2 criteria using a price
     history DataFrame that was already pulled from the shared cache — this
     function does no network I/O of its own."""
     try:
+        # Normalise both DataFrames — handles simple-column AND MultiIndex
+        # bulk-fetch output. Without this, stock_df["Close"] raises KeyError
+        # on MultiIndex DataFrames and the symbol is silently skipped.
+        stock_df  = _normalise_df(stock_df, symbol)
+        index_df  = _normalise_df(index_df)
         if stock_df is None or stock_df.empty or index_df is None or index_df.empty or len(stock_df) < 200:
+            return None
+        if 'Close' not in stock_df.columns or 'Close' not in index_df.columns:
             return None
 
         close = stock_df["Close"]
@@ -176,7 +224,7 @@ def screen_volar(symbols, index_df):
         _set_progress(stage="fetching_prices", processed=i, total=total, current_symbol=sym)
 
     price_data, fetch_report = get_price_history_bulk(
-        symbols, interval='1d', lookback_days=500, progress_callback=_fetch_progress
+        symbols, interval="1d", lookback_days=500, progress_callback=_fetch_progress
     )
     price_data_asof = latest_bar_date(price_data)
 
@@ -621,10 +669,13 @@ def view_favorites_india():
         # Same shared-cache bulk fetch as the main scan — a watchlist of even
         # a couple dozen symbols was previously hitting yfinance once per
         # symbol every time this page loaded.
-        price_data, _ = get_price_history_bulk(yf_symbols, interval='1d', lookback_days=500) if index_df is not None else ({}, {})
+        price_data, _ = get_price_history_bulk(yf_symbols, interval="1d", lookback_days=500,
+                                            progress_callback=lambda *a: None) if index_df is not None else ({}, {})
         for sym, yf_sym in zip(symbols, yf_symbols):
             try:
-                data = is_volar_candidate(yf_sym, index_df, price_data.get(yf_sym)) if index_df is not None else None
+                raw_df = price_data.get(yf_sym)
+                norm_df = _normalise_df(raw_df, yf_sym) if raw_df is not None else None
+                data = is_volar_candidate(yf_sym, index_df, norm_df) if index_df is not None else None
                 if data:
                     data['symbol_clean'] = sym
                     stocks.append(data)

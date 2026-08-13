@@ -1,97 +1,416 @@
 {% extends 'base_authenticated.html' %}
 {% block content %}
+<style>
+    .tabular-nums { font-variant-numeric: tabular-nums; }
+    .sortable-th { cursor: pointer; user-select: none; }
+    .sortable-th:hover { color: #4f46e5; }
+    .sort-arrow { display: inline-block; width: 10px; font-size: 9px; opacity: .8; }
+    .filter-chip[data-active="true"] { background: #4f46e5 !important; color: #fff !important; }
+    #runScanBtn { position: relative; overflow: hidden; }
+    #runScanBtnFill { position: absolute; inset: 0; width: 0%; background: rgba(0,0,0,0.22); transition: width .3s ease-out; }
+    #runScanBtnLabel { position: relative; z-index: 1; }
+</style>
+
 <div class="max-w-7xl mx-auto px-4 py-8">
-    <div class="flex justify-between items-center mb-8">
+
+    <!-- Header -->
+    <div class="flex flex-wrap justify-between items-start gap-4 mb-8">
         <div>
-            <h2 class="text-2xl font-black text-indigo-900 dark:text-indigo-300 uppercase tracking-tight">⚡ US - Volume Breakout & Gap up Screener</h2>
-            <p class="text-[7px] font-bold text-gray-400 dark:text-slate-500 mt-1 uppercase tracking-widest">
-                Last Run: <span class="text-blue-600 dark:text-blue-400">{{ last_processed_time|default('N/A') }}</span> | Source: {{ source_name|default('None') }}
+            <h2 class="text-2xl font-black text-indigo-900 dark:text-indigo-300 uppercase tracking-tight">⚡ US — Stage 2 Alpha Leaders</h2>
+            <p class="text-[10px] font-bold text-gray-400 dark:text-slate-500 mt-1 uppercase flex flex-wrap gap-x-2 gap-y-1">
+                <span>Last Run: <span class="text-blue-600 dark:text-blue-400">{{ last_time|default('N/A') }}</span></span>
+                {% if source_name %}<span class="text-gray-300 dark:text-slate-700">|</span><span>Source: {{ source_name }}</span>{% endif %}
+                <span class="text-gray-300 dark:text-slate-700">|</span>
+                <span>Benchmark: <span class="text-indigo-500 dark:text-indigo-300">{{ benchmark_label|default('S&amp;P 500 (^GSPC)') }}</span></span>
+                {% if price_data_asof %}
+                <span class="text-gray-300 dark:text-slate-700">|</span>
+                <span title="Most recent trading-day close in the cached price data.">Price Data As Of: <span class="text-emerald-500 dark:text-emerald-300">{{ price_data_asof }}</span></span>
+                {% endif %}
+                {% if cache_hits is not none and (cache_hits > 0 or yf_fetches > 0) %}
+                <span class="text-gray-300 dark:text-slate-700">|</span>
+                <span title="Symbols served from local SQLite cache vs re-fetched from yfinance">
+                    💾 Cache: <span class="text-emerald-500 dark:text-emerald-300">{{ cache_hits }} hits</span>
+                    <span class="text-gray-400 dark:text-slate-500">·</span>
+                    <span class="{% if yf_fetches > 0 %}text-amber-500 dark:text-amber-400{% else %}text-gray-400 dark:text-slate-500{% endif %}">{{ yf_fetches }} from yfinance</span>
+                </span>
+                {% endif %}
+                {% if scanned_count %}
+                <span class="text-gray-300 dark:text-slate-700">|</span>
+                <span>Scanned {{ scanned_count }} → {{ passed_count }} passed
+                    {% if excluded_count %}<span class="text-amber-500 dark:text-amber-400">({{ excluded_count }} excluded)</span>{% endif %}
+                </span>
+                {% endif %}
             </p>
         </div>
-        <div>
-            {% if both_stocks or vol_stocks or gap_stocks %}
-            <a href="{{ url_for('gap_volume.export_gap_volume_us') }}" class="bg-gray-900 dark:bg-slate-700 text-white px-5 py-2.5 rounded-xl text-[10px] font-bold hover:bg-black dark:hover:bg-slate-600 transition shadow-lg shadow-gray-200 dark:shadow-black/30 uppercase tracking-wider">
-                📥 Export All to CSV
-            </a>
-            {% endif %}
-        </div>
+        {% if both_stocks or vol_stocks or gap_stocks %}
+        <a href="{{ url_for('gap_volume.export_gap_volume_us') }}"
+           class="bg-gray-900 dark:bg-slate-700 text-white px-5 py-2.5 rounded-xl text-[10px] font-bold hover:bg-black dark:hover:bg-slate-600 transition shadow-lg shadow-gray-200 dark:shadow-black/30 uppercase shrink-0">
+            📥 Export All CSV
+        </a>
+        {% endif %}
     </div>
 
-    <div class="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm dark:shadow-none mb-8">
-        <form method="POST" enctype="multipart/form-data" class="flex flex-col md:flex-row items-end gap-6">
+    <!-- Banners -->
+    {% if scan_error %}<div class="mb-6 px-4 py-3 rounded-xl bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-900 text-[10px] font-bold text-red-600 dark:text-red-300 uppercase">⚠️ {{ scan_error }}</div>{% endif %}
+    {% if stale_symbols_count %}
+    <div class="mb-6 px-4 py-3 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-900 text-[10px] font-bold text-amber-600 dark:text-amber-300 uppercase"
+         title="{{ stale_symbols_sample|join(', ') }}">
+        ⚠️ {{ stale_symbols_count }} symbol{{ 's' if stale_symbols_count != 1 else '' }} weren't refreshed this run — used last cached data.
+    </div>
+    {% endif %}
+    {% if restored %}<div class="mb-6 px-4 py-3 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-900 text-[10px] font-bold text-emerald-600 dark:text-emerald-300 uppercase">✅ Restored results from the selected scan.</div>{% endif %}
+    {% if restore_error %}<div class="mb-6 px-4 py-3 rounded-xl bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-900 text-[10px] font-bold text-red-600 dark:text-red-300 uppercase">⚠️ Could not restore — snapshot may have been cleaned up.</div>{% endif %}
+
+    <!-- Scan Form (Memory #11 — clear form outside scan form) -->
+    <div class="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm dark:shadow-none mb-8">
+        {% if not is_default_source %}
+        <form id="clearSourceForm" method="POST"
+              action="{{ url_for('gap_volume.gap_vol_us_clear_source') }}" class="hidden">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <div class="flex-1 w-full text-xs">
-                <label class="block text-[10px] font-bold uppercase text-gray-400 dark:text-slate-500 mb-2 tracking-widest">S&P 500 Ticker CSV (Optional)</label>
-                <input type="file" name="file" accept=".csv" class="w-full text-gray-500 dark:text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-[10px] file:font-bold file:bg-blue-50 dark:file:bg-blue-500/10 file:text-blue-700 dark:file:text-blue-300">
+        </form>
+        {% endif %}
+
+        <form id="scanForm" method="POST" enctype="multipart/form-data" class="flex flex-row items-center gap-3">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" id="useDefaultUs" name="use_default" value="0">
+
+            <!-- 📁 Single-row dropzone (Memory #10) -->
+            <div class="flex-1 min-w-0">
+                <div id="dropzone"
+                     class="flex items-center gap-2 border-2 border-dashed border-gray-200 dark:border-slate-700 rounded-xl px-3 py-2.5 cursor-pointer hover:border-blue-400 dark:hover:border-blue-500 transition bg-gray-50/60 dark:bg-slate-800/40"
+                     onclick="document.getElementById('csvFileInput').click()">
+                    <input type="file" id="csvFileInput" name="file" accept=".csv,.xlsx,.xls" class="hidden">
+                    <span class="text-base leading-none shrink-0">📁</span>
+                    <span id="dropzoneEmpty" class="text-[10px] font-bold text-gray-400 dark:text-slate-500 uppercase">Drag &amp; Drop CSV / XLSX or click to browse</span>
+                    <span id="dropzoneFilled" class="hidden items-center gap-2 flex-1 min-w-0">
+                        <span id="dropzoneFilename" class="text-[10px] font-black text-blue-700 dark:text-blue-300 truncate"></span>
+                        <span id="dropzoneFilesize" class="text-[9px] text-gray-400 dark:text-slate-500 shrink-0"></span>
+                        <button type="button" onclick="clearDropzone(event)"
+                                class="ml-1 w-4 h-4 flex items-center justify-center rounded-full text-gray-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-500/10 text-xs font-black transition shrink-0">✕</button>
+                    </span>
+                </div>
+                <!-- Active source row (Memory #9) -->
+                <div class="mt-1.5 flex flex-wrap items-center gap-2 text-[9px]">
+                    {% if is_default_source %}
+                    <span class="font-bold text-blue-500 dark:text-blue-400 uppercase">📊 Source: {{ default_label }}</span>
+                    {% else %}
+                    <span class="font-bold text-green-600 dark:text-emerald-400 uppercase">✅ Source: {{ active_file }}</span>
+                    <button type="button"
+                            onclick="document.getElementById('useDefaultUs').value='1'; document.getElementById('scanForm').requestSubmit();"
+                            class="px-2 py-0.5 rounded-full border border-blue-200 dark:border-blue-500/30 text-blue-600 dark:text-blue-400 font-black uppercase hover:bg-blue-50 dark:hover:bg-blue-500/10 transition">
+                        📊 Use Default
+                    </button>
+                    <button type="button"
+                            onclick="if(confirm('Clear uploaded file? Next scan will use S&amp;P 500 default.')) document.getElementById('clearSourceForm').submit();"
+                            class="px-2 py-0.5 rounded-full border border-red-200 dark:border-red-500/30 text-red-500 dark:text-red-400 font-black uppercase hover:bg-red-50 dark:hover:bg-red-500/10 transition">
+                        ✕ Clear
+                    </button>
+                    {% endif %}
+                </div>
             </div>
-            <button type="submit" onclick="document.getElementById('spinner').classList.remove('hidden')" class="bg-indigo-600 text-white px-8 py-3 rounded-xl font-black text-xs uppercase hover:bg-indigo-700 transition flex items-center gap-2 shadow-lg shadow-indigo-200 dark:shadow-indigo-950/40">
-                <span>🚀 Run Tactical Scan</span>
-                <span id="spinner" class="hidden animate-spin">⏳</span>
+
+            <button id="runScanBtn" type="submit"
+                    class="shrink-0 bg-indigo-600 text-white px-6 py-2.5 rounded-xl font-black text-xs uppercase hover:bg-indigo-700 transition shadow-lg shadow-indigo-200 dark:shadow-indigo-950/40 disabled:opacity-90 disabled:cursor-not-allowed">
+                <span id="runScanBtnFill"></span>
+                <span id="runScanBtnLabel">⚡ Run Tactical Scan</span>
             </button>
         </form>
     </div>
 
-    {% macro render_us_table(table_id, stock_list, section_title, indicator_color) %}
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm dark:shadow-none overflow-hidden mb-12">
-        <div class="px-6 py-4 bg-gray-50 dark:bg-slate-800/60 border-b border-gray-100 dark:border-slate-800 flex justify-between items-center">
+    <!-- Global filter chips -->
+    <div class="flex flex-wrap items-center gap-3 mb-6">
+        <span class="text-[9px] font-black uppercase text-gray-400 dark:text-slate-500">Filter all sections:</span>
+        <button class="filter-chip px-3 py-1.5 rounded-full text-[9px] font-black uppercase bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400 transition" data-filter="all"          data-active="true" onclick="setGlobalFilter('all',this)">All</button>
+        <button class="filter-chip px-3 py-1.5 rounded-full text-[9px] font-black uppercase bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400 transition" data-filter="rs90"          onclick="setGlobalFilter('rs90',this)"         title="RS percentile ≥ 90">🏆 RS ≥ 90</button>
+        <button class="filter-chip px-3 py-1.5 rounded-full text-[9px] font-black uppercase bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400 transition" data-filter="rising"        onclick="setGlobalFilter('rising',this)"       title="RS rising every scan">🔥 Rising RS</button>
+        <button class="filter-chip px-3 py-1.5 rounded-full text-[9px] font-black uppercase bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400 transition" data-filter="institutional"  onclick="setGlobalFilter('institutional',this)" title="Volume ratio ≥ 2.5× avg (institutional surge)">🏦 Institutional Surge</button>
+        <button class="filter-chip px-3 py-1.5 rounded-full text-[9px] font-black uppercase bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400 transition" data-filter="new"           onclick="setGlobalFilter('new',this)"          title="New entrant this scan">🆕 New Entrants</button>
+        <button class="filter-chip px-3 py-1.5 rounded-full text-[9px] font-black uppercase bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400 transition" data-filter="rocket"        onclick="setGlobalFilter('rocket',this)"       title="RS≥90 + Rising RS + Institutional Surge">🚀 Rockets</button>
+        <input id="globalSearch" type="text" placeholder="🔎 Symbol…"
+               class="text-[10px] px-3 py-2 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-400 w-36 ml-2"
+               oninput="setGlobalSearch(this.value)">
+        <span class="text-[9px] font-bold text-gray-400 dark:text-slate-500 uppercase ml-1">Total visible: <span id="totalVisible">0</span></span>
+    </div>
+
+    <!-- Section macro -->
+    {% macro render_section(table_id, stock_list, title, badge_cls, section_key) %}
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm dark:shadow-none overflow-hidden mb-10">
+        <div class="px-6 py-3.5 bg-gray-50 dark:bg-slate-800/60 border-b border-gray-100 dark:border-slate-800 flex justify-between items-center">
             <h3 class="text-xs font-black uppercase tracking-wider text-gray-700 dark:text-slate-300 flex items-center gap-2">
-                <span class="w-2 h-2 rounded-full {{ indicator_color }}"></span> {{ section_title }}
+                <span class="w-2 h-2 rounded-full {{ badge_cls }} inline-block"></span>{{ title }}
             </h3>
-            <span class="text-[9px] font-bold bg-white dark:bg-slate-800 px-2 py-0.5 rounded-md border border-gray-100 dark:border-slate-700 text-gray-500 dark:text-slate-400">Hits: {{ stock_list|length }}</span>
+            <span class="text-[9px] font-bold bg-white dark:bg-slate-800 px-2 py-0.5 rounded-md border border-gray-100 dark:border-slate-700 text-gray-500 dark:text-slate-400">
+                Hits: {{ stock_list|length }} · Visible: <span id="vis_{{ section_key }}">{{ stock_list|length }}</span>
+            </span>
         </div>
+        <div class="overflow-x-auto">
         <table class="min-w-full text-left text-xs" id="{{ table_id }}">
-            <thead class="bg-gray-100/50 dark:bg-slate-800/40 border-b border-gray-100 dark:border-slate-800">
+            <thead class="bg-gray-50/70 dark:bg-slate-800/40 border-b border-gray-100 dark:border-slate-800 sticky top-0 z-10">
                 <tr>
-                    <th class="px-6 py-3 font-bold uppercase text-gray-400 dark:text-slate-400 w-16">Rank</th>
-                    <th class="px-6 py-3 font-bold uppercase text-gray-400 dark:text-slate-400">Symbol</th>
-                    <th class="px-6 py-3 font-bold uppercase text-gray-400 dark:text-slate-400">Price</th> 
-                    <th class="px-6 py-3 font-bold uppercase text-gray-400 dark:text-slate-400 text-center">RS %tile (3M)</th>
-                    <th class="px-6 py-3 font-bold uppercase text-gray-400 dark:text-slate-400">Vol Ratio</th>
-                    <th class="px-6 py-3 font-bold uppercase text-gray-400 dark:text-slate-400">52W Pullback</th>
-                    <th class="px-6 py-3 font-bold uppercase text-gray-400 dark:text-slate-400 text-right">Alert Status</th>
+                    <th class="sortable-th px-6 py-3 font-bold uppercase text-gray-400 dark:text-slate-400" data-sort="rank" data-type="num">Rank <span class="sort-arrow">▲</span></th>
+                    <th class="sortable-th px-6 py-3 font-bold uppercase text-gray-400 dark:text-slate-400" data-sort="rankdiff" data-type="num" title="Rank change vs previous scan">Δ <span class="sort-arrow"></span></th>
+                    <th class="sortable-th px-6 py-3 font-bold uppercase text-gray-400 dark:text-slate-400" data-sort="symbol" data-type="text">Symbol <span class="sort-arrow"></span></th>
+                    <th class="sortable-th px-6 py-3 font-bold uppercase text-gray-400 dark:text-slate-400 text-right tabular-nums" data-sort="price" data-type="num">Price ($) <span class="sort-arrow"></span></th>
+                    <th class="sortable-th px-6 py-3 font-bold uppercase text-indigo-400 dark:text-indigo-300 text-center" data-sort="rspct" data-type="num" data-default-sort="desc"
+                        title="True RS vs S&P 500 — percentile within today's Stage-2 shortlist (above EMA200)">
+                        RS %tile ⓘ <span class="sort-arrow"></span>
+                    </th>
+                    <th class="sortable-th px-6 py-3 font-bold uppercase text-gray-400 dark:text-slate-400 text-right tabular-nums" data-sort="volratio" data-type="num" data-default-sort="desc">Vol Ratio <span class="sort-arrow"></span></th>
+                    <th class="sortable-th px-6 py-3 font-bold uppercase text-gray-400 dark:text-slate-400 text-right tabular-nums" data-sort="pullback" data-type="num">52W Pullback % <span class="sort-arrow"></span></th>
+                    <th class="px-6 py-3 font-bold uppercase text-gray-400 dark:text-slate-400 text-right">Alert</th>
                 </tr>
             </thead>
-            <tbody class="divide-y divide-gray-50 dark:divide-slate-800">
+            <tbody class="divide-y divide-gray-50 dark:divide-slate-800" id="body_{{ section_key }}">
                 {% for stock in stock_list %}
-                <tr class="hover:bg-indigo-50/20 dark:hover:bg-indigo-500/10 transition-colors">
-                    <td class="px-6 py-4 font-bold text-gray-300 dark:text-slate-600">#{{ stock.rank }}</td>
+                <tr class="hover:bg-indigo-50/30 dark:hover:bg-indigo-500/10 transition-colors"
+                    data-symbol="{{ stock.symbol|lower }}"
+                    data-rank="{{ stock.rank }}"
+                    data-rankdiff="{{ stock.rank_diff if stock.rank_status != 'new' else 9999 }}"
+                    data-rspct="{{ stock.rs_percentile|default(0) }}"
+                    data-volratio="{{ stock.volume_ratio }}"
+                    data-pullback="{{ stock.pullback_pct }}"
+                    data-price="{{ stock.price }}"
+                    data-rsup="{{ '1' if stock.rs_up else '0' }}"
+                    data-institutional="{{ '1' if stock.high_volume_alert else '0' }}"
+                    data-rankstatus="{{ stock.rank_status|default('stable') }}"
+                    data-rankdiff2="{{ stock.rank_diff|default(0) }}"
+                    data-section="{{ section_key }}">
+
+                    <td class="px-6 py-4 font-bold text-gray-400 dark:text-slate-500 tabular-nums">
+                        {{ stock.rank }}
+                        {% if stock.rs_up and stock.rs_percentile|default(0) >= 90 and stock.high_volume_alert %}<span class="ml-1" title="Rocket: RS rising + RS≥90 + Institutional Surge">🚀</span>
+                        {% elif stock.rs_up %}<span class="ml-1" title="RS rising every scan">🔥</span>{% endif %}
+                    </td>
+
+                    <td class="px-6 py-4 tabular-nums text-[10px] font-bold">
+                        {% if stock.rank_status == 'new' %}
+                        <span class="text-[9px] px-2 py-1 bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-300 rounded font-bold uppercase">New</span>
+                        {% elif stock.rank_diff > 0 %}<span class="text-green-600 dark:text-emerald-400">▲ {{ stock.rank_diff }}</span>
+                        {% elif stock.rank_diff < 0 %}<span class="text-red-500 dark:text-red-400">▼ {{ -stock.rank_diff }}</span>
+                        {% else %}<span class="text-gray-300 dark:text-slate-600">— 0</span>{% endif %}
+                    </td>
+
                     <td class="px-6 py-4 font-black text-indigo-700 dark:text-indigo-300">
-                        <div class="flex items-center gap-2">
-                            <span>{{ stock.symbol }}</span>
-                            <button onclick="navigator.clipboard.writeText('{{ stock.symbol }}')" class="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded opacity-40 group-hover:opacity-100 transition-opacity focus:opacity-100" title="Copy Ticker">
-                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0A2.25 2.25 0 0113.5 4.5h-3a2.25 2.25 0 01-2.166-1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.75c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 011.927-.184"></path></svg>
-                            </button>
+                        {{ stock.symbol }}
+                        <button type="button" onclick="copyTicker(this,'{{ stock.symbol }}')"
+                                class="copy-ticker-btn p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded transition-colors" title="Copy Ticker">
+                            <svg class="w-3 h-3 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0A2.25 2.25 0 0113.5 4.5h-3a2.25 2.25 0 01-2.166-1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.75c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 011.927-.184"></path></svg>
+                        </button>
+                    </td>
+
+                    <!-- Price: $ in header, raw number in cell (Memory #1) -->
+                    <td class="px-6 py-4 font-bold text-gray-900 dark:text-slate-100 text-right tabular-nums">{{ stock.price }}</td>
+
+                    <!-- RS %tile: badge + per-segment bars (Memory #6) -->
+                    <td class="px-6 py-4 text-center">
+                        <div class="inline-block px-3 py-1 rounded-full text-[10px] font-black min-w-[38px]
+                             {% if stock.rs_up %}bg-emerald-500 text-white shadow-sm{% elif stock.rs_percentile|default(0) >= 90 %}bg-indigo-600 text-white shadow-sm{% elif stock.rs_percentile|default(0) >= 70 %}bg-indigo-100 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300{% else %}bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400{% endif %}">
+                            {{ stock.rs_percentile|default('—') }}
+                        </div>
+                        <div class="flex items-end justify-center gap-[2px] h-4 mt-1"
+                             title="Last {{ stock.rs_h|length }} scans: {{ stock.rs_h|join(' → ') }}">
+                            {% for val in stock.rs_h %}
+                            <div class="w-[3px] rounded-sm {% if not loop.first and val > stock.rs_h[loop.index0-1] %}bg-emerald-400{% elif not loop.first and val < stock.rs_h[loop.index0-1] %}bg-red-400{% else %}bg-slate-400 dark:bg-slate-600{% endif %}"
+                                 style="height: {{ [(val*0.16)|round(1), 2]|max }}px;"></div>
+                            {% endfor %}
                         </div>
                     </td>
-                    <td class="px-6 py-4 font-bold text-gray-900 dark:text-slate-100">${{ stock.price }}</td> 
-                    <td class="px-6 py-4 text-center">
-                        <span class="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-black {% if stock.rs_percentile >= 90 %}bg-green-600 text-white{% elif stock.rs_percentile >= 70 %}bg-blue-600 text-white{% else %}bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400{% endif %}">
-                            {{ stock.rs_percentile }}th
+
+                    <td class="px-6 py-4 text-right tabular-nums">
+                        <span class="font-bold {% if stock.volume_ratio >= 2.5 %}text-red-600 dark:text-red-400{% elif stock.volume_ratio >= 1.5 %}text-amber-600 dark:text-amber-300{% else %}text-gray-600 dark:text-slate-400{% endif %}">
+                            {{ stock.volume_ratio }}×
                         </span>
                     </td>
-                    <td class="px-6 py-4 font-bold text-gray-700 dark:text-slate-300">{{ stock.volume_ratio }}x</td>
-                    <td class="px-6 py-4 text-gray-400 dark:text-slate-500">{{ stock.pullback_pct }}% off high</td>
+
+                    <td class="px-6 py-4 text-right tabular-nums">
+                        <span class="font-bold {% if stock.pullback_pct <= 10 %}text-green-600 dark:text-emerald-400{% elif stock.pullback_pct <= 20 %}text-gray-700 dark:text-slate-300{% else %}text-amber-500 dark:text-amber-400{% endif %}">
+                            {{ stock.pullback_pct }}%
+                        </span>
+                    </td>
+
                     <td class="px-6 py-4 text-right">
                         {% if stock.high_volume_alert %}
-                            <span class="text-[8px] px-2 py-0.5 bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 rounded font-black uppercase tracking-wider border border-red-100 dark:border-red-900/30 animate-pulse">Institutional Surge 🔥</span>
+                        <span class="text-[8px] px-2 py-0.5 bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 rounded font-black uppercase border border-red-100 dark:border-red-900/30 animate-pulse">Surge 🔥</span>
                         {% else %}
-                            <span class="text-[8px] px-2 py-0.5 bg-gray-50 dark:bg-slate-800 text-gray-500 dark:text-slate-400 rounded font-bold uppercase">Passed</span>
+                        <span class="text-[8px] px-2 py-0.5 bg-gray-50 dark:bg-slate-800 text-gray-400 dark:text-slate-500 rounded font-bold uppercase">Passed</span>
                         {% endif %}
                     </td>
                 </tr>
                 {% else %}
-                <tr>
-                    <td colspan="7" class="px-6 py-8 text-center text-gray-400 dark:text-slate-500 italic bg-gray-50/30 dark:bg-slate-800/20">No assets detected inside this specific momentum profile block selection.</td>
-                </tr>
+                <tr><td colspan="8" class="px-6 py-10 text-center text-gray-400 dark:text-slate-500 italic">No stocks in this section.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
+        </div>
     </div>
     {% endmacro %}
 
-    {{ render_us_table('tableBoth', both_stocks, 'Section 1: Stage 2 Alpha Leaders (Volume Breakout + Active Gap Up)', 'bg-emerald-500') }}
-    {{ render_us_table('tableVol', vol_stocks, 'Section 2: Stage 2 Structural Volume Breakouts', 'bg-blue-500') }}
-    {{ render_us_table('tableGap', gap_stocks, 'Section 3: Stage 2 Velocity Gaps', 'bg-amber-500') }}
+    {{ render_section('tableAlpha', both_stocks, 'Section 1 — Stage 2 Alpha Leaders (Volume Breakout + Gap Up)', 'bg-emerald-500', 'both') }}
+    {{ render_section('tableVol',   vol_stocks,  'Section 2 — Stage 2 Volume Breakouts',                         'bg-blue-500',    'vol') }}
+    {{ render_section('tableGap',   gap_stocks,  'Section 3 — Stage 2 Velocity Gaps',                           'bg-amber-500',   'gap') }}
 
+    <!-- Legend -->
+    <div class="flex flex-wrap gap-3 mb-6 text-[9px] font-bold uppercase">
+        <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-emerald-500 inline-block"></span> RS rising every scan</span>
+        <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-indigo-600 inline-block"></span> RS ≥ 90th %tile</span>
+        <span class="flex items-center gap-1.5">🚀 RS≥90 + Rising + Surge (highest conviction)</span>
+        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 bg-red-400 inline-block rounded"></span> Vol ≥ 2.5× avg (institutional)</span>
+        <span class="text-gray-400 dark:text-slate-500">· RS%tile = true RS vs S&amp;P 500 · All above EMA200 · Click any column to sort</span>
+    </div>
+
+    <!-- Scan History (Memory #5 / #11) -->
+    <div class="bg-white dark:bg-slate-900 rounded-xl border border-gray-100 dark:border-slate-800 shadow-sm dark:shadow-none">
+        <p class="px-4 py-2.5 text-[9px] font-black text-gray-400 dark:text-slate-500 uppercase tracking-widest border-b border-gray-50 dark:border-slate-800">
+            🕒 Last 5 US Scans History ({{ history|length }})
+        </p>
+        <div class="divide-y divide-gray-50 dark:divide-slate-800">
+            {% for entry in history %}
+            <div class="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2.5 text-[10px]">
+                <span class="font-black text-blue-500 dark:text-blue-400 uppercase whitespace-nowrap w-[130px] shrink-0">{{ entry.time }}</span>
+                {% if entry.source %}<span class="font-bold text-gray-600 dark:text-slate-400 truncate flex-1 min-w-[80px]">{{ entry.source }}</span>{% endif %}
+                <span class="font-black text-gray-800 dark:text-slate-200 whitespace-nowrap">{{ entry.count }} total</span>
+                <span class="text-[9px] text-gray-400 dark:text-slate-500 whitespace-nowrap">
+                    🟢 {{ entry.count_both|default(0) }} both
+                    · 🔵 {{ entry.count_vol|default(0) }} vol
+                    · 🟡 {{ entry.count_gap|default(0) }} gap
+                </span>
+                {% if entry.leaders_90 %}
+                <span class="text-[9px] font-bold text-yellow-600 dark:text-yellow-400 whitespace-nowrap"
+                      title="Stocks scoring RS %tile ≥ 90">🏆 {{ entry.leaders_90|length }} RS90+</span>
+                {% endif %}
+                {% if entry.benchmark_label %}
+                <span class="text-[9px] text-gray-400 dark:text-slate-500 whitespace-nowrap">{{ entry.benchmark_label }}</span>
+                {% endif %}
+                {% if entry.price_data_asof %}
+                <span class="text-[9px] text-gray-400 dark:text-slate-500 whitespace-nowrap">Data: {{ entry.price_data_asof }}</span>
+                {% endif %}
+                {% if entry.snapshot_file %}
+                <form method="POST"
+                      action="{{ url_for('gap_volume.restore_gap_vol_us', snapshot_file=entry.snapshot_file) }}"
+                      class="ml-auto shrink-0">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button type="submit"
+                            onclick="return confirm('Restore results from this scan? This replaces what is currently displayed.');"
+                            class="text-[9px] font-black uppercase text-indigo-500 hover:text-white hover:bg-indigo-600 px-2.5 py-1 rounded-full border border-indigo-200 dark:border-indigo-500/30 transition">
+                        ↺ Restore
+                    </button>
+                </form>
+                {% endif %}
+            </div>
+            {% endfor %}
+            {% if not history %}
+            <p class="px-4 py-3 text-[10px] text-gray-400 dark:text-slate-500 italic">No scans yet.</p>
+            {% endif %}
+        </div>
+    </div>
 </div>
+
+<script>
+const PROGRESS_URL = "{{ url_for('gap_volume.gap_vol_us_progress') }}";
+const scanBtn   = document.getElementById('runScanBtn');
+const scanFill  = document.getElementById('runScanBtnFill');
+const scanLabel = document.getElementById('runScanBtnLabel');
+
+function setButtonScanning(on) { scanBtn.disabled=on; scanBtn.classList.toggle('cursor-not-allowed',on); scanBtn.classList.toggle('opacity-90',on); }
+function updateButtonProgress(pct,label) { scanFill.style.width=pct+'%'; scanLabel.textContent=label; }
+
+function pollButtonProgress() {
+    fetch(PROGRESS_URL).then(r=>r.json()).then(data=>{
+        const pct = data.total>0 ? Math.round((data.processed/data.total)*100) : 0;
+        if      (data.stage==='loading_symbols')    updateButtonProgress(3,'Loading S&P 500 list…');
+        else if (data.stage==='fetching_benchmark') updateButtonProgress(6,'Fetching ^GSPC…');
+        else if (data.stage==='fetching_prices')    updateButtonProgress(Math.max(pct,8),`Fetching Prices… ${pct}% (${data.processed}/${data.total})`);
+        else if (data.stage==='screening')          updateButtonProgress(Math.max(pct,92),`Screening… ${pct}%`);
+        else if (data.stage==='error') { updateButtonProgress(0,'⚠️ Scan Failed'); setTimeout(()=>window.location.href=window.location.pathname,1200); return; }
+        else if (!data.active) { updateButtonProgress(100,'✅ Complete'); setTimeout(()=>window.location.href=window.location.pathname,500); return; }
+        setTimeout(pollButtonProgress,700);
+    }).catch(()=>setTimeout(pollButtonProgress,1500));
+}
+
+document.getElementById('scanForm').addEventListener('submit',function(e){
+    e.preventDefault();
+    setTimeout(()=>{ setButtonScanning(true); },0);
+    updateButtonProgress(2,'Starting…');
+    fetch(window.location.pathname,{method:'POST',body:new FormData(e.target)})
+        .then(()=>pollButtonProgress()).catch(()=>pollButtonProgress());
+});
+
+{% if is_scanning %}setButtonScanning(true); pollButtonProgress();{% endif %}
+
+// Dropzone
+const fileInput=document.getElementById('csvFileInput'), dropzone=document.getElementById('dropzone');
+const dzEmpty=document.getElementById('dropzoneEmpty'), dzFilled=document.getElementById('dropzoneFilled');
+const dzFilename=document.getElementById('dropzoneFilename'), dzFilesize=document.getElementById('dropzoneFilesize');
+function fmtBytes(b){return b<1024?b+' B':b<1048576?(b/1024).toFixed(1)+' KB':(b/1048576).toFixed(1)+' MB';}
+function showFile(f){dzFilename.textContent=f.name; dzFilesize.textContent=fmtBytes(f.size); dzEmpty.classList.add('hidden'); dzFilled.classList.remove('hidden'); dzFilled.classList.add('flex');}
+fileInput.addEventListener('change',()=>{if(fileInput.files.length)showFile(fileInput.files[0]);});
+function clearDropzone(evt){evt.stopPropagation();fileInput.value='';dzFilled.classList.add('hidden');dzFilled.classList.remove('flex');dzEmpty.classList.remove('hidden');}
+['dragenter','dragover'].forEach(e=>dropzone.addEventListener(e,ev=>{ev.preventDefault();dropzone.classList.add('border-blue-400');}));
+['dragleave','drop'].forEach(e=>dropzone.addEventListener(e,ev=>{ev.preventDefault();dropzone.classList.remove('border-blue-400');}));
+dropzone.addEventListener('drop',e=>{const f=e.dataTransfer.files;if(f.length){fileInput.files=f;showFile(f[0]);}});
+
+// Per-table sort
+function initSort(tableId){
+    const table=document.getElementById(tableId); if(!table)return;
+    let ck='rank',cd=1;
+    table.querySelectorAll('th[data-sort]').forEach(th=>{
+        th.addEventListener('click',()=>{
+            const key=th.dataset.sort,type=th.dataset.type||'num';
+            const dir=(ck===key)?-cd:1; ck=key; cd=dir;
+            const tbody=table.querySelector('tbody');
+            const rows=Array.from(tbody.querySelectorAll('tr[data-symbol]'));
+            rows.sort((a,b)=>{
+                let va=a.dataset[key]??'',vb=b.dataset[key]??'';
+                if(type==='num'){va=parseFloat(va);vb=parseFloat(vb);}
+                else{va=va.toLowerCase();vb=vb.toLowerCase();}
+                return(va<vb?-1:va>vb?1:0)*dir;
+            });
+            rows.forEach(r=>tbody.appendChild(r));
+            table.querySelectorAll('th[data-sort]').forEach(h=>{
+                const a=h.querySelector('.sort-arrow');
+                if(a)a.textContent=h.dataset.sort===key?(dir===1?'▲':'▼'):'';
+            });
+            applyAllFilters();
+        });
+    });
+}
+['tableAlpha','tableVol','tableGap'].forEach(initSort);
+
+// Global filters
+let globalFilter='all',globalSearch='';
+function setGlobalFilter(val,btn){globalFilter=val;document.querySelectorAll('.filter-chip').forEach(b=>b.dataset.active='false');btn.dataset.active='true';applyAllFilters();}
+function setGlobalSearch(val){globalSearch=val.trim().toLowerCase();applyAllFilters();}
+
+function applyAllFilters(){
+    const sections=[{id:'tableAlpha',vis:'vis_both'},{id:'tableVol',vis:'vis_vol'},{id:'tableGap',vis:'vis_gap'}];
+    let total=0;
+    sections.forEach(({id,vis})=>{
+        const tbl=document.getElementById(id); if(!tbl)return;
+        const rows=Array.from(tbl.querySelectorAll('tbody tr[data-symbol]'));
+        let shown=0;
+        rows.forEach(row=>{
+            const rspct=parseFloat(row.dataset.rspct||0);
+            const rsup=row.dataset.rsup==='1';
+            const inst=row.dataset.institutional==='1';
+            const status=row.dataset.rankstatus;
+            const sym=row.dataset.symbol;
+            let match=true;
+            if      (globalFilter==='rs90')         match=rspct>=90;
+            else if (globalFilter==='rising')        match=rsup;
+            else if (globalFilter==='institutional') match=inst;
+            else if (globalFilter==='new')           match=status==='new';
+            else if (globalFilter==='rocket')        match=rspct>=90&&rsup&&inst;
+            const srch=!globalSearch||sym.includes(globalSearch);
+            if(match&&srch){row.style.display='';shown++;}else{row.style.display='none';}
+        });
+        const el=document.getElementById(vis); if(el)el.textContent=shown;
+        total+=shown;
+    });
+    const tv=document.getElementById('totalVisible'); if(tv)tv.textContent=total;
+}
+applyAllFilters();
+
+// Silent copy
+function copyTicker(btn,symbol){navigator.clipboard.writeText(symbol).then(()=>{btn.classList.add('text-emerald-500');setTimeout(()=>btn.classList.remove('text-emerald-500'),600);}).catch(()=>{});}
+</script>
 {% endblock %}

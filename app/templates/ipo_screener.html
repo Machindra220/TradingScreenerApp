@@ -1,0 +1,334 @@
+{% extends "base_authenticated.html" %}
+{% block title %}IPO Swing Trading Screener (NSE/BSE){% endblock %}
+
+{% block content %}
+<style>
+    .tabular-nums { font-variant-numeric: tabular-nums; }
+    .sortable-th { cursor: pointer; user-select: none; }
+    .sortable-th:hover { color: #6366f1; }
+    .preset-chip { transition: all 0.2s ease; }
+    .preset-chip.active { background-color: #4f46e5 !important; color: #ffffff !important; border-color: #6366f1 !important; }
+</style>
+
+<div class="max-w-7xl mx-auto px-4 py-8" x-data="{ selectedStock: null, modalOpen: false, filterOpen: false }">
+
+    <!-- Top Header & Context Bar -->
+    <div class="flex flex-wrap justify-between items-start gap-4 mb-6">
+        <div>
+            <h2 class="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight flex items-center gap-2">
+                🚀 IPO Swing Trading Screener
+            </h2>
+            <p class="text-[10px] font-bold text-slate-400 dark:text-slate-500 mt-1 uppercase flex flex-wrap gap-x-2 gap-y-1">
+                <span>Last Run: <span class="text-indigo-600 dark:text-indigo-400">{{ last_time|default('N/A') }}</span></span>
+                {% if source_name %}<span class="text-slate-300">|</span><span>Source: {{ source_name }}</span>{% endif %}
+                <span class="text-slate-300">|</span>
+                <span>Benchmark: <span class="text-blue-500">{{ benchmark_label|default('Nifty 500 (^CRSLDX)') }}</span></span>
+                {% if price_data_asof %}
+                <span class="text-slate-300">|</span>
+                <span>Data As Of: <span class="text-emerald-500">{{ price_data_asof }}</span></span>
+                {% endif %}
+            </p>
+        </div>
+        <div class="flex items-center gap-2">
+            <button @click="filterOpen = !filterOpen" class="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-4 py-2.5 rounded-xl text-xs font-bold uppercase hover:bg-slate-200 transition">
+                ⚙️ Advanced Filters
+            </button>
+            {% if stocks %}
+            <a href="{{ url_for('ipo_screener.export_ipo_csv') }}" class="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 rounded-xl text-xs font-bold uppercase transition shadow-md">
+                📥 Export CSV
+            </a>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Upload & Scan Controls -->
+    <div class="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm mb-6">
+        <form id="scanForm" method="POST" enctype="multipart/form-data" class="flex flex-row items-center gap-4">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <div class="flex-1">
+                <input type="file" name="file" accept=".csv,.xlsx,.xls" class="w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-[10px] file:font-bold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer">
+            </div>
+            <button id="runScanBtn" type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-xl font-black text-xs uppercase shadow-lg shadow-indigo-100 dark:shadow-none transition shrink-0">
+                <span>🚀 Execute IPO Scan</span>
+            </button>
+        </form>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-6 gap-3 mb-6">
+        <div class="bg-white dark:bg-slate-900 p-3 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm">
+            <span class="text-[9px] font-black uppercase text-slate-400 block">Scanned / Passed</span>
+            <span class="text-base font-black text-slate-800 dark:text-white">{{ scanned_count }} / {{ passed_count }}</span>
+        </div>
+        <div class="bg-white dark:bg-slate-900 p-3 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm">
+            <span class="text-[9px] font-black uppercase text-emerald-500 block">Strong Candidates</span>
+            <span class="text-base font-black text-emerald-600">{{ stocks | selectattr('score', '>=', 70) | list | length }}</span>
+        </div>
+        <div class="bg-white dark:bg-slate-900 p-3 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm">
+            <span class="text-[9px] font-black uppercase text-blue-500 block">50D Breakouts</span>
+            <span class="text-base font-black text-blue-600">{{ stocks | selectattr('breakout_50d', 'true') | list | length }}</span>
+        </div>
+        <div class="bg-white dark:bg-slate-900 p-3 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm">
+            <span class="text-[9px] font-black uppercase text-purple-500 block">Volume Surges (RVOL>=1.5)</span>
+            <span class="text-base font-black text-purple-600">{{ stocks | selectattr('rvol', '>=', 1.5) | list | length }}</span>
+        </div>
+        <div class="bg-white dark:bg-slate-900 p-3 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm">
+            <span class="text-[9px] font-black uppercase text-amber-500 block">Gap-Up Stocks</span>
+            <span class="text-base font-black text-amber-600">{{ stocks | selectattr('has_gap', 'true') | list | length }}</span>
+        </div>
+        <div class="bg-white dark:bg-slate-900 p-3 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm">
+            <span class="text-[9px] font-black uppercase text-indigo-500 block">HH + HL Structures</span>
+            <span class="text-base font-black text-indigo-600">{{ stocks | selectattr('hh', 'true') | selectattr('hl', 'true') | list | length }}</span>
+        </div>
+    </div>
+
+    <!-- Presets Bar -->
+    <div class="flex flex-wrap items-center gap-2 mb-6">
+        <span class="text-[9px] font-black uppercase text-slate-400 mr-2">Scan Presets:</span>
+        <button class="preset-chip active px-3 py-1.5 rounded-xl text-[9px] font-black uppercase border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300" onclick="applyPreset('all', this)">All Stocks</button>
+        <button class="preset-chip px-3 py-1.5 rounded-xl text-[9px] font-black uppercase border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300" onclick="applyPreset('early_uptrend', this)">Scan 1: Early Uptrend</button>
+        <button class="preset-chip px-3 py-1.5 rounded-xl text-[9px] font-black uppercase border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300" onclick="applyPreset('strong_trend', this)">Scan 2: Strong Trend</button>
+        <button class="preset-chip px-3 py-1.5 rounded-xl text-[9px] font-black uppercase border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300" onclick="applyPreset('breakout', this)">Scan 3: Breakout Near</button>
+        <button class="preset-chip px-3 py-1.5 rounded-xl text-[9px] font-black uppercase border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300" onclick="applyPreset('vol_surge', this)">Scan 4: Volume Surge</button>
+        <button class="preset-chip px-3 py-1.5 rounded-xl text-[9px] font-black uppercase border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300" onclick="applyPreset('hh_hl', this)">Scan 5: HH + HL Structure</button>
+    </div>
+
+    <!-- Advanced Filter Accordion -->
+    <div x-show="filterOpen" x-collapse class="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm mb-6 text-xs">
+        <h4 class="font-black text-slate-800 dark:text-white uppercase mb-4">⚙️ Advanced Quantitative Filters</h4>
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div>
+                <label class="block font-bold text-slate-400 mb-1">Min RS Percentile (3M)</label>
+                <input id="filterRsMin" type="number" value="0" min="0" max="100" class="w-full px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 dark:bg-slate-950" oninput="applyFilters()">
+            </div>
+            <div>
+                <label class="block font-bold text-slate-400 mb-1">Min RVOL Multiplier</label>
+                <input id="filterRvolMin" type="number" step="0.1" value="0.0" class="w-full px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 dark:bg-slate-950" oninput="applyFilters()">
+            </div>
+            <div>
+                <label class="block font-bold text-slate-400 mb-1">Max Dist from 50D High (%)</label>
+                <input id="filterDistHighMax" type="number" value="100" class="w-full px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 dark:bg-slate-950" oninput="applyFilters()">
+            </div>
+            <div>
+                <label class="block font-bold text-slate-400 mb-1">Min Turnover (₹ Cr)</label>
+                <input id="filterTurnoverMin" type="number" step="0.1" value="0.0" class="w-full px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 dark:bg-slate-950" oninput="applyFilters()">
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Sortable Results Table -->
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden mb-8">
+        <div class="overflow-x-auto">
+            <table class="min-w-full text-left text-xs" id="ipoTable">
+                <thead class="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-100 dark:border-slate-800 sticky top-0">
+                    <tr>
+                        <th class="px-4 py-3 font-bold uppercase text-slate-400">Rank</th>
+                        <th class="px-4 py-3 font-bold uppercase text-slate-400">Symbol</th>
+                        <th class="px-4 py-3 font-bold uppercase text-slate-400">Price (₹)</th>
+                        <th class="px-4 py-3 font-bold uppercase text-indigo-400 text-center">Score ⓘ</th>
+                        <th class="px-4 py-3 font-bold uppercase text-slate-400 text-center">Signal</th>
+                        <th class="px-4 py-3 font-bold uppercase text-blue-400 text-center">RS 3M %tile</th>
+                        <th class="px-4 py-3 font-bold uppercase text-slate-400 text-right">RVOL</th>
+                        <th class="px-4 py-3 font-bold uppercase text-slate-400 text-center">Structure</th>
+                        <th class="px-4 py-3 font-bold uppercase text-slate-400 text-right">Dist 50D High</th>
+                        <th class="px-4 py-3 font-bold uppercase text-slate-400 text-right">Turnover</th>
+                        <th class="px-4 py-3 font-bold uppercase text-slate-400 text-center">Action</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-50 dark:divide-slate-800">
+                    {% for stock in stocks %}
+                    <tr class="stock-row hover:bg-indigo-50/20 dark:hover:bg-indigo-500/10 transition-colors"
+                        data-symbol="{{ stock.symbol }}"
+                        data-score="{{ stock.score }}"
+                        data-rs3="{{ stock.rs3_pct }}"
+                        data-rvol="{{ stock.rvol }}"
+                        data-turnover="{{ stock.turnover_cr }}"
+                        data-dist50="{{ stock.dist_50d_high }}"
+                        data-hh="{{ '1' if stock.hh else '0' }}"
+                        data-hl="{{ '1' if stock.hl else '0' }}"
+                        data-breakout="{{ '1' if stock.breakout_50d else '0' }}"
+                        data-gap="{{ '1' if stock.has_gap else '0' }}">
+                        
+                        <td class="px-4 py-3 font-bold text-slate-400">#{{ stock.rank }}</td>
+                        <td class="px-4 py-3 font-black text-indigo-600 dark:text-indigo-400">
+                            {{ stock.symbol }}
+                            {% if stock.extended %}<span class="text-[8px] bg-red-100 text-red-600 px-1 py-0.5 rounded ml-1 font-bold">EXTENDED</span>{% endif %}
+                        </td>
+                        <td class="px-4 py-3 font-bold text-slate-900 dark:text-white tabular-nums">₹{{ "{:,.2f}".format(stock.price) }}</td>
+                        
+                        <!-- Composite Score -->
+                        <td class="px-4 py-3 text-center">
+                            <span class="inline-block px-2.5 py-1 rounded-full text-[10px] font-black 
+                                {% if stock.score >= 80 %}bg-emerald-500 text-white
+                                {% elif stock.score >= 70 %}bg-blue-600 text-white
+                                {% elif stock.score >= 60 %}bg-indigo-100 text-indigo-700
+                                {% else %}bg-slate-100 text-slate-500{% endif %}">
+                                {{ stock.score }}/100
+                            </span>
+                        </td>
+
+                        <!-- Signal Classification -->
+                        <td class="px-4 py-3 text-center font-bold">
+                            <span class="{% if stock.signal == 'Strong Bullish' %}text-emerald-500
+                                         {% elif stock.signal == 'Bullish' %}text-blue-500
+                                         {% elif stock.signal == 'Developing' %}text-indigo-400
+                                         {% else %}text-slate-400{% endif %}">
+                                {{ stock.signal }}
+                            </span>
+                        </td>
+
+                        <!-- RS Percentile -->
+                        <td class="px-4 py-3 text-center font-black text-blue-600 dark:text-blue-400 tabular-nums">
+                            {{ stock.rs3_pct }}th
+                        </td>
+
+                        <!-- RVOL -->
+                        <td class="px-4 py-3 text-right font-bold tabular-nums {% if stock.rvol >= 2.0 %}text-purple-600 dark:text-purple-400{% else %}text-slate-600{% endif %}">
+                            {{ stock.rvol }}x
+                        </td>
+
+                        <!-- Structure -->
+                        <td class="px-4 py-3 text-center text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                            {{ stock.structure }}
+                        </td>
+
+                        <!-- Distance from 50D High -->
+                        <td class="px-4 py-3 text-right font-bold tabular-nums {% if stock.breakout_50d %}text-emerald-500{% else %}text-slate-500{% endif %}">
+                            {% if stock.breakout_50d %}BREAKOUT{% else %}-{{ stock.dist_50d_high }}%{% endif %}
+                        </td>
+
+                        <!-- Turnover -->
+                        <td class="px-4 py-3 text-right font-bold text-slate-600 dark:text-slate-400 tabular-nums">
+                            ₹{{ stock.turnover_cr }} Cr
+                        </td>
+
+                        <!-- Action / Detail Modal Trigger -->
+                        <td class="px-4 py-3 text-center">
+                            <button @click="selectedStock = {{ stock | tojson | forceescape }}; modalOpen = true" class="px-2.5 py-1 bg-slate-100 hover:bg-indigo-50 dark:bg-slate-800 dark:hover:bg-slate-700 text-indigo-600 dark:text-indigo-300 font-bold rounded-lg text-[10px] uppercase transition">
+                                Details 🔍
+                            </button>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="11" class="px-6 py-12 text-center text-slate-400 italic">No candidate stocks located matching active scan constraints.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Stock Detail Modal Dialog -->
+    <div x-show="modalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" x-cloak>
+        <div @click.away="modalOpen = false" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-2xl w-full p-6 shadow-2xl relative">
+            <button @click="modalOpen = false" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600 font-black">✕</button>
+            
+            <template x-if="selectedStock">
+                <div>
+                    <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4 mb-4">
+                        <div>
+                            <h3 class="text-xl font-black text-slate-900 dark:text-white" x-text="selectedStock.symbol"></h3>
+                            <span class="text-xs text-slate-400" x-text="selectedStock.sector"></span>
+                        </div>
+                        <div class="text-right">
+                            <span class="text-2xl font-black text-indigo-600" x-text="'₹' + selectedStock.price"></span>
+                            <span class="block text-[10px] font-bold text-emerald-500" x-text="'Score: ' + selectedStock.score + '/100'"></span>
+                        </div>
+                    </div>
+
+                    <!-- Technical Evaluation Summary -->
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6 text-xs">
+                        <div class="bg-slate-50 dark:bg-slate-800/50 p-2.5 rounded-xl">
+                            <span class="block text-[9px] font-bold text-slate-400 uppercase">Signal</span>
+                            <span class="font-black text-indigo-500" x-text="selectedStock.signal"></span>
+                        </div>
+                        <div class="bg-slate-50 dark:bg-slate-800/50 p-2.5 rounded-xl">
+                            <span class="block text-[9px] font-bold text-slate-400 uppercase">Relative Strength</span>
+                            <span class="font-black text-blue-500" x-text="selectedStock.rs3_pct + 'th Percentile'"></span>
+                        </div>
+                        <div class="bg-slate-50 dark:bg-slate-800/50 p-2.5 rounded-xl">
+                            <span class="block text-[9px] font-bold text-slate-400 uppercase">Anchored VWAP</span>
+                            <span class="font-black text-emerald-500" x-text="'₹' + selectedStock.avwap"></span>
+                        </div>
+                        <div class="bg-slate-50 dark:bg-slate-800/50 p-2.5 rounded-xl">
+                            <span class="block text-[9px] font-bold text-slate-400 uppercase">Pivot Support</span>
+                            <span class="font-black text-slate-700 dark:text-slate-200" x-text="'₹' + selectedStock.last_sl"></span>
+                        </div>
+                    </div>
+
+                    <!-- Quantitative Signal Drivers -->
+                    <h4 class="font-black text-slate-800 dark:text-white uppercase text-xs mb-2">✅ Score Confirmation Factors</h4>
+                    <ul class="space-y-1 text-xs text-slate-600 dark:text-slate-300 mb-6">
+                        <template x-for="reason in selectedStock.reasons" :key="reason">
+                            <li class="flex items-center gap-2">
+                                <span class="text-emerald-500">●</span>
+                                <span x-text="reason"></span>
+                            </li>
+                        </template>
+                    </ul>
+
+                    <div class="flex justify-end">
+                        <a :href="'/analytics-chart?symbol=' + selectedStock.symbol" target="_blank" class="px-5 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold uppercase hover:bg-indigo-700 transition">
+                            Open Full Telemetry Chart 📈
+                        </a>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </div>
+</div>
+
+<script>
+let currentPreset = 'all';
+
+function applyPreset(preset, btnEl) {
+    currentPreset = preset;
+    document.querySelectorAll('.preset-chip').forEach(b => b.classList.remove('active'));
+    btnEl.classList.add('active');
+
+    // Preset Default Mappings
+    if (preset === 'early_uptrend') {
+        document.getElementById('filterRsMin').value = 60;
+        document.getElementById('filterRvolMin').value = 1.0;
+    } else if (preset === 'strong_trend') {
+        document.getElementById('filterRsMin').value = 75;
+        document.getElementById('filterRvolMin').value = 1.2;
+    } else if (preset === 'breakout') {
+        document.getElementById('filterDistHighMax').value = 5.0;
+    } else if (preset === 'vol_surge') {
+        document.getElementById('filterRvolMin').value = 1.8;
+    } else {
+        document.getElementById('filterRsMin').value = 0;
+        document.getElementById('filterRvolMin').value = 0;
+        document.getElementById('filterDistHighMax').value = 100;
+    }
+    applyFilters();
+}
+
+function applyFilters() {
+    const rsMin = parseFloat(document.getElementById('filterRsMin').value) || 0;
+    const rvolMin = parseFloat(document.getElementById('filterRvolMin').value) || 0;
+    const distMax = parseFloat(document.getElementById('filterDistHighMax').value) || 100;
+    const turnoverMin = parseFloat(document.getElementById('filterTurnoverMin').value) || 0;
+
+    const rows = document.querySelectorAll('#ipoTable tbody tr.stock-row');
+    rows.forEach(row => {
+        const rs3 = parseFloat(row.dataset.rs3) || 0;
+        const rvol = parseFloat(row.dataset.rvol) || 0;
+        const dist50 = parseFloat(row.dataset.dist50) || 0;
+        const turnover = parseFloat(row.dataset.turnover) || 0;
+        const hh = row.dataset.hh === '1';
+        const hl = row.dataset.hl === '1';
+
+        let match = (rs3 >= rsMin) && (rvol >= rvolMin) && (dist50 <= distMax) && (turnover >= turnoverMin);
+
+        if (currentPreset === 'hh_hl') {
+            match = match && hh && hl;
+        }
+
+        row.style.display = match ? '' : 'none';
+    });
+}
+</script>
+{% endblock %}

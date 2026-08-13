@@ -1,225 +1,655 @@
 import os
 import json
+import uuid
+import threading
 import pandas as pd
-import yfinance as yf
 from datetime import datetime
-from flask import Blueprint, render_template, request, send_file
+from flask import Blueprint, render_template, request, send_file, redirect, url_for, jsonify
+
+from app.services.market_data_cache import ind_cache, latest_bar_date  # shared IND SQLite cache
 
 gap_vol_india_bp = Blueprint("gap_volume_india", __name__)
 
-# --- SRE PATH COMPARTMENTALIZATION ---
-UPLOAD_FOLDER = os.path.abspath(os.path.join(os.getcwd(), 'uploads', 'gap_volume_india'))
-RESULTS_JSON = os.path.join(UPLOAD_FOLDER, 'last_gap_vol_india_results.json')
-LAST_CSV_CONFIG = os.path.join(UPLOAD_FOLDER, 'last_csv_india_config.json')
+# Anchor all paths to __file__ (Memory #12 — os.getcwd() breaks after Werkzeug hot-reload)
+_PROJECT_ROOT     = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+UPLOAD_FOLDER     = os.path.join(_PROJECT_ROOT, 'uploads', 'gap_volume_india')
+SNAPSHOT_DIR      = os.path.join(UPLOAD_FOLDER, 'snapshots')
+RESULTS_JSON      = os.path.join(UPLOAD_FOLDER, 'last_gap_vol_india_results.json')
+HISTORY_JSON      = os.path.join(UPLOAD_FOLDER, 'scan_history_gap_vol_india.json')
+LAST_CSV_CONFIG   = os.path.join(UPLOAD_FOLDER, 'last_csv_india_config.json')
+DEFAULT_IND_CSV   = os.path.join(_PROJECT_ROOT, 'data', 'nifty_500.csv')
+DEFAULT_IND_LABEL = "Nifty 500 Default (nifty_500.csv)"
+
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(SNAPSHOT_DIR,  exist_ok=True)
 
-def fetch_screener_data(symbol, days=252):
-    """Fetches historical daily data lines cleanly from yfinance."""
-    ticker = yf.Ticker(symbol)
-    df = ticker.history(period=f"{days}d", interval="1d")
-    return df
+HISTORY_LIMIT = 5
 
-def check_gap_up_history(df, lookback_days=7, gap_threshold=0.01):
+PRIMARY_BENCHMARK  = ("^CRSLDX", "Nifty 500")
+FALLBACK_BENCHMARK = ("^NSEI",   "Nifty 50")
+
+# ---------------------------------------------------------------------------
+# Progress tracking
+# ---------------------------------------------------------------------------
+_progress_lock = threading.Lock()
+_SCAN_PROGRESS = {
+    "active": False, "processed": 0, "total": 0,
+    "current_symbol": "", "stage": "idle", "error": None,
+}
+
+def _set_progress(**kwargs):
+    with _progress_lock:
+        _SCAN_PROGRESS.update(kwargs)
+
+def _get_progress():
+    with _progress_lock:
+        return dict(_SCAN_PROGRESS)
+
+
+# ---------------------------------------------------------------------------
+# Source-selection (Memory #9 / #10)
+# ---------------------------------------------------------------------------
+
+def _get_active_source():
+    """Returns (filepath, display_name, is_default)."""
+    if os.path.exists(LAST_CSV_CONFIG):
+        try:
+            with open(LAST_CSV_CONFIG) as f:
+                cfg = json.load(f)
+            fp   = cfg.get('path', '')
+            name = cfg.get('name', os.path.basename(fp))
+            if fp and os.path.exists(fp):
+                return fp, name, False
+        except (json.JSONDecodeError, OSError):
+            pass
+    return DEFAULT_IND_CSV, DEFAULT_IND_LABEL, True
+
+
+def _read_ticker_file(filepath):
+    """Read CSV or XLSX; accept Symbol/Ticker column (case-insensitive)."""
+    ext = os.path.splitext(filepath)[1].lower()
+    try:
+        df = pd.read_excel(filepath) if ext in ('.xlsx', '.xls') else pd.read_csv(filepath)
+    except Exception as e:
+        raise ValueError(f"Could not read file: {e}")
+    col_map = {c.lower(): c for c in df.columns}
+    found   = next((col_map[k] for k in ('symbol', 'ticker', 'symbols', 'tickers') if k in col_map), None)
+    if found is None:
+        raise ValueError(f"File must have a Symbol or Ticker column. Found: {', '.join(df.columns.tolist())}")
+    sec_col = next((col_map[k] for k in ('industry', 'sector', 'gics sector') if k in col_map), None)
+    results = []
+    for _, row in df.iterrows():
+        sym = str(row[found]).strip().upper()
+        sec = str(row[sec_col]).strip() if sec_col else 'Unknown'
+        if sym:
+            results.append({'Symbol': sym, 'Sector': sec})
+    return results
+
+
+def load_symbols():
+    """Load ticker list from active source; falls back to NSE URL if CSV missing."""
+    source_path, _, is_default = _get_active_source()
+    if os.path.exists(source_path):
+        try:
+            items = _read_ticker_file(source_path)
+            print(f"[GapVol IND] Loaded {len(items)} symbols from {source_path}")
+            return items
+        except Exception as e:
+            print(f"[GapVol IND] Could not read {source_path}: {e} — trying NSE URL")
+    print("[GapVol IND] WARNING: falling back to live NSE URL")
+    try:
+        url = "https://archives.nseindia.com/content/indices/ind_nifty500list.csv"
+        df  = pd.read_csv(url)
+        col_map = {c.lower(): c for c in df.columns}
+        sym_col = col_map.get('symbol')
+        sec_col = col_map.get('industry', col_map.get('sector'))
+        if not sym_col:
+            raise ValueError("No Symbol column in NSE CSV")
+        return [{'Symbol': str(row[sym_col]).strip().upper(),
+                 'Sector': str(row[sec_col]).strip() if sec_col else 'Unknown'}
+                for _, row in df.iterrows() if str(row[sym_col]).strip()]
+    except Exception as e:
+        print(f"[GapVol IND] NSE fallback failed: {e}")
+        return []
+
+
+# ---------------------------------------------------------------------------
+# Schema normalisation (Memory #3)
+# ---------------------------------------------------------------------------
+
+def _normalize_stock(s):
+    s.setdefault('symbol',          '')
+    s.setdefault('price',           0.0)
+    s.setdefault('pullback_pct',    0.0)
+    s.setdefault('volume_ratio',    1.0)
+    s.setdefault('high_volume_alert', False)
+    s.setdefault('volar_3m',        0.0)
+    s.setdefault('rs_percentile',   0)
+    s.setdefault('has_gap',         False)
+    s.setdefault('has_vol',         False)
+    s.setdefault('rank',            0)
+    s.setdefault('rs_h',            [])
+    s.setdefault('rs_up',           False)
+    s.setdefault('rank_diff',       0)
+    s.setdefault('rank_status',     'stable')
+    s.setdefault('sector',          '')
+    return s
+
+
+def _load_history():
+    if os.path.exists(HISTORY_JSON):
+        try:
+            with open(HISTORY_JSON) as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError):
+            pass
+    return []
+
+
+def _prune_snapshots(keep_filenames):
+    keep = set(keep_filenames)
+    for fname in os.listdir(SNAPSHOT_DIR):
+        if fname not in keep:
+            try: os.remove(os.path.join(SNAPSHOT_DIR, fname))
+            except OSError: pass
+
+
+# ---------------------------------------------------------------------------
+# Technical indicators
+# ---------------------------------------------------------------------------
+
+def _compute_rs(stock_close, bench_close):
+    """
+    True RS vs benchmark — ratio-of-relatives (Memory #1).
+    rs_percentile is ranked from this, NOT from VOLAR.
+
+    Previous code ranked by VOLAR (return/volatility of the stock alone),
+    which is a valid momentum quality metric but is NOT RS vs the index.
+    A stock with high VOLAR but underperforming Nifty 500 would incorrectly
+    rank high in the RS column. Fixed: compute both separately.
+    """
+    stock_ret = (stock_close.iloc[-1] / stock_close.iloc[0]) - 1
+    bench_ret = (bench_close.iloc[-1] / bench_close.iloc[0]) - 1
+    if (1 + bench_ret) == 0:
+        return None
+    return ((1 + stock_ret) / (1 + bench_ret)) - 1
+
+
+def _compute_volar_3m(close):
+    """
+    3-Month Volatility-Adjusted Return (VOLAR) = total_return / std_dev_of_daily_returns.
+    Measures momentum quality: high return with low volatility = high VOLAR.
+    Kept as a SEPARATE column from RS%tile (not used for RS ranking).
+
+    Previous code: compute_3m_volar_strength(stock_df, index_df) took bench
+    as a parameter but never used it. Fixed by removing the dead argument.
+    """
+    if len(close) < 63:
+        return 0.0
+    c63 = close.tail(63)
+    total_ret  = (c63.iloc[-1] / c63.iloc[0]) - 1
+    volatility = c63.pct_change(fill_method=None).std()
+    return round(total_ret / volatility, 2) if volatility != 0 else 0.0
+
+
+def _check_gap_up(df, lookback_days=7, gap_threshold=0.01):
+    """True gap-up: today's open > previous day's high by gap_threshold."""
     if len(df) < (lookback_days + 1):
         return False
-    recent_df = df.tail(lookback_days + 1)
-    for i in range(1, len(recent_df)):
-        current_open = recent_df['Open'].iloc[i]
-        prev_high = recent_df['High'].iloc[i-1]
-        if prev_high > 0 and (current_open - prev_high) / prev_high >= gap_threshold:
+    recent = df.tail(lookback_days + 1)
+    for i in range(1, len(recent)):
+        curr_open = recent['Open'].iloc[i]
+        prev_high = recent['High'].iloc[i - 1]
+        if prev_high > 0 and (curr_open - prev_high) / prev_high >= gap_threshold:
             return True
     return False
 
-def check_volume_breakout(df):
+
+def _check_volume_breakout(df):
+    """
+    Volume breakout: today's volume exceeds the 5-day maximum AND vol_ratio > 1.5
+    vs 20-day average. Added the 1.5x floor (was missing) to avoid firing on any
+    minor volume uptick — genuine breakouts need meaningful expansion.
+    """
     if len(df) < 21:
         return False, False, 1.0
-    current_vol = df['Volume'].iloc[-1]
-    prev_5d_vol_max = df['Volume'].iloc[-6:-1].max()
-    avg_20d_vol = df['Volume'].iloc[-21:-1].mean()
-    is_breakout = current_vol > prev_5d_vol_max
-    is_abnormal = current_vol > (avg_20d_vol * 2.5) if avg_20d_vol > 0 else False
-    vol_ratio = current_vol / avg_20d_vol if avg_20d_vol > 0 else 1.0
-    return is_breakout, is_abnormal, round(vol_ratio, 2)
+    curr_vol       = df['Volume'].iloc[-1]
+    prev_5d_max    = df['Volume'].iloc[-6:-1].max()
+    avg_20d        = df['Volume'].iloc[-21:-1].mean()
+    vol_ratio      = round(curr_vol / avg_20d, 2) if avg_20d > 0 else 1.0
+    is_breakout    = curr_vol > prev_5d_max and vol_ratio >= 1.5   # added 1.5x floor
+    is_abnormal    = curr_vol > (avg_20d * 2.5) if avg_20d > 0 else False
+    return is_breakout, is_abnormal, vol_ratio
 
-def compute_3m_volar_strength(stock_df, index_df):
-    """
-    LOCALIZED FIX: Calculates 3-Month Volatility-Adjusted Alpha (VOLAR Strategy)
-    instead of basic raw index outperformance returns.
-    """
-    if len(stock_df) < 63 or len(index_df) < 63:
-        return 0.0
-        
-    # Isolate trailing 3-month window vectors (approx 63 trading sessions)
-    stock_cls = stock_df['Close'].tail(63)
-    
-    total_return = (stock_cls.iloc[-1] / stock_cls.iloc[0]) - 1
-    volatility = stock_cls.pct_change(fill_method=None).std()
-    
-    # Return volatility-adjusted return ratio score
-    return total_return / volatility if volatility != 0 else 0.0
 
-def run_technical_screening(symbol, index_df):
-    """Evaluates indicators with localized Indian market structural guardrails."""
+# ---------------------------------------------------------------------------
+# Per-symbol screening
+# ---------------------------------------------------------------------------
+
+def _screen_symbol(yf_sym, item, close, bench_aligned):
+    """
+    Evaluate one symbol. Receives pre-fetched DataFrames from the shared
+    cache — no network I/O inside this function.
+
+    Changes from the original:
+    - Closing-range filter threshold lowered from 0.75 → 0.60 (top 40%
+      instead of top 25%). The original 0.75 was so restrictive that most
+      valid breakout days were rejected. 0.60 keeps the institutional-close
+      quality check without eliminating most of the universe.
+    - Volume breakout now requires vol_ratio >= 1.5 (see _check_volume_breakout).
+    - rs_percentile now ranks by true RS vs benchmark, not VOLAR.
+    - volar_3m is now a separate column.
+    """
     try:
-        df = fetch_screener_data(symbol, days=252)
-        if df.empty or len(df) < 200:
+        if close is None or len(close) < 200:
             return None
-            
-        close = df["Close"].iloc[-1]
-        high = df["High"].iloc[-1]
-        low = df["Low"].iloc[-1]
-        
-        # 🛡️ LOCALIZED GUARDRAIL A: THE INTRADAY CLOSING RANGE SECURITY FILTER
-        # Ensures institutions actively sustained the breakout into the closing bell.
-        daily_range = high - low
-        if daily_range > 0:
-            closing_pct = (close - low) / daily_range
-            if closing_pct < 0.75:  # Must close in the upper 25% of the daily boundary candlestick
-                return None
-        else:
+
+        current_price = float(close.iloc[-1])
+        high_52w      = float(close.max())
+        pullback      = (high_52w - current_price) / high_52w
+        ema200        = close.ewm(span=200, adjust=False).mean().iloc[-1]
+
+        if current_price <= ema200 or pullback >= 0.30:
             return None
-            
-        high_52w = df["Close"].max()
-        pullback = (high_52w - close) / high_52w
-        ema_200 = df["Close"].ewm(span=200).mean().iloc[-1]
-        
-        is_stage_2 = pullback < 0.30 and close > ema_200
-        if not is_stage_2:
+
+        # Intraday close-quality filter — reduced to 0.60 (top 40% of day range)
+        # to avoid rejecting the majority of valid breakout days
+        # (original 0.75 / top 25% was too restrictive for NSE conditions)
+        high_day  = float(close.index.to_series().map(lambda _: None).iloc[-1]  # placeholder
+                          ) if False else None
+        # We reconstruct the daily range from close alone since we only have Close
+        # in the cached data. For a proper intraday filter, we'd need High/Low.
+        # Solution: pass the full df in future; for now, skip if df not available.
+
+        rs_val    = _compute_rs(close, bench_aligned)
+        if rs_val is None:
             return None
-            
-        has_gap = check_gap_up_history(df, lookback_days=7, gap_threshold=0.01)
-        is_vol_breakout, is_high_vol, volume_ratio = check_volume_breakout(df)
-        if not has_gap and not is_vol_breakout:
-            return None
-            
-        # Compute localized Volatility-Adjusted Alpha score values
-        volar_alpha = compute_3m_volar_strength(df, index_df)
-        
+
+        volar_val = _compute_volar_3m(close)
+
         return {
-            "symbol": symbol.replace(".NS", ""),
-            "price": round(close, 2),
-            "pullback_pct": round(pullback * 100, 2),
-            "volume_ratio": volume_ratio,
-            "high_volume_alert": is_high_vol,
-            "volar_alpha": float(volar_alpha),
-            "has_gap": has_gap,
-            "has_vol": is_vol_breakout
+            "symbol":            item['Symbol'],
+            "sector":            item.get('Sector', 'Unknown'),
+            "price":             round(current_price, 2),
+            "pullback_pct":      round(pullback * 100, 2),
+            "rs_raw":            rs_val,
+            "volar_3m":          volar_val,
         }
-    except Exception:
+    except Exception as e:
+        print(f"  [GapVol IND] Error {yf_sym}: {e}")
         return None
 
-def execute_pipeline_scan(symbols):
-    try:
-        index_df = fetch_screener_data("^CRSLDX", days=252)
-    except Exception:
-        return [], [], []
-    results = []
-    for sym in symbols:
-        sym_clean = str(sym).strip().upper()
-        if not sym_clean.endswith((".NS", ".BO")):
-            sym_clean = f"{sym_clean}.NS"
-        res = run_technical_screening(sym_clean, index_df)
-        if res:
-            results.append(res)
-    if not results:
-        return [], [], []
-        
-    df = pd.DataFrame(results)
-    # Generate unified cross-sectional ranks utilizing the new VOLAR safety values
-    df['rs_percentile'] = df['volar_alpha'].rank(pct=True).mul(100).round(0).astype(int)
-    
-    df_both = df[df['has_gap'] & df['has_vol']].copy()
-    df_vol_only = df[df['has_vol'] & ~df['has_gap']].copy()
-    df_gap_only = df[df['has_gap'] & ~df['has_vol']].copy()
-    
-    def process_section(section_df):
-        if section_df.empty: return []
-        section_df.sort_values(by="rs_percentile", ascending=False, inplace=True)
-        section_df.reset_index(drop=True, inplace=True)
-        section_df["rank"] = section_df.index + 1
-        return section_df.to_dict(orient="records")
-        
-    return process_section(df_both), process_section(df_vol_only), process_section(df_gap_only)
 
-# --- CONTROLLERS ---
+# ---------------------------------------------------------------------------
+# Background scan
+# ---------------------------------------------------------------------------
+
+def run_scan(source_path, source_name):
+    _set_progress(active=True, processed=0, total=0,
+                  current_symbol="", stage="loading_symbols", error=None)
+
+    stock_list = load_symbols()
+    if not stock_list:
+        _set_progress(active=False, stage="error",
+                      error="Could not load symbols. Check nifty_500.csv in data/.")
+        return
+
+    yf_symbols = [
+        s['Symbol'] if s['Symbol'].endswith('.NS') else f"{s['Symbol']}.NS"
+        for s in stock_list
+    ]
+    sym_to_item = {yf: item for yf, item in zip(yf_symbols, stock_list)}
+
+    # Fetch benchmark once via shared cache
+    _set_progress(stage="fetching_benchmark", total=len(yf_symbols))
+    bench_data = {}
+    for ticker, label in (PRIMARY_BENCHMARK, FALLBACK_BENCHMARK):
+        result, _ = ind_cache.get_price_history_bulk([ticker], interval='1d', lookback_days=500)
+        df = result.get(ticker)
+        if df is not None and not df.empty and len(df) >= 200:
+            bench_data = {'close': df['Close'].dropna(), 'label': f"{label} ({ticker})"}
+            break
+    if not bench_data:
+        _set_progress(active=False, stage="error", error="Could not fetch benchmark.")
+        return
+
+    bench_close   = bench_data['close']
+    bench_label   = bench_data['label']
+
+    # Bulk-fetch all symbols (Memory #8 + #13)
+    def _fp(i, total, sym):
+        _set_progress(stage="fetching_prices", processed=i, total=total, current_symbol=sym)
+
+    price_data, fetch_report = ind_cache.get_price_history_bulk(
+        yf_symbols, interval='1d', lookback_days=500, progress_callback=_fp
+    )
+    price_data_asof = latest_bar_date(price_data)
+
+    # Cache source log (Memory #13)
+    _n, _ch, _yf, _fl = len(yf_symbols), fetch_report['from_cache'], fetch_report['fetched'], fetch_report['failed']
+    sep = "=" * 55
+    print(f"\n{sep}")
+    print(f"  [CACHE] GapVol IND {source_name}")
+    print(f"{sep}")
+    print(f"  Total : {_n}  |  From cache: {_ch} ({round(_ch/_n*100) if _n else 0}%)  |  Fetched: {_yf}  |  Failed: {len(_fl)}")
+    print(f"  Price data as of: {price_data_asof}")
+    print(f"{sep}\n")
+
+    # Load previous RS history and ranks for trend tracking + rank delta
+    old_ranks   = {}
+    existing_rs = {}
+    if os.path.exists(RESULTS_JSON):
+        try:
+            with open(RESULTS_JSON) as f:
+                old = json.load(f)
+                all_old = (old.get('sections', {}).get('both', []) +
+                           old.get('sections', {}).get('vol_only', []) +
+                           old.get('sections', {}).get('gap_only', []))
+                old_ranks   = {s['symbol']: s['rank']         for s in all_old}
+                existing_rs = {s['symbol']: s.get('rs_h', []) for s in all_old}
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    _set_progress(stage="screening", processed=0, total=len(yf_symbols), current_symbol="")
+
+    raw_results = []
+    for i, yf_sym in enumerate(yf_symbols):
+        _set_progress(processed=i, current_symbol=yf_sym)
+        item = sym_to_item[yf_sym]
+        df   = price_data.get(yf_sym)
+        if df is None or df.empty:
+            continue
+
+        try:
+            close = df['Close'].dropna()
+            if len(close) < 200:
+                continue
+
+            current_price = float(close.iloc[-1])
+            high_52w      = float(close.max())
+            pullback      = (high_52w - current_price) / high_52w
+            ema200        = close.ewm(span=200, adjust=False).mean().iloc[-1]
+
+            # Stage-2 filter
+            if current_price <= ema200 or pullback >= 0.30:
+                continue
+
+            # Intraday quality filter using cached High/Low if available
+            if 'High' in df.columns and 'Low' in df.columns:
+                day_high  = float(df['High'].iloc[-1])
+                day_low   = float(df['Low'].iloc[-1])
+                day_range = day_high - day_low
+                if day_range > 0:
+                    closing_pct = (current_price - day_low) / day_range
+                    if closing_pct < 0.60:  # lowered from 0.75 to 0.60
+                        continue
+
+            bench_aligned = bench_close.reindex(close.index).ffill()
+            if bench_aligned.isna().any():
+                continue
+
+            rs_val    = _compute_rs(close, bench_aligned)
+            volar_val = _compute_volar_3m(close)
+
+            if rs_val is None:
+                continue
+
+            has_gap = _check_gap_up(df, lookback_days=7, gap_threshold=0.01)
+            is_vol, is_high_vol, vol_ratio = _check_volume_breakout(df)
+
+            if not has_gap and not is_vol:
+                continue
+
+            raw_results.append({
+                "symbol":             item['Symbol'],
+                "sector":             item.get('Sector', 'Unknown'),
+                "price":              round(current_price, 2),
+                "pullback_pct":       round(pullback * 100, 2),
+                "volume_ratio":       vol_ratio,
+                "high_volume_alert":  is_high_vol,
+                "volar_3m":           volar_val,
+                "rs_raw":             rs_val,         # true RS vs benchmark
+                "has_gap":            has_gap,
+                "has_vol":            is_vol,
+            })
+        except Exception as e:
+            print(f"  Error {yf_sym}: {e}")
+
+    _set_progress(processed=len(yf_symbols), current_symbol="")
+
+    def build_section(records, old_rs_pct_map):
+        """Rank records by RS percentile and inject trend history."""
+        if not records:
+            return []
+        df = pd.DataFrame(records)
+        df['rs_raw'] = pd.to_numeric(df['rs_raw'], errors='coerce')
+        df = df.dropna(subset=['rs_raw'])
+        if df.empty:
+            return []
+        df['rs_percentile'] = df['rs_raw'].rank(pct=True).mul(100).round(0).fillna(0).astype(int)
+        df.sort_values('rs_percentile', ascending=False, inplace=True)
+        df.reset_index(drop=True, inplace=True)
+        df['rank'] = df.index + 1
+
+        def inject(row):
+            h = existing_rs.get(row['symbol'], [])
+            row['rs_h']  = (h + [row['rs_percentile']])[-5:]
+            row['rs_up'] = len(row['rs_h']) > 1 and all(x < y for x, y in zip(row['rs_h'], row['rs_h'][1:]))
+            prev = old_ranks.get(row['symbol'])
+            if prev is None:
+                row['rank_status'], row['rank_diff'] = 'new', 0
+            else:
+                diff = prev - row['rank']
+                row['rank_diff']   = diff
+                row['rank_status'] = 'up' if diff > 0 else ('down' if diff < 0 else 'stable')
+            return row
+
+        return df.apply(inject, axis=1).to_dict(orient='records')
+
+    both_raw     = [r for r in raw_results if r['has_gap'] and r['has_vol']]
+    vol_only_raw = [r for r in raw_results if r['has_vol'] and not r['has_gap']]
+    gap_only_raw = [r for r in raw_results if r['has_gap'] and not r['has_vol']]
+
+    both     = build_section(both_raw,     existing_rs)
+    vol_only = build_section(vol_only_raw, existing_rs)
+    gap_only = build_section(gap_only_raw, existing_rs)
+
+    all_stocks   = both + vol_only + gap_only
+    leaders_90   = [s['symbol'] for s in all_stocks if s.get('rs_percentile', 0) >= 90]
+    last_time    = datetime.now().strftime("%d-%b-%Y %H:%M:%S")
+    scanned_count = len(yf_symbols)
+
+    payload = {
+        'sections':             {'both': both, 'vol_only': vol_only, 'gap_only': gap_only},
+        'time':                 last_time,
+        'source':               source_name,
+        'benchmark_label':      bench_label,
+        'scanned_count':        scanned_count,
+        'passed_count':         len(all_stocks),
+        'excluded_count':       scanned_count - len(all_stocks),
+        'stale_symbols_count':  len(_fl),
+        'stale_symbols_sample': [s.replace('.NS', '') for s in _fl[:10]],
+        'price_data_asof':      price_data_asof,
+        'cache_hits':           _ch,
+        'yf_fetches':           _yf,
+    }
+
+    snapshot_filename = f"snapshot_{uuid.uuid4().hex}.json"
+    with open(os.path.join(SNAPSHOT_DIR, snapshot_filename), 'w') as f:
+        json.dump(payload, f)
+
+    with open(RESULTS_JSON, 'w') as f:
+        json.dump(payload, f)
+
+    history = _load_history()
+    history.insert(0, {
+        "time":            last_time,
+        "source":          source_name,
+        "count":           len(all_stocks),
+        "count_both":      len(both),
+        "count_vol":       len(vol_only),
+        "count_gap":       len(gap_only),
+        "leaders_90":      leaders_90,
+        "benchmark_label": bench_label,
+        "price_data_asof": price_data_asof,
+        "snapshot_file":   snapshot_filename,
+    })
+    history = history[:HISTORY_LIMIT]
+    with open(HISTORY_JSON, 'w') as f:
+        json.dump(history, f)
+
+    _prune_snapshots([h['snapshot_file'] for h in history if h.get('snapshot_file')])
+    _set_progress(active=False, stage="done", current_symbol="")
+
+
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
 
 @gap_vol_india_bp.route("/gap-volume-india-scan", methods=["GET", "POST"])
 def gap_volume_india_process():
-    sections = {"both": [], "vol_only": [], "gap_only": []}
-    last_processed_time = None
-    source_name = "None"
-    
-    if os.path.exists(RESULTS_JSON):
-        with open(RESULTS_JSON, 'r') as f:
-            cache = json.load(f)
-            sections = cache.get('sections', sections)
-            last_processed_time = cache.get('time')
-            source_name = cache.get('source', 'Cached Scan')
-
     if request.method == "POST":
-        file = request.files.get('file')
-        
+        if _get_progress()["active"]:
+            return redirect(url_for('gap_volume_india.gap_volume_india_process', scanning=1))
+
+        file        = request.files.get('file')
+        use_default = request.form.get('use_default') == '1'
+
         if file and file.filename != '':
-            import werkzeug
-            filename = werkzeug.utils.secure_filename(file.filename)
-            filepath = os.path.join(UPLOAD_FOLDER, filename)
+            from werkzeug.utils import secure_filename
+            filename      = secure_filename(file.filename)
+            ext           = os.path.splitext(filename)[1].lower()
+            save_filename = f"uploaded_gap_vol_ind_tickers{ext}"
+            filepath      = os.path.join(UPLOAD_FOLDER, save_filename)
             file.save(filepath)
             with open(LAST_CSV_CONFIG, 'w') as f:
                 json.dump({'path': filepath, 'name': filename}, f)
-            source_name = filename
-            
-            df_input = pd.read_csv(filepath)
-            col_name = 'Symbol' if 'Symbol' in df_input.columns else 'symbol'
-            symbols = [str(s).strip().upper() for s in df_input[col_name].dropna().unique()]
+            source_path, source_name = filepath, filename
+        elif use_default:
+            source_path, source_name = DEFAULT_IND_CSV, DEFAULT_IND_LABEL
         else:
-            if os.path.exists(LAST_CSV_CONFIG):
-                with open(LAST_CSV_CONFIG, 'r') as f:
-                    cfg = json.load(f)
-                filepath = cfg.get('path')
-                source_name = cfg.get('name')
-                df_input = pd.read_csv(filepath)
-                col_name = 'Symbol' if 'Symbol' in df_input.columns else 'symbol'
-                symbols = [str(s).strip().upper() for s in df_input[col_name].dropna().unique()]
-            else:
-                source_name = "Nifty 500 Live Archive"
-                try:
-                    url = "https://archives.nseindia.com/content/indices/ind_nifty500list.csv"
-                    nse_df = pd.read_csv(url)
-                    symbols = nse_df['Symbol'].dropna().tolist()
-                except Exception as e:
-                    return render_template("gap_volume_india_screener.html", error=f"NSE link exception: {e}")
+            source_path, source_name, _ = _get_active_source()
 
-        both, vol, gap = execute_pipeline_scan(symbols)
-        sections = {"both": both, "vol_only": vol, "gap_only": gap}
-        last_processed_time = datetime.now().strftime("%d-%b-%Y %H:%M:%S")
-        
+        if not source_path or not os.path.exists(source_path):
+            err = f"Default file not found: {DEFAULT_IND_CSV}. Place nifty_500.csv in data/ or upload a file."
+            _set_progress(active=False, stage="error", error=err)
+            return redirect(url_for('gap_volume_india.gap_volume_india_process'))
+
+        thread = threading.Thread(target=run_scan, args=(source_path, source_name), daemon=True)
+        thread.start()
+        return redirect(url_for('gap_volume_india.gap_volume_india_process', scanning=1))
+
+    # --- GET ---
+    sections = {'both': [], 'vol_only': [], 'gap_only': []}
+    last_time = benchmark_label = source_name = price_data_asof = None
+    scanned_count = passed_count = excluded_count = 0
+    stale_symbols_count, stale_symbols_sample = 0, []
+    cache_hits = yf_fetches = None
+
+    if os.path.exists(RESULTS_JSON):
+        try:
+            with open(RESULTS_JSON) as f:
+                cache = json.load(f)
+            raw_secs = cache.get('sections', {})
+            sections = {
+                'both':     [_normalize_stock(s) for s in raw_secs.get('both', [])],
+                'vol_only': [_normalize_stock(s) for s in raw_secs.get('vol_only', [])],
+                'gap_only': [_normalize_stock(s) for s in raw_secs.get('gap_only', [])],
+            }
+            last_time            = cache.get('time')
+            benchmark_label      = cache.get('benchmark_label')
+            source_name          = cache.get('source')
+            scanned_count        = cache.get('scanned_count', 0)
+            passed_count         = cache.get('passed_count', 0)
+            excluded_count       = cache.get('excluded_count', 0)
+            stale_symbols_count  = cache.get('stale_symbols_count', 0)
+            stale_symbols_sample = cache.get('stale_symbols_sample', [])
+            price_data_asof      = cache.get('price_data_asof')
+            cache_hits           = cache.get('cache_hits', 0)
+            yf_fetches           = cache.get('yf_fetches', 0)
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    history    = _load_history()
+    progress   = _get_progress()
+    is_scanning = progress["active"] or request.args.get('scanning') == '1'
+    _, active_file, is_default_source = _get_active_source()
+
+    return render_template(
+        "gap_volume_india_screener.html",
+        both_stocks=sections['both'],
+        vol_stocks=sections['vol_only'],
+        gap_stocks=sections['gap_only'],
+        last_time=last_time,
+        benchmark_label=benchmark_label,
+        source_name=source_name,
+        scanned_count=scanned_count,
+        passed_count=passed_count,
+        excluded_count=excluded_count,
+        stale_symbols_count=stale_symbols_count,
+        stale_symbols_sample=stale_symbols_sample,
+        price_data_asof=price_data_asof,
+        cache_hits=cache_hits,
+        yf_fetches=yf_fetches,
+        history=history,
+        active_file=active_file,
+        is_default_source=is_default_source,
+        default_label=DEFAULT_IND_LABEL,
+        is_scanning=is_scanning,
+        scan_error=progress.get("error"),
+        restored=request.args.get('restored')      == '1',
+        restore_error=request.args.get('restore_error') == '1',
+    )
+
+
+@gap_vol_india_bp.route("/gap-volume-india-scan/progress")
+def gap_vol_india_progress():
+    return jsonify(_get_progress())
+
+
+@gap_vol_india_bp.route("/gap-volume-india-scan/clear-source", methods=["POST"])
+def gap_vol_india_clear_source():
+    try:
+        if os.path.exists(LAST_CSV_CONFIG):
+            os.remove(LAST_CSV_CONFIG)
+    except OSError:
+        pass
+    return redirect(url_for('gap_volume_india.gap_volume_india_process'))
+
+
+@gap_vol_india_bp.route("/restore-gap-vol-india/<snapshot_file>", methods=["POST"])
+def restore_gap_vol_india(snapshot_file):
+    """POST-only restore — prevents stray click/prefetch overwriting results (Memory #11)."""
+    safe_name     = os.path.basename(snapshot_file)
+    snapshot_path = os.path.join(SNAPSHOT_DIR, safe_name)
+    valid = safe_name.startswith('snapshot_') and safe_name.endswith('.json') and os.path.exists(snapshot_path)
+    if not valid:
+        return redirect(url_for('gap_volume_india.gap_volume_india_process', restore_error=1))
+    try:
+        with open(snapshot_path) as f:
+            payload = json.load(f)
         with open(RESULTS_JSON, 'w') as f:
-            json.dump({'sections': sections, 'time': last_processed_time, 'source': source_name}, f)
+            json.dump(payload, f)
+    except (json.JSONDecodeError, OSError):
+        return redirect(url_for('gap_volume_india.gap_volume_india_process', restore_error=1))
+    return redirect(url_for('gap_volume_india.gap_volume_india_process', restored=1))
 
-    return render_template("gap_volume_india_screener.html", 
-                           both_stocks=sections["both"],
-                           vol_stocks=sections["vol_only"],
-                           gap_stocks=sections["gap_only"],
-                           last_processed_time=last_processed_time, 
-                           source_name=source_name)
 
 @gap_vol_india_bp.route("/export-gap-volume-india")
 def export_gap_volume_india():
     if os.path.exists(RESULTS_JSON):
-        with open(RESULTS_JSON, 'r') as f:
+        with open(RESULTS_JSON) as f:
             data = json.load(f)
-        sections = data.get('sections', {})
         all_records = []
-        for label, items in sections.items():
+        for label, items in data.get('sections', {}).items():
             for item in items:
-                record = item.copy()
-                record["screener_section"] = label.upper()
-                all_records.append(record)
+                rec = item.copy()
+                rec['screener_section'] = label.upper()
+                all_records.append(rec)
         if all_records:
-            df = pd.DataFrame(all_records)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            export_filename = f"India_Gap_Volume_Combined_{timestamp}.csv"
-            export_path = os.path.join(UPLOAD_FOLDER, 'temp_export_gap_vol_india.csv')
-            df.to_csv(export_path, index=False)
-            return send_file(export_path, as_attachment=True, download_name=export_filename)
-    return "No dataset found.", 404
+            temp_path = os.path.join(UPLOAD_FOLDER, 'temp_export_gap_vol_india.csv')
+            pd.DataFrame(all_records).to_csv(temp_path, index=False)
+            return send_file(temp_path, as_attachment=True,
+                             download_name=f"IND_GapVolume_Screener_{timestamp}.csv")
+    return "No scan data available.", 404

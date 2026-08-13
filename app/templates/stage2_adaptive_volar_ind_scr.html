@@ -300,7 +300,10 @@
                 <span class="text-gray-400 dark:text-slate-500 shrink-0">{{ entry.benchmark_label|default('—') }}</span>
                 <span class="font-black text-gray-800 dark:text-slate-200 shrink-0">{{ entry.count }} found</span>
                 {% if entry.snapshot_file %}
-                <form method="POST" action="{{ url_for('volar_ind_adaptive_bp.volar_ind_restore', snapshot_file=entry.snapshot_file) }}" class="shrink-0">
+                <form method="POST" 
+                    action="{{ url_for('volar_ind_adaptive_bp.volar_ind_restore', snapshot_file=entry.snapshot_file) }}" 
+                    class="shrink-0">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <button type="submit"
                             onclick="return confirm('Restore results from this scan? This replaces what is currently displayed.');"
                             class="text-[9px] font-black uppercase text-blue-500 hover:text-white hover:bg-blue-600 px-2.5 py-1 rounded-full border border-blue-200 dark:border-blue-500/30 transition">

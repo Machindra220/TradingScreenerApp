@@ -318,7 +318,10 @@
                 {% if entry.price_data_asof %}
                 <span class="text-[9px] font-bold text-gray-400 dark:text-slate-500 whitespace-nowrap">Data: {{ entry.price_data_asof }}</span>
                 {% endif %}
-                <form method="POST" action="{{ url_for('volar_us.restore_volar_us_snapshot', snapshot_id=entry.snapshot_id) }}" class="ml-auto shrink-0">
+                <form method="POST" 
+                    action="{{ url_for('volar_us.restore_volar_us_snapshot', snapshot_id=entry.snapshot_id) }}" 
+                    class="ml-auto shrink-0">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <button type="submit"
                             onclick="return confirm('Restore results from this scan? This replaces what is currently displayed.');"
                             class="text-[9px] font-black uppercase text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 px-2.5 py-1 rounded-full border border-indigo-200 dark:border-indigo-500/30 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition whitespace-nowrap">

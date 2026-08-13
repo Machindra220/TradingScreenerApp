@@ -91,6 +91,48 @@ def make_bar_heights(values, max_height=14, min_height=2):
     return [round(min_height + (max(0, min(100, v)) / 100) * (max_height - min_height), 1) for v in values]
 
 
+def _normalise_df(df, sym=None):
+    """
+    Handles all three DataFrame formats from cache / yfinance:
+      - yf.Ticker(sym).history()     → simple string cols ('Close', etc.)
+      - yf.download([sym1, sym2...]) → MultiIndex tuple cols ('Close','AAPL')
+      - cache bulk fetch             → either of the above
+    This is the root cause of "11 cache hits · 492 from yfinance" — symbols
+    returned as MultiIndex silently fail on stock_df['Close'] and are skipped.
+    """
+    if df is None or df.empty:
+        return None
+    cols = df.columns
+    # MultiIndex or tuple columns (bulk yfinance download format)
+    if isinstance(cols, pd.MultiIndex) or (len(cols) > 0 and isinstance(cols[0], tuple)):
+        if sym is not None:
+            candidates = [sym, sym.replace('-', '.'), sym.upper()]
+            for cand in candidates:
+                try:
+                    sliced = df.xs(cand, axis=1, level=1)
+                    sliced.columns = [c.title() for c in sliced.columns]
+                    return sliced
+                except KeyError:
+                    pass
+        # Fallback: flatten taking first element of each tuple
+        flat_cols = {}
+        for c in cols:
+            field = c[0] if isinstance(c, tuple) else c
+            if field.lower() in ('open', 'high', 'low', 'close', 'volume'):
+                flat_cols[c] = field.title()
+        if flat_cols:
+            df = df[list(flat_cols.keys())].copy()
+            df.columns = list(flat_cols.values())
+            return df
+        return None
+    # Simple string columns — just title-case them
+    df = df.copy()
+    df.columns = [c.title() if isinstance(c, str) and
+                  c.lower() in ('open', 'high', 'low', 'close', 'volume')
+                  else c for c in df.columns]
+    return df
+
+
 def _normalize_stock(s):
     """
     Backfill fields the template expects that an older cached scan may not have
@@ -155,9 +197,12 @@ def run_scan(symbols, source_name):
                   current_symbol="", stage="fetching_index", error=None)
 
     # Fetch the S&P 500 benchmark ONCE via the US cache (Memory #8 — never per-stock)
-    idx_data, _ = us_cache.get_price_history_bulk([US_INDEX[0]], interval='1d', lookback_days=LB_6M + 220)
-    idx_df = idx_data.get(US_INDEX[0])
-    if idx_df is None or idx_df.empty or len(idx_df) < LB_6M:
+    idx_data, _ = us_cache.get_price_history_bulk(
+        [US_INDEX[0]], interval="1d", lookback_days=342, progress_callback=lambda *a: None
+    )
+    idx_df_raw = idx_data.get(US_INDEX[0])
+    idx_df = _normalise_df(idx_df_raw, US_INDEX[0])
+    if idx_df is None or idx_df.empty or 'Close' not in idx_df.columns or len(idx_df) < LB_6M:
         _set_progress(active=False, stage="error",
                       error=f"Could not fetch benchmark {US_INDEX[0]}. Scan aborted.")
         return
@@ -171,7 +216,7 @@ def run_scan(symbols, source_name):
         _set_progress(stage="fetching_prices", processed=i, total=total, current_symbol=sym)
 
     price_data, fetch_report = us_cache.get_price_history_bulk(
-        symbols, interval='1d', lookback_days=LB_6M + 220, progress_callback=_fetch_progress
+        symbols, interval="1d", lookback_days=342, progress_callback=_fetch_progress
     )
     price_data_asof = latest_bar_date(price_data)
 
@@ -236,8 +281,17 @@ def run_scan(symbols, source_name):
     for i, sym in enumerate(symbols):
         _set_progress(processed=i, current_symbol=sym)
         try:
-            stock_df = price_data.get(sym)
+            raw_df   = price_data.get(sym)
+            # _normalise_df handles simple-column AND MultiIndex bulk-fetch formats.
+            # Without this, MultiIndex DataFrames (returned when cache fetches
+            # multiple symbols via yf.download) crash on stock_df['Close'] and
+            # fall into the except block — silently skipping the symbol.
+            # This was causing "11 cache hits · 492 from yfinance" — the 11 that
+            # worked had simple-column DataFrames; the 492 had MultiIndex format.
+            stock_df = _normalise_df(raw_df, sym)
             if stock_df is None or stock_df.empty or len(stock_df) < LB_6M:
+                continue
+            if 'Close' not in stock_df.columns:
                 continue
 
             close = stock_df['Close'].dropna()

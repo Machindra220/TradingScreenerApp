@@ -1,0 +1,616 @@
+{#
+    minervini_screener_ind.html
+    ============================
+    Screener UI for minervini_trend_template_screener.screen_universe().
+
+    BACKEND CONTRACT — what a matching Flask route needs to pass in:
+
+    stocks: list[dict], one per symbol, each with at minimum the columns
+        screen_universe() already returns —
+            symbol, price, sma_50, sma_150, sma_200,
+            week52_low, week52_high, pct_above_52w_low, pct_below_52w_high,
+            ma_alignment_pass, ma_slope_pass, boundary_pass,
+            rs_raw_score, rs_rating, rs_pass, fundamentals_pass, passes_all
+        plus these OPTIONAL fields (all |default()-guarded below — omit them
+        and the page still renders fine) if you add run-over-run tracking
+        the same way stage2_volar_ind.html does:
+            symbol_clean, rank, rank_status ('new'/'up'/'down'/'stable'),
+            rank_diff, rs_h (list of last-5 rs_rating values), rs_up (bool),
+            is_consistent (bool, from a 3-scan compare mode)
+
+    last_processed_time: str | None
+    source_name: str            — display name of the active ticker source
+    is_default_source: bool     — True when using the bundled Nifty 500 CSV
+    history: list[dict]         — last 5 scans: time, source, count,
+                                   snapshot_id, qualifiers_count
+    compare_mode: bool
+    csrf_token: str
+    currency_symbol: str        — "₹" for NSE, "$" for US
+    scanned_count / passed_count / rs80_count / insufficient_data_count: int
+        — header data-quality summary; all optional, default to 0/len(stocks)
+
+    Expected endpoints (mirror volar_ind's naming exactly):
+        minervini_ind.minervini_process   (GET/POST, this page)
+        minervini_ind.minervini_process   (GET, ?compare=true)
+        minervini_ind.restore_minervini_snapshot(snapshot_id)
+        minervini_ind.minervini_progress  (GET, JSON — {"percent": int})
+        /add-favorite-india, /add-to-strategy  (already shared across your
+        other IND screener pages, reused as-is here)
+#}
+{% extends 'base_authenticated.html' %}
+{% block content %}
+<style>
+    .filter-chip {
+        font-size: 10px; font-weight: 800; text-transform: uppercase;
+        letter-spacing: 0.05em; padding: 6px 14px; border-radius: 9999px;
+        border: 1px solid rgb(229 231 235); background: rgb(249 250 251);
+        color: rgb(107 114 128); transition: all 0.15s ease; cursor: pointer;
+    }
+    .dark .filter-chip { border-color: rgb(30 41 59); background: rgb(30 41 59 / 0.4); color: rgb(148 163 184); }
+    .filter-chip:hover { border-color: rgb(99 102 241 / 0.4); color: rgb(79 70 229); }
+    .dark .filter-chip:hover { color: rgb(165 180 252); }
+    .filter-chip.active { background: rgb(79 70 229); border-color: rgb(79 70 229); color: white; }
+
+    .sortable-th { cursor: pointer; user-select: none; }
+    .sortable-th:hover { color: rgb(79 70 229); }
+    .dark .sortable-th:hover { color: rgb(165 180 252); }
+    .sort-arrow { font-size: 8px; margin-left: 2px; }
+
+    .crit-badge {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 18px; height: 18px; border-radius: 5px; font-size: 10px; font-weight: 900;
+    }
+    .crit-pass { background: rgb(16 185 129 / 0.15); color: rgb(5 150 105); }
+    .dark .crit-pass { background: rgb(16 185 129 / 0.2); color: rgb(52 211 153); }
+    .crit-fail { background: rgb(148 163 184 / 0.15); color: rgb(148 163 184); }
+    .dark .crit-fail { background: rgb(100 116 139 / 0.2); color: rgb(100 116 139); }
+
+    .copy-icon { cursor: pointer; transition: color 0.15s ease; }
+    .copy-icon.copied { color: rgb(16 185 129) !important; }
+
+    .stat-chip {
+        font-size: 10px; font-weight: 700; padding: 4px 10px; border-radius: 8px;
+        background: rgb(249 250 251); color: rgb(107 114 128); white-space: nowrap;
+    }
+    .dark .stat-chip { background: rgb(30 41 59 / 0.5); color: rgb(148 163 184); }
+</style>
+
+<div class="max-w-7xl mx-auto px-4 py-8">
+    <div class="flex justify-between items-center mb-4">
+        <div>
+            <h2 class="text-2xl font-black text-indigo-900 dark:text-indigo-300 uppercase tracking-tight">📈 Minervini Trend Template + RS</h2>
+            <p class="text-[10px] font-bold text-gray-400 dark:text-slate-500 mt-1 uppercase tracking-widest">
+                Last Run: <span class="text-blue-600 dark:text-blue-400">{{ last_processed_time|default('N/A') }}</span>
+                {% if is_default_source|default(true) %}
+                | Source: <span>📊 {{ source_name|default('Nifty 500 Default') }}</span>
+                {% else %}
+                | Source: <span class="text-emerald-600 dark:text-emerald-400">✅ {{ source_name|default('Uploaded File') }}</span>
+                {% endif %}
+            </p>
+        </div>
+        <div class="flex gap-3">
+            <a href="{{ url_for('minervini_ind.minervini_process', compare='true') }}" class="bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 px-5 py-2.5 rounded-xl text-[10px] font-bold hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition border border-indigo-100 dark:border-indigo-800/50 uppercase">
+                🔍 Compare (Last 3 Scans)
+            </a>
+            {% if stocks %}
+            <button type="button" onclick="exportVisibleRowsToCsv()" class="bg-gray-900 dark:bg-slate-700 text-white px-5 py-2.5 rounded-xl text-[10px] font-bold hover:bg-black dark:hover:bg-slate-600 transition shadow-lg shadow-gray-200 dark:shadow-black/30 uppercase">
+                📥 Export CSV
+            </button>
+            {% endif %}
+        </div>
+    </div>
+
+    {# Data-quality guardrail strip #}
+    <div class="flex flex-wrap gap-2 mb-6">
+        <span class="stat-chip">Scanned: {{ scanned_count|default(stocks|length) }}</span>
+        <span class="stat-chip text-emerald-600 dark:text-emerald-400">✅ Passes All: {{ passed_count|default(stocks|selectattr('passes_all')|list|length) }}</span>
+        <span class="stat-chip text-blue-600 dark:text-blue-400">🏆 RS ≥ 80: {{ rs80_count|default(stocks|selectattr('rs_pass')|list|length) }}</span>
+        {% if insufficient_data_count|default(0) > 0 %}
+        <span class="stat-chip text-amber-600 dark:text-amber-400">⚠️ Insufficient Data: {{ insufficient_data_count }}</span>
+        {% endif %}
+    </div>
+
+    {# ---------------------------------------------------------------- #}
+    {# Upload / source panel — three-mode source selection             #}
+    {# ---------------------------------------------------------------- #}
+    <div class="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm dark:shadow-none mb-6">
+        <form method="POST" action="{{ url_for('minervini_ind.minervini_process') }}" enctype="multipart/form-data" id="scanForm" class="flex flex-col md:flex-row items-stretch md:items-end gap-4">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <div class="flex-1 w-full text-xs">
+                <label class="block text-[10px] font-bold uppercase text-gray-400 dark:text-slate-500 mb-2 tracking-widest">Ticker CSV (Optional)</label>
+                <label id="csvDropZone" for="csvFileInput"
+                       class="flex items-center gap-3 border-2 border-dashed border-gray-200 dark:border-slate-700 hover:border-blue-400 dark:hover:border-blue-500 rounded-xl px-4 py-3 cursor-pointer transition group bg-gray-50/60 dark:bg-slate-800/40">
+                    <span class="text-lg leading-none">📁</span>
+                    <span class="text-xs whitespace-nowrap">
+                        <span class="font-bold text-blue-600 dark:text-blue-400 group-hover:underline">Choose CSV / XLSX</span>
+                        <span class="text-gray-400 dark:text-slate-500 hidden sm:inline"> or drag &amp; drop</span>
+                    </span>
+                    <span id="fileNameDisplay" class="ml-auto text-[10px] font-bold text-gray-400 dark:text-slate-500 italic truncate max-w-[220px]">No file chosen — using {{ 'pinned file' if not is_default_source|default(true) else 'Nifty 500 default' }}</span>
+                    <input type="file" id="csvFileInput" name="file" accept=".csv,.xlsx,.xls" class="hidden" onchange="updateFileName(this)">
+                </label>
+
+                {% if not is_default_source|default(true) %}
+                <div class="flex items-center gap-3 mt-2">
+                    <button type="submit" name="use_default" value="1"
+                            class="text-[9px] font-black uppercase text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 tracking-wider">
+                        📊 Use Default (one-time)
+                    </button>
+                    <button type="button" onclick="if(confirm('Clear the pinned source and switch back to the Nifty 500 default?')) document.getElementById('clearSourceFormMinervini').submit();"
+                            class="text-[9px] font-black uppercase text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 tracking-wider">
+                        ✕ Clear
+                    </button>
+                </div>
+                {% endif %}
+            </div>
+            <button type="submit" id="runScanBtn"
+                    class="relative overflow-hidden bg-blue-600 text-white px-8 py-3 rounded-xl font-black text-xs uppercase hover:bg-blue-700 transition flex items-center justify-center gap-2 shadow-lg shadow-blue-200 dark:shadow-blue-950/40 disabled:opacity-90 disabled:cursor-not-allowed">
+                <span id="runScanProgressFill" class="absolute inset-y-0 left-0 bg-blue-800/60 transition-all duration-300" style="width:0%;"></span>
+                <span id="runScanLabel" class="relative z-10">🚀 Run Scan</span>
+            </button>
+        </form>
+    </div>
+
+    <form method="POST" id="clearSourceFormMinervini" class="hidden">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="clear_source" value="1">
+    </form>
+
+    {# ---------------------------------------------------------------- #}
+    {# Filter chips                                                     #}
+    {# ---------------------------------------------------------------- #}
+    <div class="flex flex-wrap items-center gap-2 mb-3">
+        <button type="button" class="filter-chip active" data-filter="all" onclick="applyFilter(this)">All <span class="opacity-70">({{ stocks|length }})</span></button>
+        <button type="button" class="filter-chip" data-filter="passes-all" onclick="applyFilter(this)">✅ Passes All Criteria</button>
+        <button type="button" class="filter-chip" data-filter="high-rs" onclick="applyFilter(this)">🏆 RS ≥ 80</button>
+        {% if compare_mode %}
+        <button type="button" class="filter-chip" data-filter="rising" onclick="applyFilter(this)">🔥 Rising RS (5-scan)</button>
+        <button type="button" class="filter-chip" data-filter="consistent" onclick="applyFilter(this)">⭐ Consistent Leaders</button>
+        {% endif %}
+        <span id="filterCount" class="ml-auto text-[10px] font-bold uppercase text-gray-400 dark:text-slate-500 tracking-widest"></span>
+    </div>
+
+    {# ---------------------------------------------------------------- #}
+    {# Results table — no inner scroll box; thead sticks to viewport   #}
+    {# ---------------------------------------------------------------- #}
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm dark:shadow-none overflow-hidden mb-4">
+        <table class="min-w-full text-left text-xs" id="minerviniTable">
+            <thead class="bg-gray-50 dark:bg-slate-800/60 border-b border-gray-100 dark:border-slate-800 sticky top-0 z-10">
+                <tr>
+                    <th data-sortable data-type="number" onclick="sortTable(this)" class="sortable-th px-5 py-4 font-bold uppercase text-gray-400 dark:text-slate-400">Rank <span class="sort-arrow"></span></th>
+                    <th data-sortable data-type="number" onclick="sortTable(this)" class="sortable-th px-5 py-4 font-bold uppercase text-gray-400 dark:text-slate-400" title="Change in scan rank vs. the previous run — sensitive to the shortlist size changing between runs">Δ Rank <span class="sort-arrow"></span></th>
+                    <th data-sortable data-type="text" onclick="sortTable(this)" class="sortable-th px-5 py-4 font-bold uppercase text-gray-400 dark:text-slate-400">Symbol <span class="sort-arrow"></span></th>
+                    <th data-sortable data-type="number" onclick="sortTable(this)" class="sortable-th px-5 py-4 font-bold uppercase text-gray-400 dark:text-slate-400">Price ({{ currency_symbol|default('₹') }}) <span class="sort-arrow"></span></th>
+                    <th data-sortable data-type="number" onclick="sortTable(this)" class="sortable-th px-5 py-4 font-bold uppercase text-gray-400 dark:text-slate-400" title="Price &gt; 50SMA &gt; 150SMA &gt; 200SMA, and 200SMA trending up">MA Template <span class="sort-arrow"></span></th>
+                    <th data-sortable data-type="number" onclick="sortTable(this)" class="sortable-th px-5 py-4 font-bold uppercase text-gray-400 dark:text-slate-400 text-center" title="Position between 52-week low and high">52W Position <span class="sort-arrow"></span></th>
+                    <th data-sortable data-type="number" data-default-sort="desc" onclick="sortTable(this)" class="sortable-th px-5 py-4 font-bold uppercase text-gray-400 dark:text-slate-400 text-center" title="IBD-style RS Rating, 1-99 percentile within the scanned universe">RS Rating <span class="sort-arrow"></span></th>
+                    <th data-sortable data-type="number" onclick="sortTable(this)" class="sortable-th px-5 py-4 font-bold uppercase text-gray-400 dark:text-slate-400 text-center">Passes All <span class="sort-arrow"></span></th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-50 dark:divide-slate-800">
+                {% for stock in stocks %}
+                {% set range_pct = (((stock.price - stock.week52_low) / (stock.week52_high - stock.week52_low) * 100) if (stock.week52_high - stock.week52_low) > 0 else 0) %}
+                <tr class="hover:bg-indigo-50/30 dark:hover:bg-indigo-500/10 transition-colors even:bg-gray-50/40 dark:even:bg-slate-800/20 {% if stock.is_consistent|default(false) %}bg-yellow-50/50 dark:bg-yellow-500/10{% endif %} {% if loop.index > 50 %}extra-row hidden{% endif %}"
+                    data-passes-all="{{ 'true' if stock.passes_all else 'false' }}"
+                    data-rs="{{ stock.rs_rating|default(0) }}"
+                    data-rising="{{ 'true' if stock.rs_up|default(false) else 'false' }}"
+                    data-consistent="{{ 'true' if stock.is_consistent|default(false) else 'false' }}">
+
+                    <td data-sort="{{ stock.rank|default(loop.index) }}" class="px-5 py-4 font-bold text-gray-400 dark:text-slate-500">{{ stock.rank|default(loop.index) }}</td>
+
+                    <td data-sort="{{ stock.rank_diff if stock.rank_status|default('new') != 'new' else 99999 }}" class="px-5 py-4">
+                        {% if stock.rank_status|default('new') == 'new' %}
+                            <span class="text-[9px] px-2 py-1 bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-300 rounded font-bold uppercase">New</span>
+                        {% else %}
+                            <span class="font-bold {% if stock.rank_diff > 0 %}text-green-600 dark:text-emerald-400{% elif stock.rank_diff < 0 %}text-red-500 dark:text-red-400{% else %}text-gray-300 dark:text-slate-600{% endif %}">
+                                {{ stock.rank_diff }}{% if stock.rank_diff > 0 %} ▲{% elif stock.rank_diff < 0 %} ▼{% endif %}
+                            </span>
+                        {% endif %}
+                    </td>
+
+                    <td data-sort="{{ stock.symbol_clean if stock.symbol_clean else stock.symbol }}" class="px-5 py-4 font-black text-indigo-700 dark:text-indigo-300">
+                        <div class="flex items-center justify-between gap-2">
+                            <div class="flex items-center gap-1.5">
+                                <span>{{ stock.symbol_clean if stock.symbol_clean else stock.symbol }}</span>
+                                <span class="copy-icon text-gray-300 dark:text-slate-600 hover:text-indigo-500 text-[11px]"
+                                      onclick="copySymbol(this, '{{ stock.symbol_clean if stock.symbol_clean else stock.symbol }}')" title="Copy symbol">📋</span>
+                                {% if stock.is_consistent|default(false) %}
+                                    <span class="text-[9px] px-1.5 py-0.5 bg-yellow-100 dark:bg-yellow-500/15 text-yellow-700 dark:text-yellow-300 rounded-md uppercase font-bold border border-yellow-200 dark:border-yellow-700/40">Leader ⭐</span>
+                                {% endif %}
+                            </div>
+                            <div class="flex items-center gap-1 shrink-0">
+                                <button onclick="addToFavorites('{{ stock.symbol_clean if stock.symbol_clean else stock.symbol }}')"
+                                        class="text-gray-300 dark:text-slate-600 hover:text-yellow-400 dark:hover:text-yellow-300 transition focus:outline-none" title="Add to Watchlist">⭐</button>
+                                <button onclick="openStrategyModal('{{ stock.symbol_clean if stock.symbol_clean else stock.symbol }}')"
+                                        class="text-gray-300 dark:text-slate-600 hover:text-blue-500 dark:hover:text-blue-400 transition focus:outline-none" title="Add to Strategy">📈</button>
+                            </div>
+                        </div>
+                    </td>
+
+                    <td data-sort="{{ stock.price }}" class="px-5 py-4 font-bold text-gray-900 dark:text-slate-100 tabular-nums">{{ currency_symbol|default('₹') }}{{ '%.2f'|format(stock.price) }}</td>
+
+                    <td data-sort="{{ (stock.ma_alignment_pass|int) + (stock.ma_slope_pass|int) }}" class="px-5 py-4">
+                        <div class="flex items-center gap-1">
+                            <span class="crit-badge {{ 'crit-pass' if stock.ma_alignment_pass else 'crit-fail' }}" title="Price &gt; 50SMA &gt; 150SMA &gt; 200SMA">{{ '✓' if stock.ma_alignment_pass else '✕' }}</span>
+                            <span class="crit-badge {{ 'crit-pass' if stock.ma_slope_pass else 'crit-fail' }}" title="150SMA &gt; 200SMA, and 200SMA rising vs. ~1 month ago">{{ '✓' if stock.ma_slope_pass else '✕' }}</span>
+                        </div>
+                        <div class="text-[9px] text-gray-400 dark:text-slate-500 font-mono tracking-tighter mt-1 tabular-nums">
+                            {{ '%.1f'|format(stock.sma_50) }} · {{ '%.1f'|format(stock.sma_150) }} · {{ '%.1f'|format(stock.sma_200) }}
+                        </div>
+                    </td>
+
+                    <td data-sort="{{ range_pct|round(1) }}" class="px-5 py-4">
+                        <div class="w-24 mx-auto h-1.5 bg-gray-100 dark:bg-slate-800 rounded-full relative" title="{{ '%.1f'|format(stock.pct_above_52w_low) }}% above 52W low · {{ '%.1f'|format(stock.pct_below_52w_high) }}% below 52W high">
+                            <div class="absolute top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-slate-900 {{ 'bg-emerald-500' if stock.boundary_pass else 'bg-gray-400 dark:bg-slate-600' }}"
+                                 style="left: calc({{ [[range_pct, 100]|min, 0]|max }}% - 5px);"></div>
+                        </div>
+                        <div class="flex justify-between text-[8px] text-gray-400 dark:text-slate-500 mt-1 w-24 mx-auto uppercase font-bold">
+                            <span>Low</span><span>High</span>
+                        </div>
+                    </td>
+
+                    <td data-sort="{{ stock.rs_rating|default(0) }}" class="px-5 py-4 text-center">
+                        <div class="inline-flex items-center gap-1">
+                            <span class="inline-block px-3 py-1 rounded-full text-[10px] font-black
+                                {% if stock.rs_up|default(false) %}bg-emerald-500 text-white shadow-sm{% elif stock.rs_rating|default(0) >= 80 %}bg-blue-600 text-white shadow-sm{% else %}bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400{% endif %}">
+                                {{ stock.rs_rating|default('N/A') }}
+                            </span>
+                            {% if stock.rs_up|default(false) %}<span title="RS Rating has risen every scan over the last {{ stock.rs_h|default([])|length }} runs">🔥</span>{% endif %}
+                        </div>
+                        {% if stock.rs_h|default([])|length > 1 %}
+                        <div class="flex items-end justify-center gap-[2px] h-4 mt-1.5" title="Last {{ stock.rs_h|length }} scans: {{ stock.rs_h|join(' → ') }}">
+                            {% for val in stock.rs_h %}
+                            <div class="w-[3px] rounded-sm {% if not loop.first and val > stock.rs_h[loop.index0 - 1] %}bg-emerald-400{% elif not loop.first and val < stock.rs_h[loop.index0 - 1] %}bg-red-400{% else %}bg-slate-400 dark:bg-slate-600{% endif %}"
+                                 style="height: {{ [(val * 0.16)|round(1), 2]|max }}px;"></div>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                    </td>
+
+                    <td data-sort="{{ stock.passes_all|int }}" class="px-5 py-4 text-center">
+                        {% if stock.passes_all %}
+                        <span class="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-[10px] font-black bg-emerald-500 text-white shadow-sm uppercase">✅ Qualified</span>
+                        {% else %}
+                        <span class="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-[10px] font-black bg-gray-100 dark:bg-slate-800 text-gray-400 dark:text-slate-500 uppercase">— No</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% if stocks|length > 50 %}
+    <div class="text-center mb-8">
+        <button type="button" id="showAllBtn" onclick="toggleShowAll()" class="text-[10px] font-black uppercase text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 tracking-wider">
+            Show All ({{ stocks|length }}) ▾
+        </button>
+    </div>
+    {% endif %}
+
+    {# ---------------------------------------------------------------- #}
+    {# Compact scan history                                             #}
+    {# ---------------------------------------------------------------- #}
+    <div class="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm dark:shadow-none">
+        <h3 class="text-[10px] font-black text-gray-400 dark:text-slate-500 uppercase tracking-widest mb-2">🕒 Last 5 Scans History</h3>
+        {% if history %}
+        <div class="divide-y divide-gray-50 dark:divide-slate-800">
+            {% for entry in history %}
+            <div class="flex flex-wrap items-center gap-x-4 gap-y-1 py-2.5 px-1 hover:bg-gray-50/70 dark:hover:bg-slate-800/40 rounded-lg transition">
+                <span class="text-[9px] font-black text-blue-500 dark:text-blue-400 uppercase whitespace-nowrap w-[130px] shrink-0">{{ entry.time }}</span>
+                <span class="text-xs font-bold text-gray-700 dark:text-slate-300 truncate flex-1 min-w-[100px]">{{ entry.source }}</span>
+                <span class="text-[9px] font-bold text-gray-400 dark:text-slate-500 uppercase whitespace-nowrap">{{ entry.count }} scanned</span>
+                {% if entry.qualifiers_count is defined %}
+                <span class="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 uppercase whitespace-nowrap" title="Stocks that passed every Trend Template + RS criterion on this scan">✅ {{ entry.qualifiers_count }} qualified</span>
+                {% endif %}
+                <a href="{{ url_for('minervini_ind.restore_minervini_snapshot', snapshot_id=entry.snapshot_id) }}"
+                   class="ml-auto inline-flex items-center gap-1 text-[10px] font-black uppercase text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 tracking-wider transition whitespace-nowrap">
+                    🔄 Restore
+                </a>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-xs text-gray-400 dark:text-slate-500 italic">No historical data available in this session.</p>
+        {% endif %}
+    </div>
+</div>
+
+{# ---------------------------------------------------------------- #}
+{# Strategy modal — identical mechanism to the other IND screeners #}
+{# ---------------------------------------------------------------- #}
+<div id="strategyModal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50 flex items-center justify-center">
+    <div class="bg-white dark:bg-slate-900 rounded-2xl p-6 w-80 shadow-2xl border border-gray-100 dark:border-slate-800">
+        <h3 class="text-xs font-black uppercase tracking-widest text-gray-400 dark:text-slate-500 mb-4">Select Strategy</h3>
+        <input type="hidden" id="modalSymbol">
+        <select id="strategySelect" class="w-full text-xs font-bold p-3 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 border border-gray-100 dark:border-slate-700 rounded-xl mb-4 focus:ring-2 focus:ring-blue-500 outline-none">
+            <option value="minervini_trend_template">Minervini Trend Template</option>
+            <option value="rs_leaders">RS Leaders</option>
+        </select>
+        <div class="flex flex-col gap-2">
+            <button onclick="submitToStrategy()" class="bg-blue-600 text-white py-3 rounded-xl text-[10px] font-black uppercase hover:bg-blue-700 transition">Add to Selected</button>
+            <button onclick="createNewStrategy()" class="text-blue-600 dark:text-blue-400 py-2 text-[10px] font-bold uppercase hover:underline">+ Create New Strategy</button>
+            <button onclick="closeStrategyModal()" class="text-gray-400 dark:text-slate-500 py-2 text-[10px] font-bold uppercase hover:text-gray-600 dark:hover:text-slate-300">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<script>
+// ---------------------------------------------------------------------
+// Generic column sort — reads each cell's data-sort attribute (raw value
+// set server-side), never rendered text, so badges/sparklines/icons never
+// interfere with sorting.
+// ---------------------------------------------------------------------
+function sortTable(th) {
+    const table = document.getElementById("minerviniTable");
+    const tbody = table.querySelector("tbody");
+    const headerRow = th.parentElement;
+    const colIndex = Array.from(headerRow.children).indexOf(th);
+    const type = th.dataset.type || 'number';
+    const nextDir = th.dataset.sortDir === 'asc' ? 'desc' : (th.dataset.sortDir === 'desc' ? 'asc' : (th.dataset.defaultSort || 'asc'));
+
+    headerRow.querySelectorAll('.sortable-th').forEach(h => {
+        h.dataset.sortDir = '';
+        h.classList.remove('text-indigo-600', 'dark:text-indigo-300');
+        const arrow = h.querySelector('.sort-arrow');
+        if (arrow) arrow.textContent = '';
+    });
+    th.dataset.sortDir = nextDir;
+    th.classList.add('text-indigo-600', 'dark:text-indigo-300');
+    const arrow = th.querySelector('.sort-arrow');
+    if (arrow) arrow.textContent = nextDir === 'asc' ? '▲' : '▼';
+
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    rows.sort((a, b) => {
+        const rawA = a.children[colIndex].dataset.sort ?? a.children[colIndex].innerText;
+        const rawB = b.children[colIndex].dataset.sort ?? b.children[colIndex].innerText;
+        let cmp;
+        if (type === 'text') {
+            cmp = String(rawA).localeCompare(String(rawB));
+        } else {
+            const numA = parseFloat(rawA), numB = parseFloat(rawB);
+            cmp = (isNaN(numA) ? -Infinity : numA) - (isNaN(numB) ? -Infinity : numB);
+        }
+        return nextDir === 'asc' ? cmp : -cmp;
+    });
+    rows.forEach(row => tbody.appendChild(row));
+}
+
+// ---------------------------------------------------------------------
+// Filter chips
+// ---------------------------------------------------------------------
+function applyFilter(btn) {
+    document.querySelectorAll('.filter-chip').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const filter = btn.dataset.filter;
+    const rows = document.querySelectorAll('#minerviniTable tbody tr');
+    let visibleCount = 0;
+    rows.forEach(row => {
+        let show = true;
+        if (filter === 'passes-all') show = row.dataset.passesAll === 'true';
+        else if (filter === 'high-rs') show = parseFloat(row.dataset.rs) >= 80;
+        else if (filter === 'rising') show = row.dataset.rising === 'true';
+        else if (filter === 'consistent') show = row.dataset.consistent === 'true';
+        // Respect the Show-Top-50 cap: a filtered-out extra row stays hidden either way.
+        if (show && row.classList.contains('extra-row') && !window.__showAllActive) show = false;
+        row.style.display = show ? '' : 'none';
+        if (show) visibleCount++;
+    });
+    const countEl = document.getElementById('filterCount');
+    countEl.textContent = filter === 'all' ? '' : `Showing ${visibleCount} of ${rows.length}`;
+}
+
+// ---------------------------------------------------------------------
+// Show Top 50 / Show All toggle
+// ---------------------------------------------------------------------
+window.__showAllActive = false;
+function toggleShowAll() {
+    window.__showAllActive = !window.__showAllActive;
+    const btn = document.getElementById('showAllBtn');
+    document.querySelectorAll('#minerviniTable tbody tr.extra-row').forEach(row => {
+        row.classList.toggle('hidden', !window.__showAllActive);
+    });
+    const activeFilter = document.querySelector('.filter-chip.active');
+    if (activeFilter) applyFilter(activeFilter);
+    btn.textContent = window.__showAllActive ? 'Show Top 50 ▴' : `Show All ({{ stocks|length }}) ▾`;
+}
+
+// ---------------------------------------------------------------------
+// Copy-to-clipboard — silent, brief color pulse, no alert/toast
+// ---------------------------------------------------------------------
+function copySymbol(el, symbol) {
+    navigator.clipboard.writeText(symbol).then(() => {
+        el.classList.add('copied');
+        setTimeout(() => el.classList.remove('copied'), 600);
+    });
+}
+
+// ---------------------------------------------------------------------
+// Client-side CSV export of currently VISIBLE rows only
+// ---------------------------------------------------------------------
+function buildExportFilename(baseName) {
+    const now = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+    return `${baseName}_${stamp}.csv`;
+}
+
+function exportVisibleRowsToCsv() {
+    const table = document.getElementById('minerviniTable');
+    const headers = Array.from(table.querySelectorAll('thead th')).map(th => th.childNodes[0].textContent.trim());
+    const rows = Array.from(table.querySelectorAll('tbody tr')).filter(r => r.style.display !== 'none');
+
+    const lines = [headers.join(',')];
+    rows.forEach(row => {
+        const cells = Array.from(row.children).map(td => {
+            const raw = td.dataset.sort ?? td.innerText.replace(/\s+/g, ' ').trim();
+            const escaped = String(raw).replace(/"/g, '""');
+            return `"${escaped}"`;
+        });
+        lines.push(cells.join(','));
+    });
+
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = buildExportFilename('MinerviniScreener_IND');
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+// ---------------------------------------------------------------------
+// Upload panel — themed drop zone standing in for the raw file input
+// ---------------------------------------------------------------------
+function updateFileName(input) {
+    const display = document.getElementById('fileNameDisplay');
+    if (input.files.length > 0) {
+        display.textContent = input.files[0].name;
+        display.classList.remove('italic', 'text-gray-400', 'dark:text-slate-500');
+        display.classList.add('text-blue-600', 'dark:text-blue-400', 'font-bold');
+    } else {
+        display.textContent = 'No file chosen — using Nifty 500 default';
+        display.classList.add('italic', 'text-gray-400', 'dark:text-slate-500');
+        display.classList.remove('text-blue-600', 'dark:text-blue-400', 'font-bold');
+    }
+}
+
+(function setupCsvDropZone() {
+    const zone = document.getElementById('csvDropZone');
+    const input = document.getElementById('csvFileInput');
+    if (!zone || !input) return;
+    ['dragover', 'dragleave', 'drop'].forEach(evt => zone.addEventListener(evt, e => e.preventDefault()));
+    zone.addEventListener('dragover', () => zone.classList.add('border-blue-400', 'dark:border-blue-500'));
+    zone.addEventListener('dragleave', () => zone.classList.remove('border-blue-400', 'dark:border-blue-500'));
+    zone.addEventListener('drop', e => {
+        zone.classList.remove('border-blue-400', 'dark:border-blue-500');
+        const dt = e.dataTransfer;
+        if (dt && dt.files && dt.files.length) {
+            input.files = dt.files;
+            updateFileName(input);
+        }
+    });
+})();
+
+// ---------------------------------------------------------------------
+// Scan submit — AJAX POST (preventDefault, so the page never navigates
+// away and the polling context stays alive), background thread on the
+// server, progress fill on the button itself via /progress polling, then
+// a single reload once the scan actually finishes. A plain form POST
+// here would destroy this JS context mid-scan on submission and make the
+// button look permanently "stuck at Scanning" — this is deliberately NOT
+// a normal submit.
+// ---------------------------------------------------------------------
+let _scanSubmitting = false;
+let _polling = false;
+
+function pollScanProgress() {
+    if (_polling) return;
+    _polling = true;
+    const fill = document.getElementById('runScanProgressFill');
+    const label = document.getElementById('runScanLabel');
+
+    const tick = () => {
+        fetch("{{ url_for('minervini_ind.minervini_progress') }}")
+            .then(r => r.json())
+            .then(data => {
+                const pct = Math.max(0, Math.min(100, data.percent || 0));
+                if (fill) fill.style.width = pct + '%';
+                if (label) label.textContent = `⏳ Scanning... ${pct}%`;
+                if (data.running) {
+                    setTimeout(tick, 700);
+                } else {
+                    // Scan finished server-side — reload once to pick up the
+                    // fresh results cache rather than trying to patch the
+                    // DOM in place.
+                    window.location.reload();
+                }
+            })
+            .catch(() => {
+                // Progress endpoint unreachable — fall back to a fixed
+                // delay-then-reload so the UI doesn't hang forever.
+                setTimeout(() => window.location.reload(), 4000);
+            });
+    };
+    tick();
+}
+
+(function setupScanForm() {
+    const form = document.getElementById('scanForm');
+    if (!form) return;
+    form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        if (_scanSubmitting) return;
+        _scanSubmitting = true;
+
+        const label = document.getElementById('runScanLabel');
+        if (label) label.textContent = '⏳ Scanning...';
+        setTimeout(() => {
+            const btn = document.getElementById('runScanBtn');
+            if (btn) btn.disabled = true;
+        }, 0);
+
+        const formData = new FormData(form);
+        // If "Use Default (one-time)" was the clicked button, its name/value
+        // is included automatically by FormData(form) — no extra field needed.
+        fetch(form.action || window.location.href, {
+            method: 'POST',
+            body: formData,
+        })
+            .then(() => pollScanProgress())
+            .catch(() => {
+                if (label) label.textContent = '⚠️ Failed to start — retry';
+                _scanSubmitting = false;
+                const btn = document.getElementById('runScanBtn');
+                if (btn) btn.disabled = false;
+            });
+    });
+})();
+
+// ---------------------------------------------------------------------
+// Shared favorites / strategy modal — same endpoints as your other
+// IND screener pages, reused as-is.
+// ---------------------------------------------------------------------
+function addToFavorites(symbol) {
+    const formData = new FormData();
+    formData.append('symbol', symbol);
+    formData.append('csrf_token', '{{ csrf_token }}');
+    fetch('/add-favorite-india', { method: 'POST', body: formData })
+        .then(response => response.json())
+        .then(data => { alert(data.message); });
+}
+
+function openStrategyModal(symbol) {
+    document.getElementById('modalSymbol').value = symbol;
+    document.getElementById('strategyModal').classList.remove('hidden');
+}
+function closeStrategyModal() {
+    document.getElementById('strategyModal').classList.add('hidden');
+}
+function createNewStrategy() {
+    const newName = prompt("Enter New Strategy Name:");
+    if (newName) {
+        const select = document.getElementById('strategySelect');
+        const option = document.createElement('option');
+        option.value = newName.toLowerCase().replace(/\s+/g, '_');
+        option.text = newName;
+        select.add(option);
+        select.value = option.value;
+    }
+}
+function submitToStrategy() {
+    const symbol = document.getElementById('modalSymbol').value;
+    const strategy = document.getElementById('strategySelect').value;
+    const strategyName = document.getElementById('strategySelect').options[document.getElementById('strategySelect').selectedIndex].text;
+    const formData = new FormData();
+    formData.append('symbol', symbol);
+    formData.append('strategy', strategyName);
+    formData.append('market', 'india');
+    formData.append('csrf_token', '{{ csrf_token }}');
+    fetch('/add-to-strategy', { method: 'POST', body: formData })
+        .then(res => res.json())
+        .then(data => { alert(data.message); closeStrategyModal(); });
+}
+</script>
+{% endblock %}

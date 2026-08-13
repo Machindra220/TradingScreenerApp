@@ -321,7 +321,10 @@
                 {% if entry.leaders_90 %}
                 <span class="text-[9px] font-bold text-yellow-600 dark:text-yellow-400 uppercase whitespace-nowrap" title="Stocks that scored RS %tile ≥ 90 on this scan">🏆 {{ entry.leaders_90|length }} RS90+</span>
                 {% endif %}
-                <form method="POST" action="{{ url_for('volar_ind.restore_volar_ind_snapshot', snapshot_id=entry.snapshot_id) }}" class="ml-auto shrink-0">
+                <form method="POST" 
+                    action="{{ url_for('volar_ind.restore_volar_ind_snapshot', snapshot_id=entry.snapshot_id) }}" 
+                    class="ml-auto shrink-0">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <button type="submit"
                             onclick="return confirm('Restore results from this scan? This replaces what is currently displayed.');"
                             class="inline-flex items-center gap-1 text-[10px] font-black uppercase text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 tracking-wider transition whitespace-nowrap">

@@ -92,13 +92,60 @@ def compute_relative_strength(stock_close, index_close):
     return ((1 + stock_return) / (1 + index_return)) - 1
 
 
+
+def _normalise_df(df, sym=None):
+    """
+    Handles all three DataFrame formats from cache / yfinance:
+      - yf.Ticker(sym).history()     → simple string cols ('Close', etc.)
+      - yf.download([sym1, sym2...]) → MultiIndex tuple cols ('Close','AAPL')
+      - cache bulk fetch             → either of the above
+    Without this, MultiIndex DataFrames from the bulk fetch fail silently
+    on stock_df["Close"], causing most symbols to be skipped by the screener.
+    """
+    if df is None or df.empty:
+        return None
+    cols = df.columns
+    if isinstance(cols, pd.MultiIndex) or (len(cols) > 0 and isinstance(cols[0], tuple)):
+        if sym is not None:
+            candidates = [sym, sym.replace('-', '.'), sym.upper()]
+            for cand in candidates:
+                try:
+                    sliced = df.xs(cand, axis=1, level=1)
+                    sliced.columns = [c.title() for c in sliced.columns]
+                    return sliced
+                except KeyError:
+                    pass
+        flat_cols = {}
+        for c in cols:
+            field = c[0] if isinstance(c, tuple) else c
+            if field.lower() in ('open', 'high', 'low', 'close', 'volume'):
+                flat_cols[c] = field.title()
+        if flat_cols:
+            df = df[list(flat_cols.keys())].copy()
+            df.columns = list(flat_cols.values())
+            return df
+        return None
+    df = df.copy()
+    df.columns = [c.title() if isinstance(c, str) and
+                  c.lower() in ('open', 'high', 'low', 'close', 'volume')
+                  else c for c in df.columns]
+    return df
+
+
 def is_volar_us_candidate(symbol, index_df, stock_df):
     """
     Evaluates a single US symbol against Stage-2 criteria using pre-fetched
     DataFrames from the shared cache — NO network I/O inside this function.
     """
     try:
+        # Normalise both DataFrames — handles simple-column AND MultiIndex
+        # bulk-fetch output. Without this, stock_df["Close"] raises KeyError
+        # on MultiIndex DataFrames and the symbol is silently skipped.
+        stock_df = _normalise_df(stock_df, symbol)
+        index_df = _normalise_df(index_df)
         if stock_df is None or stock_df.empty or index_df is None or index_df.empty or len(stock_df) < 200:
+            return None
+        if 'Close' not in stock_df.columns or 'Close' not in index_df.columns:
             return None
 
         close = stock_df["Close"]
@@ -231,9 +278,12 @@ def run_scan_us(filepath, source_name):
 
     # Fetch the benchmark once via the US cache — shared with subsequent
     # per-stock reads so the index data also benefits from caching.
-    idx_data, _ = us_cache.get_price_history_bulk([US_INDEX[0]], interval='1d', lookback_days=500)
-    index_df = idx_data.get(US_INDEX[0])
-    if index_df is None or index_df.empty or len(index_df) < 200:
+    idx_data, _ = us_cache.get_price_history_bulk(
+        [US_INDEX[0]], interval="1d", lookback_days=500, progress_callback=lambda *a: None
+    )
+    index_df_raw = idx_data.get(US_INDEX[0])
+    index_df = _normalise_df(index_df_raw, US_INDEX[0])
+    if index_df is None or index_df.empty or 'Close' not in index_df.columns or len(index_df) < 200:
         _set_progress(active=False, stage="error",
                       error=f"Could not fetch benchmark {US_INDEX[0]}. Scan aborted.")
         return
@@ -244,7 +294,7 @@ def run_scan_us(filepath, source_name):
         _set_progress(stage="fetching_prices", processed=i, total=total, current_symbol=sym)
 
     price_data, fetch_report = us_cache.get_price_history_bulk(
-        symbols, interval='1d', lookback_days=500, progress_callback=_fetch_progress
+        symbols, interval="1d", lookback_days=500, progress_callback=_fetch_progress
     )
     price_data_asof = latest_bar_date(price_data)
 
@@ -580,11 +630,18 @@ def view_favorites_us():
     if os.path.exists(fav_path):
         with open(fav_path, 'r') as f:
             symbols = json.load(f)
-        idx_data, _ = us_cache.get_price_history_bulk([US_INDEX[0]], interval='1d', lookback_days=500)
-        index_df    = idx_data.get(US_INDEX[0])
-        price_data, _ = us_cache.get_price_history_bulk(symbols, interval='1d', lookback_days=500)
+        idx_data, _ = us_cache.get_price_history_bulk(
+            [US_INDEX[0]], interval="1d", lookback_days=500, progress_callback=lambda *a: None
+        )
+        index_df_raw = idx_data.get(US_INDEX[0])
+        index_df     = _normalise_df(index_df_raw, US_INDEX[0])
+        price_data, _ = us_cache.get_price_history_bulk(
+            symbols, interval="1d", lookback_days=500, progress_callback=lambda *a: None
+        )
         for sym in symbols:
-            data = is_volar_us_candidate(sym, index_df, price_data.get(sym)) if index_df is not None else None
+            raw_df = price_data.get(sym)
+            norm_df = _normalise_df(raw_df, sym) if raw_df is not None else None
+            data = is_volar_us_candidate(sym, index_df, norm_df) if index_df is not None else None
             if data:
                 stocks.append(data)
     return render_template("view_favorites.html", stocks=stocks, market="US", currency="$")

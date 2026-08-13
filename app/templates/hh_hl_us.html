@@ -1,300 +1,614 @@
 {% extends "base_authenticated.html" %}
-{% block title %}US HH-HL Trend Screener (US Market){% endblock %}
+{% block title %}US HH-HL Trend Screener{% endblock %}
 {% block content %}
 <div class="max-w-7xl mx-auto px-4 py-8">
-    
-    <!-- Top Nav Header Section Container -->
-    <div class="backdrop-blur-md bg-white/10 dark:bg-slate-950/40 border border-white/20 dark:border-slate-800/50 p-6 rounded-2xl shadow-xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-        <div>
-            <h2 class="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight">🇺🇸 US HH-HL Trend Screener</h2>
-            <div class="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
-                <p>ACTIVE SCANNER CONTEXT: <span class="text-blue-500 dark:text-blue-400 font-bold">{% if last_file != 'None' %}{{ last_file }}{% else %}S&P 500 Index (Default Roster){% endif %}</span></p>
-                <span>•</span>
-                <div class="flex items-center gap-1">
-                    ⏱️ Last Scan Time: <span class="text-indigo-600 dark:text-indigo-400 font-bold">{{ last_run_time or 'Never' }}</span>
+
+  <!-- ═══ PAGE HEADER ══════════════════════════════════════════════════════ -->
+  <div class="backdrop-blur-md bg-white/10 dark:bg-slate-950/40 border border-white/20 dark:border-slate-800/50 p-6 rounded-2xl shadow-xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+    <div>
+      <h2 class="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight">🇺🇸 US HH-HL Trend Screener <span class="text-xs font-semibold text-slate-400 normal-case ml-1">(±10% of 200-SMA Zone)</span></h2>
+      <div class="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400">
+        <span>📂 Source: <span class="text-blue-400 font-bold">{{ last_file }}</span></span>
+        <span>•</span>
+        <span>⏱ Last Run: <span class="text-indigo-400 font-bold">{{ last_run_time or 'Never' }}</span></span>
+        {% if scan_count %}
+        <span>•</span>
+        <span>📊 <span class="text-emerald-400 font-bold">{{ scan_count }}</span> passed</span>
+        <span>•</span>
+        <span>🏆 <span class="text-amber-400 font-bold">{{ rs90_count }}</span> RS outperformers</span>
+        {% endif %}
+        {% if cache_hits or yf_fetches %}
+        <span>•</span>
+        <span>💾 Cache: <span class="text-emerald-400 font-bold">{{ cache_hits }} hits</span> · <span class="{{ 'text-amber-400' if yf_fetches else 'text-slate-400' }} font-bold">{{ yf_fetches }} from yf</span>{% if failed_count %} · <span class="text-red-400 font-bold">{{ failed_count }} failed</span>{% endif %}</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+      <button id="filterWinnersBtn" onclick="toggleStrategyFilter()" class="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold uppercase rounded-lg shadow-md transition-all flex items-center gap-1.5">
+        <span id="filterBtnLabel">🎯 Filter Fresh Pullbacks</span>
+      </button>
+      <button onclick="toggleEMAFilter()" id="emaFilterBtn" class="px-3.5 py-2 bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold uppercase rounded-lg shadow-md transition-all flex items-center gap-1.5">
+        <span>📉 Near 200-SMA Only</span>
+      </button>
+      {% if stocks %}
+      <button onclick="exportCSV()" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold uppercase rounded-lg shadow-md transition-all flex items-center gap-1.5">
+        📥 Export CSV
+      </button>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- ═══ SCAN CONTROLS ════════════════════════════════════════════════════ -->
+  <div class="backdrop-blur-md bg-white/10 dark:bg-slate-950/40 border border-white/20 dark:border-slate-800/50 p-5 rounded-2xl shadow-xl mb-6">
+
+    <!-- Clear-source form — OUTSIDE scan form (no nested forms) -->
+    <form id="clearSourceForm" method="POST" action="{{ url_for('hh_hl_us.hh_hl_us_view') }}">
+      <input type="hidden" name="clear_source" value="1">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    </form>
+
+    <form id="scanForm" method="POST" enctype="multipart/form-data">
+      <input type="hidden" name="use_default" id="useDefaultHidden" value="0">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+      <div class="flex flex-row items-center gap-3">
+
+        <!-- Dropzone -->
+        <label id="dropzone" for="fileInput"
+          class="flex-1 min-w-0 flex items-center gap-3 px-4 py-3 rounded-xl border-2 border-dashed border-slate-600 hover:border-blue-500 bg-slate-900/30 cursor-pointer transition-all group"
+          ondragover="event.preventDefault();this.classList.add('border-blue-500')"
+          ondragleave="this.classList.remove('border-blue-500')"
+          ondrop="handleDrop(event)">
+          <span class="text-2xl">📁</span>
+          <div class="flex-1 min-w-0">
+            <span class="font-bold text-blue-400 group-hover:text-blue-300 text-xs">Choose CSV / XLSX</span>
+            <span class="text-slate-500 text-xs"> or drag &amp; drop</span>
+          </div>
+          <span id="fileNameDisplay" class="text-[10px] italic text-slate-500 truncate max-w-[140px]">
+            {% if not is_default %}{{ last_file }}{% else %}no file chosen{% endif %}
+          </span>
+          <input id="fileInput" type="file" name="file" accept=".csv,.xlsx,.xls" class="hidden">
+        </label>
+
+        <!-- Scan button — progress fill sweeps inside, pct shown in label -->
+        <div class="relative shrink-0">
+          <button type="submit" id="scanBtn"
+            class="relative overflow-hidden px-7 py-3 bg-blue-600 hover:bg-blue-500 text-white text-xs font-black uppercase rounded-xl shadow-lg transition-all flex items-center gap-2">
+            <div id="scanBtnFill" class="absolute left-0 top-0 h-full bg-blue-400/30 transition-all duration-300 z-0" style="width:0%"></div>
+            <span class="relative z-10 flex items-center gap-1.5">
+              <span id="scanBtnLabel">🚀 Run US Scan</span>
+              <span id="scanBtnPct" class="hidden text-blue-200 font-normal">0%</span>
+            </span>
+          </button>
+        </div>
+
+      </div>
+
+      <!-- Source status row -->
+      <div class="flex items-center gap-3 mt-3 ml-1 text-[11px]">
+        {% if is_default %}
+          <span class="text-emerald-400 font-bold">📊 Source: S&P 500 Default</span>
+        {% else %}
+          <span class="text-blue-400 font-bold">✅ Source: {{ last_file }}</span>
+          <button type="button" onclick="useDefaultScan()"
+            class="px-2.5 py-1 bg-slate-700 hover:bg-slate-600 text-slate-300 text-[10px] font-bold rounded-lg transition-all">
+            📊 Use Default
+          </button>
+          <button type="button" onclick="if(confirm('Clear pinned source?')) document.getElementById('clearSourceForm').submit()"
+            class="px-2.5 py-1 bg-red-900/40 hover:bg-red-800/60 text-red-400 text-[10px] font-bold rounded-lg transition-all">
+            ✕ Clear
+          </button>
+        {% endif %}
+      </div>
+    </form>
+
+  </div>
+
+  {% if summary_message %}
+  <div class="mb-5 p-3 rounded-lg border text-xs font-bold
+    {{ 'bg-blue-500/10 border-blue-500/30 text-blue-400' if '🔄' in summary_message else
+       'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' if '✅' in summary_message else
+       'bg-red-500/10 border-red-500/30 text-red-400' }}">
+    {{ summary_message }}
+  </div>
+  {% endif %}
+
+  <!-- ═══ QUICK FILTER PILLS ════════════════════════════════════════════════ -->
+  {% if stocks %}
+  <div class="flex flex-wrap gap-2 mb-5 items-center">
+    <span class="text-[10px] font-bold uppercase text-slate-500 mr-1">Quick Filters:</span>
+    <button onclick="setQuickFilter('all')"      class="qf-btn active-qf px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-all bg-slate-700 border-slate-600 text-white"         data-filter="all">All ({{ scan_count }})</button>
+    <button onclick="setQuickFilter('fresh')"    class="qf-btn px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-all bg-slate-800 border-slate-700 text-slate-300"              data-filter="fresh">🔥 Fresh Pullbacks</button>
+    <button onclick="setQuickFilter('ema5')"     class="qf-btn px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-all bg-slate-800 border-slate-700 text-slate-300"              data-filter="ema5">📉 ±5% EMA Huggers</button>
+    <button onclick="setQuickFilter('accel')"    class="qf-btn px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-all bg-slate-800 border-slate-700 text-slate-300"              data-filter="accel">🚀 Accelerating RS</button>
+    <button onclick="setQuickFilter('tightsl')"  class="qf-btn px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-all bg-slate-800 border-slate-700 text-slate-300"              data-filter="tightsl">🛡 SL ≤ 8%</button>
+    <button onclick="setQuickFilter('hh')"       class="qf-btn px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-all bg-slate-800 border-slate-700 text-slate-300"              data-filter="hh">📊 HH Confirmed</button>
+    <button onclick="setQuickFilter('early')"    class="qf-btn px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-all bg-emerald-900/40 border-emerald-700/50 text-emerald-400" data-filter="early">🌱 Early Risers</button>
+  </div>
+  {% endif %}
+
+  <!-- ═══ SECTOR CARDS ══════════════════════════════════════════════════════ -->
+  {% if top_sectors %}
+  <div class="backdrop-blur-md bg-white/5 dark:bg-slate-950/20 border border-white/10 dark:border-slate-800/30 p-4 rounded-2xl mb-6">
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="text-[10px] font-black uppercase text-slate-400 tracking-wider">🔥 Top Dominant GICS Sectors — Click to Filter</h3>
+      <button id="clearSectorBtn" onclick="clearSectorFilter()" class="hidden text-[10px] font-bold text-amber-500 hover:text-amber-400 transition-colors">✕ Clear Filter</button>
+    </div>
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+      {% for sec in top_sectors %}
+      <div onclick="toggleSectorFilter('{{ sec.name }}', this)"
+        style="background-color:{{ sec.theme.bg }};border-color:{{ sec.theme.border }};"
+        class="sector-card cursor-pointer p-3 rounded-xl border flex items-center justify-between shadow-sm transition-all hover:scale-[1.02]"
+        data-sector="{{ sec.name }}">
+        <div class="truncate">
+          <span class="block text-[9px] font-black uppercase opacity-60" style="color:{{ sec.theme.text }};">Rank #{{ loop.index }}</span>
+          <span class="text-xs font-black truncate block" style="color:{{ sec.theme.text }};" title="{{ sec.name }}">{{ sec.name }}</span>
+        </div>
+        <span style="background-color:{{ sec.theme.badge }};" class="px-2 py-1 text-xs font-black text-white rounded-lg ml-2">{{ sec.count }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- ═══ MAIN TABLE ════════════════════════════════════════════════════════ -->
+  <div class="backdrop-blur-md bg-white/10 dark:bg-slate-950/40 border border-white/20 dark:border-slate-800/50 rounded-2xl shadow-2xl overflow-hidden mb-6">
+    <div class="overflow-x-auto">
+      <table class="min-w-full text-left" id="hhhlTable">
+        <thead class="bg-slate-100/50 dark:bg-slate-900/40 border-b border-white/10 dark:border-slate-800/50">
+          <tr>
+            <th class="px-3 py-4 text-[9px] font-bold uppercase text-slate-400 w-10 sticky left-0 bg-slate-900/80">#</th>
+            <th class="px-4 py-4 text-[9px] font-bold uppercase text-slate-400 cursor-pointer hover:text-blue-400" onclick="sortTable(1,'str')">Symbol ↕</th>
+            <th class="px-3 py-4 text-[9px] font-bold uppercase text-slate-400 cursor-pointer hover:text-blue-400" onclick="sortTable(2,'str')">GICS Sector ↕</th>
+            <th class="px-4 py-4 text-[9px] font-bold uppercase text-slate-400 cursor-pointer hover:text-blue-400" onclick="sortTable(3,'num')">Price ($) ↕</th>
+            <th class="px-4 py-4 text-[9px] font-bold uppercase text-slate-400 cursor-pointer hover:text-blue-400" onclick="sortTable(4,'num')">EMA Dist % ↕</th>
+            <th class="px-4 py-4 text-[9px] font-bold uppercase text-slate-400 cursor-pointer hover:text-blue-400" onclick="sortTable(5,'num')">Pivot Low ($) ↕</th>
+            <th class="px-4 py-4 text-[9px] font-bold uppercase text-slate-400 cursor-pointer hover:text-blue-400" onclick="sortTable(6,'num')">SL % ↕</th>
+            <th class="px-4 py-4 text-[9px] font-bold uppercase text-slate-400 cursor-pointer hover:text-blue-400" onclick="sortTable(7,'num')">RS % vs S&P ↕</th>
+            <th class="px-4 py-4 text-[9px] font-bold uppercase text-slate-400 cursor-pointer hover:text-blue-400" onclick="sortTable(8,'num')">RS Trend ↕</th>
+            <th class="px-3 py-4 text-[9px] font-bold uppercase text-slate-400 text-center">History</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody" class="divide-y divide-white/5 dark:divide-slate-800/50">
+          {% for stock in stocks %}
+          {% set sec_theme = sector_color_map.get(stock.sector) %}
+          <tr class="stock-row hover:bg-white/10 dark:hover:bg-slate-800/30 transition-colors group"
+            data-sector="{{ stock.sector }}"
+            data-sl="{{ stock.sl_percent }}"
+            data-rs="{{ stock.rs }}"
+            data-retrace="{{ stock.retracement }}"
+            data-trend="{{ stock.rs_trend }}"
+            data-emadist="{{ stock.ema_dist }}"
+            data-fresh="{{ 'true' if stock.is_fresh else 'false' }}"
+            data-hh="{{ 'true' if stock.hh_confirmed else 'false' }}"
+            data-bars="{{ stock.bars_since_pivot }}">
+
+            <td class="px-3 py-4 text-[10px] text-slate-500 font-medium row-num sticky left-0 bg-slate-950/80">{{ loop.index }}</td>
+
+            <td class="px-4 py-4 font-black text-blue-400 text-sm whitespace-nowrap">
+              <div class="flex items-center gap-1.5 flex-wrap">
+                <a target="_blank" href="/analytics-chart-us?symbol={{ stock.symbol }}" class="hover:underline">{{ stock.symbol }}</a>
+                {% if stock.is_fresh %}
+                <span class="px-1.5 py-0.5 text-[8px] font-black uppercase bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded" title="Pivot ≤10 bars ago, SL ≤8%">🔥 FRESH</span>
+                {% endif %}
+                {% if stock.hh_confirmed %}
+                <span class="px-1.5 py-0.5 text-[8px] font-black uppercase bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded" title="Higher High confirmed">✅ HH</span>
+                {% endif %}
+                <button type="button" onclick="copyTicker('{{ stock.symbol }}', this)"
+                  class="p-1 text-slate-600 hover:text-blue-400 rounded opacity-0 group-hover:opacity-100 transition-opacity" title="Copy ticker">
+                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0A2.25 2.25 0 0113.5 4.5h-3a2.25 2.25 0 01-2.166-1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.75c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 011.927-.184"/>
+                  </svg>
+                </button>
+              </div>
+            </td>
+
+            <td class="px-3 py-4 text-[10px] whitespace-nowrap">
+              {% if sec_theme %}
+                <span style="background-color:{{ sec_theme.bg }};color:{{ sec_theme.text }};border-color:{{ sec_theme.border }};"
+                  class="px-2 py-0.5 rounded border font-black uppercase block text-center">{{ stock.sector }}</span>
+              {% else %}
+                <span class="text-slate-400 uppercase text-[10px]">{{ stock.sector or 'N/A' }}</span>
+              {% endif %}
+            </td>
+
+            <td class="px-4 py-4 text-xs font-bold text-slate-100 tabular-nums text-right">${{ "%.2f"|format(stock.price) }}</td>
+
+            <td class="px-4 py-4 text-xs font-bold tabular-nums text-right
+              {% if stock.ema_dist|abs < 3 %}text-emerald-400
+              {% elif stock.ema_dist >= 0 %}text-blue-400
+              {% else %}text-amber-400{% endif %}">
+              {{ "%+.1f"|format(stock.ema_dist) }}%
+            </td>
+
+            <td class="px-4 py-4 text-xs text-slate-300 tabular-nums text-right font-semibold">${{ "%.2f"|format(stock.last_swing_low) }}</td>
+
+            <td class="px-4 py-4 tabular-nums text-right">
+              <span class="text-xs font-black
+                {% if stock.sl_percent <= 5 %}text-emerald-400
+                {% elif stock.sl_percent <= 8 %}text-amber-400
+                {% else %}text-red-400{% endif %}">
+                {{ "%.1f"|format(stock.sl_percent) }}%
+              </span>
+            </td>
+
+            <td class="px-4 py-4 text-xs font-black tabular-nums text-right
+              {% if stock.rs >= 110 %}text-emerald-400
+              {% elif stock.rs >= 100 %}text-blue-400
+              {% else %}text-amber-400{% endif %}">
+              {{ "%.1f"|format(stock.rs) }}%
+            </td>
+
+            <td class="px-4 py-4 whitespace-nowrap">
+              {% if stock.rs_trend == 'Accelerating' %}
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 block text-center">🚀 +{{ "%.1f"|format(stock.rs_change) }}%</span>
+              {% elif stock.rs_trend == 'Steady' %}
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-500/15 text-blue-400 border border-blue-500/25 block text-center">🟢 {{ "%+.1f"|format(stock.rs_change) }}%</span>
+              {% else %}
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/15 text-amber-400 border border-amber-500/25 block text-center">⚠️ {{ "%+.1f"|format(stock.rs_change) }}%</span>
+              {% endif %}
+            </td>
+
+            <!-- Per-ticker last-5 sparkline + tooltip -->
+            <td class="px-3 py-4 text-center">
+              {% set t_hist = ticker_stats.get(stock.symbol, []) %}
+              {% if t_hist %}
+              <div class="relative group/hist inline-block cursor-pointer">
+                <div class="flex items-end gap-[2px] h-5 justify-center">
+                  {% for h in t_hist[-5:] %}
+                  {% set bar_h = [((h.rs - 90) / 30 * 100)|int, 8]|max %}
+                  <div class="w-1.5 rounded-sm {{ 'bg-emerald-400' if h.rs_change >= 0 else 'bg-red-400' }}"
+                    style="height:{{ bar_h }}%;min-height:3px;max-height:100%"></div>
+                  {% endfor %}
                 </div>
-            </div>
-        </div>
-        <div class="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-            <button id="strategyRuleBtn" onclick="toggleStrategyRuleFilter()" class="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold uppercase rounded-lg shadow-md transition-all flex items-center gap-1.5">
-                <span id="strategyRuleBtnText">🎯 Filter Fresh Pullbacks</span>
-            </button>
-            {% if stocks %}
-            <a href="{{ url_for('hh_hl_us.export_hhhl_us') }}" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 border border-emerald-500/30 text-white text-xs font-bold uppercase rounded-lg shadow-md transition-all flex items-center justify-center gap-1.5">
-                <span>📥 Export CSV</span>
-            </a>
-            {% endif %}
-        </div>
-    </div>
-
-    <!-- Upload Block Container -->
-    <div class="backdrop-blur-md bg-white/10 dark:bg-slate-950/40 border border-white/20 dark:border-slate-800/50 p-6 rounded-2xl shadow-xl mb-8">
-        <form method="POST" enctype="multipart/form-data" class="flex flex-col md:flex-row items-end gap-6">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <div class="flex-1 w-full">
-                <label class="block text-[10px] font-bold uppercase text-slate-400 mb-2 ml-1">Upload Custom US Ticker CSV (Optional)</label>
-                <input type="file" name="file" class="w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-[10px] file:font-bold file:bg-blue-500/10 file:text-blue-400 hover:file:bg-blue-500/20 transition-all">
-            </div>
-            <button type="submit" onclick="document.getElementById('spinner').classList.remove('hidden')" class="w-full md:w-auto px-8 py-3 bg-blue-600 hover:bg-blue-500 text-white text-xs font-black uppercase rounded-xl shadow-lg shadow-blue-500/20 transition-all flex items-center justify-center gap-2">
-                <span>🚀 Run US Scan</span>
-                <span id="spinner" class="hidden animate-spin">⏳</span>
-            </button>
-        </form>
-    </div>
-
-    {% if summary_message %}
-        <div class="mb-6 p-3 bg-blue-500/10 border border-blue-500/30 text-blue-600 dark:text-blue-400 text-xs font-bold rounded-lg">{{ summary_message }}</div>
-    {% endif %}
-
-    <!-- Top Dominant Sectors -->
-    {% if top_sectors %}
-    <div class="mb-6 backdrop-blur-md bg-white/5 dark:bg-slate-950/20 border border-white/10 dark:border-slate-800/30 p-4 rounded-2xl">
-        <div class="flex items-center justify-between mb-3">
-            <h3 class="text-xs font-black uppercase text-slate-400 tracking-wider">🔥 Top Dominant Sectors (Click Card to Filter)</h3>
-            <button id="clearSectorFilterBtn" onclick="clearSectorFilter()" class="hidden text-[10px] font-bold uppercase text-amber-500 hover:text-amber-400 transition-colors">✕ Clear Sector Filter</button>
-        </div>
-        <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
-            {% for sec in top_sectors %}
-            <div onclick="toggleSectorFilter('{{ sec.name }}', this)" style="background-color: {{ sec.theme.bg }}; border-color: {{ sec.theme.border }};" class="sector-card cursor-pointer p-3 rounded-xl border flex items-center justify-between shadow-sm transition-all hover:scale-[1.02] border-white/15">
-                <div class="truncate">
-                    <span class="block text-[9px] font-black uppercase opacity-60" style="color: {{ sec.theme.text }};">Rank #{{ loop.index }}</span>
-                    <span class="text-xs font-black truncate block" style="color: {{ sec.theme.text }};" title="{{ sec.name }}">{{ sec.name }}</span>
+                <div class="absolute bottom-full right-0 mb-2 hidden group-hover/hist:block z-50
+                  bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-3 min-w-[220px]">
+                  <p class="text-[9px] font-black uppercase text-slate-400 mb-2">{{ stock.symbol }} — Last {{ t_hist|length }} Scans</p>
+                  {% for h in t_hist[-5:]|reverse %}
+                  <div class="flex items-center justify-between text-[10px] py-0.5 border-b border-slate-800 last:border-0">
+                    <span class="text-slate-400">{{ h.date }}</span>
+                    <span class="text-blue-400 font-bold">RS {{ "%.1f"|format(h.rs) }}</span>
+                    <span class="{{ 'text-emerald-400' if h.rs_change >= 0 else 'text-red-400' }} font-bold">{{ "%+.1f"|format(h.rs_change) }}%</span>
+                    <span class="text-orange-400">SL {{ "%.1f"|format(h.sl_percent) }}%</span>
+                  </div>
+                  {% endfor %}
                 </div>
-                <span style="background-color: {{ sec.theme.badge }};" class="px-2 py-1 text-xs font-black text-white rounded-lg shadow-sm ml-2">
-                    {{ sec.count }}
-                </span>
-            </div>
-            {% endfor %}
-        </div>
-    </div>
-    {% endif %}
+              </div>
+              {% else %}
+              <span class="text-slate-700 text-[10px]">—</span>
+              {% endif %}
+            </td>
 
-    <!-- Central Interactive Main Datatable -->
-    <div class="backdrop-blur-md bg-white/10 dark:bg-slate-950/40 border border-white/20 dark:border-slate-800/50 rounded-2xl shadow-2xl overflow-hidden mb-8">
-        <div class="overflow-x-auto">
-            <table class="min-w-full text-left" id="trendTable">
-                <thead class="bg-slate-100/50 dark:bg-slate-900/40 border-b border-white/10 dark:border-slate-800/50">
-                    <tr>
-                        <th class="px-4 py-4 text-[9px] font-bold uppercase text-slate-400 w-12">Sr.</th>
-                        <th class="px-6 py-4 text-[9px] font-bold uppercase text-slate-400">Symbol</th>
-                        <th class="px-4 py-4 text-[9px] font-bold uppercase text-slate-400 cursor-pointer hover:text-blue-500 transition-colors" onclick="sortTable(2)">GICS Sector ↕</th>
-                        <th class="px-6 py-4 text-[9px] font-bold uppercase text-slate-400">Price</th>
-                        <th class="px-6 py-4 text-[9px] font-bold uppercase text-slate-400">Pivot Low</th>
-                        <th class="px-6 py-4 text-[9px] font-bold uppercase text-slate-400 cursor-pointer hover:text-blue-500 transition-colors" onclick="sortTable(5)">SL % ↕</th>
-                        <th class="px-6 py-4 text-[9px] font-bold uppercase text-slate-400">52W Retrace</th>
-                        <th class="px-6 py-4 text-[9px] font-bold uppercase text-slate-400">S&P RS Ratio</th>
-                        <th class="px-6 py-4 text-[9px] font-bold uppercase text-slate-400 cursor-pointer hover:text-blue-500 transition-colors" onclick="sortTable(8)">RS Trend ↕</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-white/5 dark:divide-slate-800/50">
-                    {% for stock in stocks %}
-                    {% set sec_theme = sector_color_map.get(stock.sector) %}
-                    <tr class="stock-row hover:bg-white/10 dark:hover:bg-slate-800/30 transition-colors group"
-                        data-sector="{{ stock.sector }}"
-                        data-sl="{{ stock.sl_percent }}"
-                        data-rs="{{ stock.rs }}"
-                        data-retrace="{{ stock.retracement }}"
-                        data-trend="{{ stock.rs_trend }}"
-                        data-fresh="{{ stock.is_fresh }}">
-                        <td class="px-4 py-4 text-[10px] text-slate-400 font-medium row-number">{{ loop.index }}</td>
-                        <td class="px-6 py-4 font-black text-blue-500 dark:text-blue-400 text-sm">
-                            <div class="flex items-center gap-2">
-                                <a target="_blank" href="/analytics-chart-us?symbol={{ stock.symbol }}" class="hover:underline flex items-center gap-1">
-                                    {{ stock.symbol }}
-                                </a>
-                                {% if stock.is_fresh %}
-                                    <span class="px-1.5 py-0.5 text-[8px] font-black uppercase bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded" title="Pivot formed within last 10 days with SL <= 8%">🔥 FRESH</span>
-                                {% endif %}
-                                <button type="button" onclick="navigator.clipboard.writeText('{{ stock.symbol }}')" class="p-1 text-slate-500 hover:text-blue-400 rounded opacity-0 group-hover:opacity-100 transition-opacity focus:opacity-100" title="Copy Ticker">
-                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0A2.25 2.25 0 0113.5 4.5h-3a2.25 2.25 0 01-2.166-1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.75c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 011.927-.184"></path></svg>
-                                </button>
-                            </div>
-                        </td>
-                        <td class="px-4 py-4 whitespace-nowrap text-[10px] tracking-tighter">
-                            {% if sec_theme %}
-                                <span style="background-color: {{ sec_theme.bg }}; color: {{ sec_theme.text }}; border-color: {{ sec_theme.border }};" class="px-2 py-0.5 rounded border font-black block text-center uppercase">
-                                    {{ stock.sector }}
-                                </span>
-                            {% else %}
-                                <span class="text-slate-400 opacity-80 block text-left uppercase">{{ stock.sector or 'N/A' }}</span>
-                            {% endif %}
-                        </td>
-                        <td class="px-6 py-4 text-xs font-bold text-slate-900 dark:text-white">${{ stock.price }}</td>
-                        <td class="px-6 py-4 text-xs text-slate-500 dark:text-slate-400">${{ stock.last_swing_low }}</td>
-                        <td class="px-6 py-4 text-xs font-black text-orange-500">{{ stock.sl_percent }}%</td>
-                        <td class="px-6 py-4 text-xs font-bold text-red-500">-{{ stock.retracement }}%</td>
-                        <td class="px-4 py-2 text-xs font-black text-green-500 dark:text-green-400">{{ stock.rs }}</td>
-                        <td class="px-4 py-2 whitespace-nowrap text-[10px] tracking-tighter">
-                            {% if 'Accelerating' in stock.rs_trend %}
-                                <span class="px-1.5 py-0.5 rounded font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 block text-center">
-                                    🚀 Rising (+{{ stock.rs_change }}%)
-                                </span>
-                            {% elif 'Steady' in stock.rs_trend %}
-                                <span class="px-1.5 py-0.5 rounded font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20 block text-center">
-                                    🟢 Steady ({{ stock.rs_change }}%)
-                                </span>
-                            {% else %}
-                                <span class="px-1.5 py-0.5 rounded font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20 block text-center">
-                                    ⚠️ Fading ({{ stock.rs_change }}%)
-                                </span>
-                            {% endif %}
-                        </td>
-                    </tr>
-                    {% else %}
-                    <tr>
-                        <td colspan="9" class="px-6 py-12 text-center text-slate-400 text-xs italic">No cached scan items located. Run scan to populate.</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="10" class="px-6 py-16 text-center text-slate-500 text-xs italic">
+              No stocks found. Run a scan to populate results.
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ═══ SCAN HISTORY ══════════════════════════════════════════════════════ -->
+  {% if history %}
+  <div class="backdrop-blur-md bg-white/5 dark:bg-slate-950/20 border border-white/10 dark:border-slate-800/30 p-5 rounded-2xl mb-8">
+    <h3 class="text-[10px] font-black uppercase text-slate-400 tracking-wider mb-3">🕓 Last 5 Scan History</h3>
+    <div class="space-y-2">
+      {% for h in history %}
+      <div class="flex items-center justify-between bg-slate-900/40 border border-slate-800/50 rounded-xl px-4 py-2.5 text-xs">
+        <div class="flex items-center gap-3">
+          <span class="text-slate-300 font-bold">{{ h.timestamp }}</span>
+          <span class="text-slate-500">•</span>
+          <span class="text-blue-400">{{ h.source }}</span>
+          <span class="text-slate-500">•</span>
+          <span class="text-emerald-400 font-bold">{{ h.count }} stocks</span>
+          {% if h.rs90_count %}
+          <span class="px-1.5 py-0.5 bg-amber-500/15 border border-amber-500/25 text-amber-400 text-[9px] font-black rounded">🏆 {{ h.rs90_count }} outperformers</span>
+          {% endif %}
         </div>
+        <button onclick="restoreScan('{{ h._file }}')"
+          class="px-3 py-1 bg-indigo-700/40 hover:bg-indigo-600/60 border border-indigo-600/30 text-indigo-300 text-[10px] font-bold rounded-lg transition-all">
+          ↺ Restore
+        </button>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- ═══ STRATEGY GUIDE ════════════════════════════════════════════════════ -->
+  <div style="background:linear-gradient(135deg,rgba(15,23,42,.9) 0%,rgba(30,27,75,.9) 100%);"
+    class="backdrop-blur-lg border border-indigo-500/30 text-white rounded-2xl p-6 shadow-2xl">
+    <h3 style="color:#818cf8;" class="text-lg font-black uppercase tracking-tight mb-1 flex items-center gap-2">
+      💡 US HH-HL Screener Strategy Guide
+    </h3>
+    <p class="text-[10px] text-slate-500 mb-5">Validated against Weinstein Stage Analysis, Minervini SEPA, and S&P RS momentum frameworks.</p>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-5 text-xs text-slate-300">
+
+      <div class="bg-slate-900/60 border border-slate-700/50 p-4 rounded-xl">
+        <h4 style="color:#a5b4fc;" class="font-bold text-sm mb-2">1. ±10% 200-SMA Zone — Early Entry Logic</h4>
+        <p class="leading-relaxed opacity-90">Stocks within ±10% of their 200-SMA are in the Stage 1→2 transition zone. Buying as price reclaims the 200-SMA while forming a Higher Low captures the earliest low-risk entry before the breakout is universally recognized. Stocks 0–5% above SMA (EMA Dist green) offer the best R-multiple setups in US markets.</p>
+      </div>
+
+      <div class="bg-slate-900/60 border border-slate-700/50 p-4 rounded-xl">
+        <h4 style="color:#93c5fd;" class="font-bold text-sm mb-2">2. 🔥 Fresh Pullback — Timing the Entry</h4>
+        <p class="leading-relaxed opacity-90">The FRESH tag marks stocks where the pivot low formed within the last 10 bars with SL ≤ 8%. This is the Minervini VCP (Volatility Contraction Pattern) timing signal — the stock has pulled back to a tight base just above a confirmed HL. The sooner after the pivot you enter, the lower the risk and the higher the potential reward.</p>
+      </div>
+
+      <div class="bg-slate-900/60 border border-slate-700/50 p-4 rounded-xl">
+        <h4 style="color:#fdba74;" class="font-bold text-sm mb-2">3. S&P RS Ratio — Relative Strength vs Benchmark</h4>
+        <p class="leading-relaxed opacity-90">RS Ratio = (Stock Price / S&P 500) × 100. A ratio above 100 means the stock is outperforming the S&P 500. The 20-day RS change filters for acceleration — stocks with rising RS are expanding their edge. RS ≥ 110 with Accelerating trend identifies the strongest momentum leaders worth focusing on.</p>
+      </div>
+
+      <div class="bg-slate-900/60 border border-slate-700/50 p-4 rounded-xl">
+        <h4 style="color:#6ee7b7;" class="font-bold text-sm mb-2">4. Stop Loss — SL % and Pivot Placement</h4>
+        <p class="leading-relaxed opacity-90">Place stops just below the last confirmed pivot low. SL % shows this distance as % of current price. Target SL ≤ 8% (amber) for standard entries, ≤ 5% (green) for tight bases offering superior R-multiples. The Bars Since Pivot column tells you how fresh the pivot is — entries within 5 bars (green) are highest priority.</p>
+      </div>
+
+      <div class="bg-slate-900/60 border border-slate-700/50 p-4 rounded-xl">
+        <h4 style="color:#fca5a5;" class="font-bold text-sm mb-2">5. 52W Retracement — Avoid Extended Stocks</h4>
+        <p class="leading-relaxed opacity-90">52W Retracement shows how far below the 52-week high the stock is trading. Combined with ±10% EMA filter, stocks with retracement ≤ 15% are near highs and have strong momentum. Stocks heavily off highs (>25%) may be forming bases but require more time — wait for a confirmed HL closer to the 200-SMA.</p>
+      </div>
+
+      <div class="bg-slate-900/60 border border-slate-700/50 p-4 rounded-xl">
+        <h4 style="color:#c4b5fd;" class="font-bold text-sm mb-2">6. 🌱 Early Risers — Composite Filter</h4>
+        <p class="leading-relaxed opacity-90">Early Risers combines: EMA Dist 0–+8%, Fresh pivot (≤10 bars), Accelerating RS, SL ≤ 8%, Retracement ≤ 20%, HH confirmed. This multi-factor screen identifies US stocks in the earliest Phase of Stage 2 with maximum upside and defined risk. These are the setups to size into and pyramid as they prove out.</p>
+      </div>
+
     </div>
 
-    <!-- Strategy Guide Module -->
-    <div style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.9) 0%, rgba(30, 27, 75, 0.9) 100%);" class="backdrop-blur-lg border border-indigo-500/30 text-white rounded-2xl p-6 shadow-2xl">
-        <h3 style="color: #818cf8;" class="text-lg font-black uppercase tracking-tight mb-4 flex items-center gap-2">
-            💡 US Market HH-HL Screener Strategy Guide
-        </h3>
-        
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 text-xs text-slate-300">
-            <div class="bg-slate-900/60 border border-slate-700/50 p-4 rounded-xl">
-                <h4 style="color: #a5b4fc;" class="font-bold text-sm mb-2">1. Fresh Pullback Support Floor</h4>
-                <p class="leading-relaxed opacity-90">
-                    The scanner isolates US stocks printing consecutive higher pivot lows while trading strictly above their 200-day Moving Average. Focus on stocks tagged as <span class="text-emerald-400 font-bold">🔥 FRESH</span> where the pivot low printed recently.
-                </p>
-            </div>
-
-            <div class="bg-slate-900/60 border border-slate-700/50 p-4 rounded-xl">
-                <h4 style="color: #93c5fd;" class="font-bold text-sm mb-2">2. S&P 500 Outperformance Confirmation</h4>
-                <p class="leading-relaxed opacity-90">
-                    Cross-reference the <strong>S&P RS Ratio</strong> and <strong>RS Trend</strong>. Prioritize setups displaying <span class="text-emerald-400 font-bold">🚀 Accelerating</span> status, confirming that the stock is expanding relative outperformance velocity vs the S&P 500 benchmark.
-                </p>
-            </div>
-
-            <div class="bg-slate-900/60 border border-slate-700/50 p-4 rounded-xl">
-                <h4 style="color: #fdba74;" class="font-bold text-sm mb-2">3. Low Risk-to-Reward Entry</h4>
-                <p class="leading-relaxed opacity-90">
-                    Examine the <strong>SL %</strong> metric. Look for tight consolidation setups where <strong>SL % ≤ 8%</strong>. Setting a stop-loss just below the last pivot low ensures minimal downside risk.
-                </p>
-            </div>
-        </div>
-
-        <div class="mt-6 pt-4 border-t border-slate-700/50 flex flex-col sm:flex-row justify-between items-center text-[11px] text-slate-400">
-            <div>
-                🎯 <strong>Optimal Reversal Strategy:</strong> Fresh Pullback Tag + S&P RS Accelerating + SL % ≤ 8% + 52W Retracement ≤ 15%
-            </div>
-            <div style="color: #818cf8;" class="mt-2 sm:mt-0 font-semibold tracking-wide">
-                US Institutional Reversal Execution
-            </div>
-        </div>
+    <div class="mt-6 pt-4 border-t border-slate-700/50 flex flex-col sm:flex-row justify-between items-center text-[11px] text-slate-400 gap-2">
+      <div>🎯 <strong>Optimal Entry:</strong> EMA Dist 0–+8% · 🔥 FRESH · RS ≥ 110 · 🚀 Accelerating · SL ≤ 8% · HH ✅ · Retrace ≤ 15%</div>
+      <div style="color:#818cf8;" class="font-semibold tracking-wide">Weinstein Stage 2 · Minervini SEPA · US HH-HL Alpha</div>
     </div>
+  </div>
+
 </div>
 
+<!-- ═══ JAVASCRIPT ════════════════════════════════════════════════════════ -->
 <script>
-let activeSectorFilter = null;
-let strategyFilterApplied = false;
-
-function toggleSectorFilter(sectorName, element) {
-    const cards = document.querySelectorAll('.sector-card');
-    const clearBtn = document.getElementById('clearSectorFilterBtn');
-    
-    if (activeSectorFilter === sectorName) {
-        clearSectorFilter();
-        return;
-    }
-    
-    activeSectorFilter = sectorName;
-    clearBtn.classList.remove('hidden');
-    
-    cards.forEach(card => {
-        card.style.opacity = "0.4";
-        card.style.borderColor = "rgba(255,255,255,0.05)";
-    });
-    element.style.opacity = "1";
-    element.style.borderColor = "#6366f1";
-    
-    applyCombinedFilters();
+// ── Sort ──────────────────────────────────────────────────────────────────────
+const colSortDir = {};
+function sortTable(colIdx, type) {
+  const tbody = document.querySelector('#hhhlTable tbody');
+  const rows  = Array.from(tbody.querySelectorAll('tr.stock-row'));
+  if (!rows.length) return;
+  const asc = !colSortDir[colIdx];
+  colSortDir[colIdx] = asc;
+  rows.sort((a, b) => {
+    const va = a.cells[colIdx]?.innerText.replace(/[%$+,🔥FRESH]/g,'').trim() || '';
+    const vb = b.cells[colIdx]?.innerText.replace(/[%$+,🔥FRESH]/g,'').trim() || '';
+    if (type === 'num') return asc ? parseFloat(va)-parseFloat(vb) : parseFloat(vb)-parseFloat(va);
+    return asc ? va.localeCompare(vb) : vb.localeCompare(va);
+  });
+  rows.forEach(r => tbody.appendChild(r));
+  reNumber();
 }
 
+function reNumber() {
+  let n = 1;
+  document.querySelectorAll('.stock-row').forEach(r => {
+    if (r.style.display !== 'none') r.querySelector('.row-num').innerText = n++;
+  });
+}
+
+// ── Filter state ──────────────────────────────────────────────────────────────
+let activeSector = null;
+let strategyOn   = false;
+let emaFilterOn  = false;
+let quickFilter  = 'all';
+
+function applyFilters() {
+  document.querySelectorAll('.stock-row').forEach(row => {
+    const sector  = row.dataset.sector;
+    const sl      = parseFloat(row.dataset.sl)      || 0;
+    const rs      = parseFloat(row.dataset.rs)       || 0;
+    const retrace = parseFloat(row.dataset.retrace)  || 0;
+    const trend   = row.dataset.trend;
+    const emaDist = parseFloat(row.dataset.emadist)  || 0;
+    const fresh   = row.dataset.fresh   === 'true';
+    const hh      = row.dataset.hh      === 'true';
+    const bars    = parseInt(row.dataset.bars)       || 999;
+
+    let ok = true;
+    if (activeSector && sector !== activeSector) ok = false;
+    if (strategyOn   && !(fresh && sl <= 8 && retrace <= 15 && trend === 'Accelerating')) ok = false;
+    if (emaFilterOn  && !(emaDist >= 0 && emaDist <= 10)) ok = false;
+
+    if (quickFilter === 'fresh')   ok = ok && fresh;
+    if (quickFilter === 'ema5')    ok = ok && (Math.abs(emaDist) <= 5);
+    if (quickFilter === 'accel')   ok = ok && (trend === 'Accelerating');
+    if (quickFilter === 'tightsl') ok = ok && (sl <= 8);
+    if (quickFilter === 'hh')      ok = ok && hh;
+    if (quickFilter === 'early')   ok = ok && (emaDist >= 0 && emaDist <= 8 && fresh && trend === 'Accelerating' && sl <= 8 && retrace <= 20 && hh);
+
+    row.style.display = ok ? '' : 'none';
+  });
+  reNumber();
+}
+
+// ── Sector filter ─────────────────────────────────────────────────────────────
+function toggleSectorFilter(name, el) {
+  if (activeSector === name) { clearSectorFilter(); return; }
+  activeSector = name;
+  document.getElementById('clearSectorBtn').classList.remove('hidden');
+  document.querySelectorAll('.sector-card').forEach(c => { c.style.opacity='0.35'; });
+  el.style.opacity = '1';
+  el.style.outline = '2px solid #6366f1';
+  applyFilters();
+}
 function clearSectorFilter() {
-    const cards = document.querySelectorAll('.sector-card');
-    const clearBtn = document.getElementById('clearSectorFilterBtn');
-    
-    activeSectorFilter = null;
-    clearBtn.classList.add('hidden');
-    
-    cards.forEach(card => {
-        card.style.opacity = "1";
-        card.style.borderColor = "rgba(255,255,255,0.15)";
+  activeSector = null;
+  document.getElementById('clearSectorBtn').classList.add('hidden');
+  document.querySelectorAll('.sector-card').forEach(c => { c.style.opacity='1'; c.style.outline=''; });
+  applyFilters();
+}
+
+function toggleStrategyFilter() {
+  strategyOn = !strategyOn;
+  const btn   = document.getElementById('filterWinnersBtn');
+  const label = document.getElementById('filterBtnLabel');
+  if (strategyOn) {
+    btn.classList.replace('bg-indigo-600','bg-amber-600');
+    btn.classList.replace('hover:bg-indigo-500','hover:bg-amber-500');
+    label.innerText = '🔄 Show All';
+  } else {
+    btn.classList.replace('bg-amber-600','bg-indigo-600');
+    btn.classList.replace('hover:bg-amber-500','hover:bg-indigo-500');
+    label.innerText = '🎯 Filter Fresh Pullbacks';
+  }
+  applyFilters();
+}
+
+function toggleEMAFilter() {
+  emaFilterOn = !emaFilterOn;
+  const btn = document.getElementById('emaFilterBtn');
+  btn.classList.toggle('bg-slate-700', !emaFilterOn);
+  btn.classList.toggle('bg-blue-700',   emaFilterOn);
+  applyFilters();
+}
+
+function setQuickFilter(name) {
+  quickFilter = name;
+  document.querySelectorAll('.qf-btn').forEach(b => {
+    const active = b.dataset.filter === name;
+    b.classList.toggle('bg-slate-700',   active);
+    b.classList.toggle('border-slate-600', active);
+    b.classList.toggle('text-white',     active);
+    b.classList.toggle('bg-slate-800',   !active);
+    b.classList.toggle('border-slate-700', !active);
+    b.classList.toggle('text-slate-300', !active);
+  });
+  applyFilters();
+}
+
+// ── Copy ticker (silent pulse) ────────────────────────────────────────────────
+function copyTicker(sym, btn) {
+  navigator.clipboard.writeText(sym).then(() => {
+    btn.classList.add('text-emerald-400');
+    setTimeout(() => btn.classList.remove('text-emerald-400'), 600);
+  });
+}
+
+// ── File upload UI ────────────────────────────────────────────────────────────
+document.getElementById('fileInput').addEventListener('change', function() {
+  document.getElementById('fileNameDisplay').innerText = this.files[0]?.name || 'no file chosen';
+});
+function handleDrop(ev) {
+  ev.preventDefault();
+  document.getElementById('dropzone').classList.remove('border-blue-500');
+  const f = ev.dataTransfer.files[0];
+  if (!f) return;
+  const dt = new DataTransfer();
+  dt.items.add(f);
+  document.getElementById('fileInput').files = dt.files;
+  document.getElementById('fileNameDisplay').innerText = f.name;
+}
+
+// ── Single-submit guard ───────────────────────────────────────────────────────
+let _scanSubmitting = false;
+
+function _lockScanBtn() {
+  _scanSubmitting = true;
+  document.getElementById('scanBtn').disabled = true;
+  document.getElementById('scanBtnLabel').innerText = '⏳ Scanning…';
+  const pctEl = document.getElementById('scanBtnPct');
+  pctEl.classList.remove('hidden');
+  pctEl.innerText = '0%';
+}
+
+document.getElementById('scanForm').addEventListener('submit', function(e) {
+  e.preventDefault();
+  if (_scanSubmitting) return;
+  _lockScanBtn();
+  const fd = new FormData(this);
+  fetch(this.action || window.location.href, { method: 'POST', body: fd })
+    .then(r => { if (!r.ok) throw new Error('POST ' + r.status); pollProgress(); })
+    .catch(err => {
+      console.error('[HHHL-US] scan POST error:', err);
+      _scanSubmitting = false;
+      document.getElementById('scanBtn').disabled = false;
+      document.getElementById('scanBtnLabel').innerText = '🚀 Run US Scan';
     });
-    
-    applyCombinedFilters();
+});
+
+function useDefaultScan() {
+  if (_scanSubmitting) return;
+  document.getElementById('useDefaultHidden').value = '1';
+  document.getElementById('scanForm').dispatchEvent(
+    new Event('submit', {bubbles: true, cancelable: true})
+  );
 }
 
-function toggleStrategyRuleFilter() {
-    const btn = document.getElementById('strategyRuleBtn');
-    const btnText = document.getElementById('strategyRuleBtnText');
-    
-    strategyFilterApplied = !strategyFilterApplied;
-    
-    if (strategyFilterApplied) {
-        btnText.innerText = "🔄 Show All Stocks";
-        btn.classList.remove('bg-indigo-600', 'hover:bg-indigo-500');
-        btn.classList.add('bg-amber-600', 'hover:bg-amber-500');
-    } else {
-        btnText.innerText = "🎯 Filter Fresh Pullbacks";
-        btn.classList.remove('bg-amber-600', 'hover:bg-amber-500');
-        btn.classList.add('bg-indigo-600', 'hover:bg-indigo-500');
-    }
-    
-    applyCombinedFilters();
-}
-
-function applyCombinedFilters() {
-    const rows = document.querySelectorAll('.stock-row');
-    let visibleIndex = 1;
-    
-    rows.forEach(row => {
-        const rowSector = row.getAttribute('data-sector');
-        const sl = parseFloat(row.getAttribute('data-sl')) || 0;
-        const retrace = parseFloat(row.getAttribute('data-retrace')) || 0;
-        const trend = row.getAttribute('data-trend');
-        const isFresh = row.getAttribute('data-fresh') === 'True';
-        
-        let matchesSector = !activeSectorFilter || (rowSector === activeSectorFilter);
-        let matchesStrategy = !strategyFilterApplied || (isFresh && sl <= 8.0 && retrace <= 15.0 && (trend.includes('Accelerating') || trend.includes('Rising')));
-        
-        if (matchesSector && matchesStrategy) {
-            row.style.display = "";
-            row.querySelector('.row-number').innerText = visibleIndex++;
+// ── Progress polling — drives fill + pct inside the button ───────────────────
+let _polling = false;
+function pollProgress() {
+  if (_polling) return;
+  _polling = true;
+  function _poll() {
+    fetch("{{ url_for('hh_hl_us.hhhl_us_progress') }}")
+      .then(r => r.json())
+      .then(d => {
+        // Fill sweeps across the button face
+        document.getElementById('scanBtnFill').style.width = d.pct + '%';
+        // Pct shown inline in the button label
+        const pctEl = document.getElementById('scanBtnPct');
+        pctEl.classList.remove('hidden');
+        pctEl.innerText = d.pct + '%';
+        // Tooltip on button shows current msg
+        document.getElementById('scanBtn').title = d.msg;
+        if (d.running) {
+          setTimeout(_poll, 1200);
         } else {
-            row.style.display = "none";
+          _polling = false;
+          if (d.pct >= 100) setTimeout(() => location.reload(), 900);
+          else {
+            _scanSubmitting = false;
+            document.getElementById('scanBtn').disabled = false;
+            document.getElementById('scanBtnLabel').innerText = '🚀 Run US Scan';
+            document.getElementById('scanBtnPct').classList.add('hidden');
+          }
         }
-    });
+      })
+      .catch(() => setTimeout(_poll, 2500));
+  }
+  _poll();
 }
 
-function sortTable(columnIndex) {
-    const table = document.getElementById("trendTable");
-    const tbody = table.tBodies[0];
-    const rows = Array.from(tbody.rows);
-    if (!rows.length || rows[0].cells.length <= columnIndex) return;
-    
-    const isAscending = table.getAttribute('data-order') === 'asc';
-    table.setAttribute('data-order', isAscending ? 'desc' : 'asc');
+{% if scan_running %}
+_lockScanBtn();
+pollProgress();
+{% endif %}
 
-    rows.sort((a, b) => {
-        let textA = a.cells[columnIndex].innerText.replace(/%|\$/g, '').trim();
-        let textB = b.cells[columnIndex].innerText.replace(/%|\$/g, '').trim();
-        
-        let valA = parseFloat(textA);
-        let valB = parseFloat(textB);
-        
-        if (!isNaN(valA) && !isNaN(valB)) {
-            return isAscending ? valA - valB : valB - valA;
-        }
-        return isAscending ? textA.localeCompare(textB) : textB.localeCompare(textA);
-    });
-    tbody.append(...rows);
+// ── Restore scan ──────────────────────────────────────────────────────────────
+function restoreScan(fname) {
+  if (!confirm('Restore this scan as the active result?')) return;
+  fetch("{{ url_for('hh_hl_us.hhhl_us_restore', filename='__FNAME__') }}".replace('__FNAME__', fname))
+    .then(r => { if (r.ok) location.reload(); });
+}
+
+// ── Client-side CSV export (timestamped, visible rows only) ──────────────────
+function buildExportFilename(base) {
+  const n = new Date(), pad = x => String(x).padStart(2,'0');
+  return `${base}_${n.getFullYear()}${pad(n.getMonth()+1)}${pad(n.getDate())}_${pad(n.getHours())}${pad(n.getMinutes())}${pad(n.getSeconds())}.csv`;
+}
+function exportCSV() {
+  const rows = Array.from(document.querySelectorAll('#hhhlTable tbody tr.stock-row'))
+                    .filter(r => r.style.display !== 'none');
+  const hdrs = Array.from(document.querySelectorAll('#hhhlTable thead th'))
+                    .map(h => h.innerText.replace(' ↕','').trim());
+  const lines = [hdrs.join(',')];
+  rows.forEach(r => {
+    lines.push(Array.from(r.cells).map(c => '"' + c.innerText.trim().replace(/"/g,'""') + '"').join(','));
+  });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([lines.join('\n')], {type:'text/csv'}));
+  a.download = buildExportFilename('HHHL_US');
+  a.click();
 }
 </script>
 {% endblock %}
