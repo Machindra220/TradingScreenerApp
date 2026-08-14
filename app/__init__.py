@@ -69,7 +69,9 @@ def create_app():
     from app.routes.hh_hl_us import hh_hl_us_bp
     from app.routes.ipo_screener import ipo_screener_bp
     from app.routes.minervini_ind_screener import minervini_bp
+    from app.routes.delivery_surge_screener import delivery_surge_bp
 
+    app.register_blueprint(delivery_surge_bp, url_prefix="/delivery")
     app.register_blueprint(minervini_bp)
     app.register_blueprint(ipo_screener_bp)
     app.register_blueprint(hh_hl_us_bp)
