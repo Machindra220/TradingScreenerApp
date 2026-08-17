@@ -1,0 +1,231 @@
+{% extends "base_authenticated.html" %}
+{% block title %}Trade Journal{% endblock %}
+{% block content %}
+<style>
+    .tabular-nums { font-variant-numeric: tabular-nums; }
+    .win-row { background: rgba(16,185,129,0.04) !important; }
+    .loss-row { background: rgba(239,68,68,0.04) !important; }
+    .dark .win-row { background: rgba(16,185,129,0.07) !important; }
+    .dark .loss-row { background: rgba(239,68,68,0.07) !important; }
+</style>
+
+<div class="max-w-7xl mx-auto px-4 py-8">
+
+    <!-- Header -->
+    <div class="flex flex-wrap justify-between items-start gap-4 mb-6">
+        <div>
+            <h2 class="text-2xl font-black text-indigo-900 dark:text-indigo-300 uppercase tracking-tight">📖 Trade Journal</h2>
+            <p class="text-[10px] font-bold text-gray-400 dark:text-slate-500 mt-1 uppercase">All closed trades · Close a position from the tracker to log it here automatically</p>
+        </div>
+        {% if all_trades %}
+        <a href="{{ url_for('trade_journal.trade_journal_export') }}" class="bg-gray-900 dark:bg-slate-700 text-white px-5 py-2.5 rounded-xl text-[10px] font-bold hover:bg-black transition shadow-lg shrink-0 uppercase">📥 Export CSV</a>
+        {% endif %}
+    </div>
+
+    <!-- Stats dashboard -->
+    {% if stats %}
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+        {% set stat_cards = [
+            ('Total Trades', stats.total_trades, '', 'text-gray-900 dark:text-slate-100'),
+            ('Win Rate', stats.win_rate ~ '%', '', 'text-emerald-600 dark:text-emerald-400' if stats.win_rate >= 50 else 'text-amber-600 dark:text-amber-400'),
+            ('Total P&L', '₹' ~ "{:,.0f}".format(stats.total_pnl), '', 'text-green-600 dark:text-emerald-400' if stats.total_pnl >= 0 else 'text-red-500'),
+            ('Expectancy', stats.expectancy ~ 'R', '', 'text-indigo-600 dark:text-indigo-300'),
+        ] %}
+        {% for label, val, icon, cls in stat_cards %}
+        <div class="bg-white dark:bg-slate-900 rounded-xl border border-gray-100 dark:border-slate-800 p-4 shadow-sm">
+            <div class="text-[9px] font-black uppercase text-gray-400 dark:text-slate-500 mb-1">{{ label }}</div>
+            <div class="text-xl font-black {{ cls }}">{{ val }}</div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Extended stats row -->
+    <div class="grid grid-cols-2 md:grid-cols-6 gap-3 mb-6">
+        {% set ext_stats = [
+            ('Winners', stats.winners ~ ' / ' ~ stats.total_trades, 'text-emerald-600 dark:text-emerald-400'),
+            ('Avg Winner', '₹' ~ "{:,.0f}".format(stats.avg_winner), 'text-emerald-600 dark:text-emerald-400'),
+            ('Avg Loser', '₹' ~ "{:,.0f}".format(stats.avg_loser), 'text-red-500 dark:text-red-400'),
+            ('Profit Factor', stats.profit_factor, 'text-indigo-600 dark:text-indigo-300'),
+            ('Best R', stats.best_r ~ 'R', 'text-emerald-600 dark:text-emerald-400'),
+            ('Avg Days Held', stats.avg_days_held, 'text-gray-700 dark:text-slate-300'),
+        ] %}
+        {% for label, val, cls in ext_stats %}
+        <div class="bg-white dark:bg-slate-900 rounded-xl border border-gray-100 dark:border-slate-800 p-3 shadow-sm">
+            <div class="text-[8px] font-black uppercase text-gray-400 dark:text-slate-500 mb-1">{{ label }}</div>
+            <div class="text-sm font-black {{ cls }}">{{ val }}</div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Streak + expectancy explainer -->
+    <div class="flex flex-wrap gap-4 mb-6">
+        {% if stats.streak_count > 0 %}
+        <div class="px-4 py-2.5 rounded-xl border text-[10px] font-bold
+             {% if stats.streak_type == 'W' %}bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300
+             {% else %}bg-red-50 dark:bg-red-500/10 border-red-200 dark:border-red-800 text-red-700 dark:text-red-300{% endif %}">
+            Current streak: {{ stats.streak_count }} {{ 'WINS 🔥' if stats.streak_type == 'W' else 'LOSSES ⚠️' }} in a row
+        </div>
+        {% endif %}
+        <div class="px-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-[10px] font-bold text-gray-600 dark:text-slate-400">
+            Expectancy {{ stats.expectancy }}R means every trade returns on average {{ stats.expectancy }}× your risk.
+            {% if stats.expectancy > 0 %} Positive edge ✅{% else %} Negative edge — review your exits ⚠️{% endif %}
+        </div>
+    </div>
+
+    <!-- Monthly breakdown -->
+    {% if stats.monthly %}
+    <div class="bg-white dark:bg-slate-900 rounded-xl border border-gray-100 dark:border-slate-800 shadow-sm p-4 mb-6">
+        <div class="text-[9px] font-black uppercase text-gray-400 dark:text-slate-500 mb-3">Monthly Breakdown</div>
+        <div class="flex flex-wrap gap-3">
+            {% for m in stats.monthly %}
+            <div class="flex items-center gap-2 px-3 py-2 rounded-lg border {% if m.pnl >= 0 %}border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-500/10{% else %}border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-500/10{% endif %}">
+                <span class="text-[10px] font-bold text-gray-600 dark:text-slate-400">{{ m.exit_month }}</span>
+                <span class="text-[10px] font-black {% if m.pnl >= 0 %}text-emerald-600 dark:text-emerald-300{% else %}text-red-500 dark:text-red-400{% endif %}">₹{{ "{:,.0f}".format(m.pnl) }}</span>
+                <span class="text-[9px] text-gray-400 dark:text-slate-500">{{ m.trades }}T · {{ "{:.0f}".format(m.win_rate) }}%W</span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+    {% endif %}
+
+    <!-- Filters -->
+    <div class="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm mb-6">
+        <form method="GET" class="flex flex-wrap items-end gap-3">
+            <div>
+                <label class="block text-[9px] font-black uppercase text-gray-400 dark:text-slate-500 mb-1">Symbol</label>
+                <input type="text" name="symbol" value="{{ sym_filter }}" placeholder="RELIANCE"
+                       class="px-3 py-2 text-xs rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 w-32 font-bold focus:outline-none focus:ring-2 focus:ring-indigo-400 uppercase">
+            </div>
+            <div>
+                <label class="block text-[9px] font-black uppercase text-gray-400 dark:text-slate-500 mb-1">Month</label>
+                <input type="month" name="month" value="{{ month_filter }}"
+                       class="px-3 py-2 text-xs rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 font-bold focus:outline-none focus:ring-2 focus:ring-indigo-400">
+            </div>
+            <div>
+                <label class="block text-[9px] font-black uppercase text-gray-400 dark:text-slate-500 mb-1">Outcome</label>
+                <select name="outcome" class="px-3 py-2 text-xs rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 font-bold focus:outline-none focus:ring-2 focus:ring-indigo-400">
+                    <option value="" {% if not outcome %}selected{% endif %}>All</option>
+                    <option value="win" {% if outcome=='win' %}selected{% endif %}>Winners only</option>
+                    <option value="loss" {% if outcome=='loss' %}selected{% endif %}>Losers only</option>
+                </select>
+            </div>
+            <button type="submit" class="px-5 py-2 bg-indigo-600 text-white rounded-xl font-black text-xs uppercase hover:bg-indigo-700 transition">🔍 Filter</button>
+            <a href="{{ url_for('trade_journal.trade_journal_view') }}" class="px-5 py-2 bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-slate-300 rounded-xl font-bold text-xs uppercase hover:bg-gray-200 dark:hover:bg-slate-700 transition border border-gray-200 dark:border-slate-700">🔄 Reset</a>
+        </form>
+    </div>
+
+    <!-- Trades table -->
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm dark:shadow-none overflow-x-auto mb-8">
+        <table class="min-w-full text-left text-xs">
+            <thead class="bg-gray-50/70 dark:bg-slate-800/40 border-b border-gray-100 dark:border-slate-800 sticky top-0 z-10">
+                <tr>
+                    <th class="px-5 py-4 font-bold uppercase text-gray-400 dark:text-slate-400">Symbol</th>
+                    <th class="px-5 py-4 font-bold uppercase text-gray-400 dark:text-slate-400">Entry Date</th>
+                    <th class="px-5 py-4 font-bold uppercase text-gray-400 dark:text-slate-400">Exit Date</th>
+                    <th class="px-5 py-4 font-bold uppercase text-gray-400 dark:text-slate-400 text-right tabular-nums">Entry (₹)</th>
+                    <th class="px-5 py-4 font-bold uppercase text-gray-400 dark:text-slate-400 text-right tabular-nums">Exit (₹)</th>
+                    <th class="px-5 py-4 font-bold uppercase text-gray-400 dark:text-slate-400 text-right tabular-nums">Qty</th>
+                    <th class="px-5 py-4 font-bold uppercase text-gray-400 dark:text-slate-400 text-right tabular-nums">P&L (₹)</th>
+                    <th class="px-5 py-4 font-bold uppercase text-indigo-400 dark:text-indigo-300 text-center">R-Multiple</th>
+                    <th class="px-5 py-4 font-bold uppercase text-gray-400 dark:text-slate-400 text-center">Days</th>
+                    <th class="px-5 py-4 font-bold uppercase text-gray-400 dark:text-slate-400 text-center">Entry RS</th>
+                    <th class="px-5 py-4 font-bold uppercase text-gray-400 dark:text-slate-400">Exit Reason</th>
+                    <th class="px-5 py-4 font-bold uppercase text-gray-400 dark:text-slate-400"></th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-50 dark:divide-slate-800">
+                {% for t in trades %}
+                <tr class="transition-colors hover:bg-gray-50/60 dark:hover:bg-slate-800/30 {% if t.pnl > 0 %}win-row{% elif t.pnl < 0 %}loss-row{% endif %}">
+                    <td class="px-5 py-4 font-black text-indigo-700 dark:text-indigo-300">{{ t.symbol }}</td>
+                    <td class="px-5 py-4 text-gray-600 dark:text-slate-400 tabular-nums">{{ t.entry_date }}</td>
+                    <td class="px-5 py-4 text-gray-600 dark:text-slate-400 tabular-nums">{{ t.exit_date }}</td>
+                    <td class="px-5 py-4 text-right tabular-nums font-bold text-gray-700 dark:text-slate-300">{{ "{:,.2f}".format(t.entry_price) }}</td>
+                    <td class="px-5 py-4 text-right tabular-nums font-bold {% if t.exit_price >= t.entry_price %}text-green-600 dark:text-emerald-400{% else %}text-red-500 dark:text-red-400{% endif %}">{{ "{:,.2f}".format(t.exit_price) }}</td>
+                    <td class="px-5 py-4 text-right tabular-nums text-gray-600 dark:text-slate-400">{{ t.qty }}</td>
+                    <td class="px-5 py-4 text-right tabular-nums font-black {% if t.pnl > 0 %}text-green-600 dark:text-emerald-400{% elif t.pnl < 0 %}text-red-500 dark:text-red-400{% else %}text-gray-500{% endif %}">
+                        {% if t.pnl > 0 %}+{% endif %}{{ "{:,.0f}".format(t.pnl) }}
+                        <div class="text-[9px] font-bold">{{ '{:+.1f}'.format(t.pnl_pct) }}%</div>
+                    </td>
+                    <td class="px-5 py-4 text-center">
+                        <span class="inline-block px-2.5 py-1 rounded-full text-[11px] font-black
+                             {% if t.r_multiple >= 3 %}bg-emerald-500 text-white{% elif t.r_multiple >= 2 %}bg-green-100 dark:bg-green-500/15 text-green-700 dark:text-green-300{% elif t.r_multiple >= 1 %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% elif t.r_multiple >= 0 %}bg-gray-100 dark:bg-slate-800 text-gray-500{% else %}bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400{% endif %}">
+                            {{ '{:+.2f}'.format(t.r_multiple) }}R
+                        </span>
+                    </td>
+                    <td class="px-5 py-4 text-center tabular-nums text-gray-600 dark:text-slate-400 font-bold">{{ t.days_held }}d</td>
+                    <td class="px-5 py-4 text-center">
+                        {% if t.entry_rs_pct %}
+                        <span class="text-[10px] px-2 py-0.5 rounded-full font-black
+                             {% if t.entry_rs_pct >= 90 %}bg-indigo-600 text-white{% elif t.entry_rs_pct >= 70 %}bg-indigo-100 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300{% else %}bg-gray-100 dark:bg-slate-800 text-gray-500{% endif %}">
+                            {{ t.entry_rs_pct }}
+                        </span>
+                        {% else %}<span class="text-gray-300 dark:text-slate-600">—</span>{% endif %}
+                    </td>
+                    <td class="px-5 py-4 text-gray-500 dark:text-slate-400 max-w-[160px]">
+                        <div class="text-[9px]">{{ t.exit_reason }}</div>
+                        {% if t.notes %}<div class="text-[8px] italic text-gray-400 dark:text-slate-500 mt-0.5">{{ t.notes[:50] }}{% if t.notes|length > 50 %}…{% endif %}</div>{% endif %}
+                    </td>
+                    <td class="px-5 py-4 text-right">
+                        <form method="POST" action="{{ url_for('trade_journal.trade_journal_delete', trade_id=t.id) }}" class="m-0">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                            <button type="submit" onclick="return confirm('Delete this trade record?');"
+                                    class="text-[8px] px-2 py-0.5 text-gray-400 hover:text-red-500 dark:hover:text-red-400 rounded font-bold uppercase transition">🗑</button>
+                        </form>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="12" class="px-6 py-12 text-center text-gray-400 dark:text-slate-500 italic">
+                    No trades recorded yet. Close a position from the <a href="{{ url_for('position_tracker.position_tracker_view') }}" class="text-indigo-500 hover:underline">Position Tracker</a> to log it here.
+                </td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Manual Add Trade Form -->
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm p-6">
+        <h3 class="text-xs font-black uppercase text-gray-700 dark:text-slate-300 mb-4">➕ Log Closed Trade Manually</h3>
+        <form method="POST" action="{{ url_for('trade_journal.trade_journal_add') }}" class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            {% set jfields = [
+                ('symbol','Symbol','text','',True),
+                ('entry_price','Entry Price (₹)','number','0.05',True),
+                ('exit_price','Exit Price (₹)','number','0.05',True),
+                ('stop_loss','Stop Loss (₹)','number','0.05',True),
+                ('qty','Qty','number','1',True),
+                ('entry_date','Entry Date','date','',True),
+                ('exit_date','Exit Date','date','',True),
+                ('entry_rs_pct','Entry RS %tile','number','1',False),
+            ] %}
+            {% for name,label,type_,step,req in jfields %}
+            <div>
+                <label class="block text-[9px] font-black uppercase text-gray-400 dark:text-slate-500 mb-1">{{ label }}</label>
+                <input type="{{ type_ }}" name="{{ name }}" {% if step %}step="{{ step }}"{% endif %} {% if req %}required{% endif %}
+                       class="w-full px-3 py-2 text-xs rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 font-bold focus:outline-none focus:ring-2 focus:ring-indigo-400">
+            </div>
+            {% endfor %}
+            <div>
+                <label class="block text-[9px] font-black uppercase text-gray-400 dark:text-slate-500 mb-1">Exit Reason</label>
+                <select name="exit_reason" class="w-full px-3 py-2 text-xs rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-400">
+                    <option>Target 1 reached (2R)</option>
+                    <option>Target 2 reached (4R)</option>
+                    <option>Stop loss hit</option>
+                    <option>Distribution signal</option>
+                    <option>Trailing stop</option>
+                    <option>Manual exit</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-[9px] font-black uppercase text-gray-400 dark:text-slate-500 mb-1">Notes</label>
+                <input type="text" name="notes" class="w-full px-3 py-2 text-xs rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-400">
+            </div>
+            <div class="flex items-end">
+                <button type="submit" class="w-full bg-indigo-600 text-white px-4 py-2.5 rounded-xl font-black text-xs uppercase hover:bg-indigo-700 transition shadow-lg shadow-indigo-200 dark:shadow-indigo-950/40">
+                    ➕ Log Trade
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

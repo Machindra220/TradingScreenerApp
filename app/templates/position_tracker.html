@@ -1,0 +1,300 @@
+{% extends "base_authenticated.html" %}
+{% block title %}Position Tracker{% endblock %}
+{% block content %}
+<style>
+    .tabular-nums { font-variant-numeric: tabular-nums; }
+    .exit-row { background: rgba(239,68,68,0.06) !important; }
+    .dark .exit-row { background: rgba(239,68,68,0.10) !important; }
+    #refreshBtn { position: relative; overflow: hidden; }
+    #refreshFill { position: absolute; inset: 0; width: 0%; background: rgba(0,0,0,0.18); transition: width .4s; }
+    #refreshLabel { position: relative; z-index: 1; }
+</style>
+
+<div class="max-w-7xl mx-auto px-4 py-8">
+
+    <!-- Header -->
+    <div class="flex flex-wrap justify-between items-start gap-4 mb-6">
+        <div>
+            <h2 class="text-2xl font-black text-indigo-900 dark:text-indigo-300 uppercase tracking-tight">📊 Position Tracker</h2>
+            <p class="text-[10px] font-bold text-gray-400 dark:text-slate-500 mt-1 uppercase">
+                Live metrics refreshed from price cache · Close a position to log it to the Trade Journal
+                {% if last_refreshed %} · Last refreshed: <span class="text-blue-400">{{ last_refreshed }}</span>{% endif %}
+            </p>
+        </div>
+        <form method="POST" action="{{ url_for('position_tracker.position_tracker_refresh') }}" class="shrink-0">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button id="refreshBtn" type="submit"
+                    class="bg-emerald-600 text-white px-6 py-2.5 rounded-xl font-black text-xs uppercase hover:bg-emerald-700 transition shadow-lg shadow-emerald-200 dark:shadow-emerald-950/40 disabled:opacity-90">
+                <span id="refreshFill"></span>
+                <span id="refreshLabel">🔄 Refresh All</span>
+            </button>
+        </form>
+    </div>
+
+    <!-- Summary cards -->
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+        {% set cards = [
+            ('Open Positions', open_count, '', 'text-gray-900 dark:text-slate-100'),
+            ('Total Unrealized P&L', '₹' ~ "{:,.0f}".format(total_pnl), '', 'text-green-600 dark:text-emerald-400' if total_pnl >= 0 else 'text-red-500'),
+            ('Winning', winning ~ ' / ' ~ open_count, '', 'text-emerald-600 dark:text-emerald-400'),
+            ('Best R-Multiple', best_r ~ 'R', '', 'text-indigo-600 dark:text-indigo-300'),
+            ('Exit Alerts', exit_alerts, '⚠️', 'text-red-600 dark:text-red-400'),
+        ] %}
+        {% for label, val, icon, cls in cards %}
+        <div class="bg-white dark:bg-slate-900 rounded-xl border border-gray-100 dark:border-slate-800 p-4 shadow-sm">
+            <div class="text-[9px] font-black uppercase text-gray-400 dark:text-slate-500 mb-1">{{ label }}</div>
+            <div class="text-xl font-black {{ cls }}">{{ icon }} {{ val }}</div>
+        </div>
+        {% endfor %}
+    </div>
+
+    {% if exit_alerts > 0 %}
+    <div class="mb-6 px-4 py-3 rounded-xl bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-900 text-[10px] font-bold text-red-600 dark:text-red-300 uppercase animate-pulse">
+        ⚠️ {{ exit_alerts }} position{{ 's' if exit_alerts != 1 else '' }} showing distribution signal — review for profit booking.
+    </div>
+    {% endif %}
+    {% if is_refreshing %}<div class="mb-4 px-4 py-3 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-800 text-[10px] font-bold text-blue-600 dark:text-blue-300 uppercase">🔄 Refresh in progress…</div>{% endif %}
+
+    <!-- Open Positions Table -->
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm dark:shadow-none overflow-x-auto mb-8">
+        <div class="px-5 py-3 border-b border-gray-50 dark:border-slate-800 flex justify-between items-center">
+            <span class="text-[9px] font-black uppercase text-gray-400 dark:text-slate-500">Open Positions ({{ positions|length }})</span>
+            <a href="{{ url_for('trade_journal.trade_journal_view') }}" class="text-[9px] font-black uppercase text-indigo-500 hover:text-indigo-700 transition">📖 Trade Journal →</a>
+        </div>
+        <table class="min-w-full text-left text-xs">
+            <thead class="bg-gray-50/70 dark:bg-slate-800/40 border-b border-gray-100 dark:border-slate-800">
+                <tr>
+                    <th class="px-5 py-3 font-bold uppercase text-gray-400 dark:text-slate-400">Symbol</th>
+                    <th class="px-5 py-3 font-bold uppercase text-gray-400 dark:text-slate-400 text-right tabular-nums">Entry (₹)</th>
+                    <th class="px-5 py-3 font-bold uppercase text-gray-400 dark:text-slate-400 text-right tabular-nums">CMP (₹)</th>
+                    <th class="px-5 py-3 font-bold uppercase text-gray-400 dark:text-slate-400 text-right tabular-nums">Unreal P&L</th>
+                    <th class="px-5 py-3 font-bold uppercase text-indigo-400 dark:text-indigo-300 text-center" title="R-Multiple: how many times your initial risk you've made">R-Multiple</th>
+                    <th class="px-5 py-3 font-bold uppercase text-blue-400 text-center" title="RS percentile vs Nifty 500 of open positions">RS Live</th>
+                    <th class="px-5 py-3 font-bold uppercase text-amber-400 text-center" title="Today's volume vs 20-day avg">Vol Ratio</th>
+                    <th class="px-5 py-3 font-bold uppercase text-gray-400 dark:text-slate-400 text-center" title="Close % of last bar range — weak close on high vol = distribution">Close %</th>
+                    <th class="px-5 py-3 font-bold uppercase text-gray-400 dark:text-slate-400 text-center">Dist. Days</th>
+                    <th class="px-5 py-3 font-bold uppercase text-gray-400 dark:text-slate-400 text-right tabular-nums">Stop Dist.</th>
+                    <th class="px-5 py-3 font-bold uppercase text-gray-400 dark:text-slate-400 text-center">Days</th>
+                    <th class="px-5 py-3 font-bold uppercase text-gray-400 dark:text-slate-400 text-right">Actions</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-50 dark:divide-slate-800">
+                {% for p in positions %}
+                <tr class="transition-colors hover:bg-indigo-50/20 dark:hover:bg-indigo-500/10 {% if p.exit_signal %}exit-row{% endif %}">
+                    <td class="px-5 py-4">
+                        <div class="font-black text-indigo-700 dark:text-indigo-300">{{ p.symbol }}</div>
+                        {% if p.exit_signal %}
+                        <div class="text-[8px] font-black text-red-600 dark:text-red-400 uppercase animate-pulse mt-0.5">⚠️ {{ p.exit_reason }}</div>
+                        {% elif not p.momentum_alive %}
+                        <div class="text-[8px] font-bold text-amber-600 dark:text-amber-400 uppercase mt-0.5">⚠️ Below EMA200</div>
+                        {% endif %}
+                        {% if p.notes %}<div class="text-[8px] text-gray-400 dark:text-slate-500 mt-0.5 italic">{{ p.notes[:40] }}{% if p.notes|length > 40 %}…{% endif %}</div>{% endif %}
+                    </td>
+                    <td class="px-5 py-4 text-right tabular-nums font-bold text-gray-700 dark:text-slate-300">{{ "{:,.2f}".format(p.entry_price) }}</td>
+                    <td class="px-5 py-4 text-right tabular-nums font-black {% if p.current_price >= p.entry_price %}text-green-600 dark:text-emerald-400{% else %}text-red-500 dark:text-red-400{% endif %}">
+                        {{ "{:,.2f}".format(p.current_price) }}
+                        <div class="text-[9px] font-bold {% if p.unrealized_pct >= 0 %}text-green-500{% else %}text-red-400{% endif %}">{{ '{:+.1f}'.format(p.unrealized_pct) }}%</div>
+                    </td>
+                    <td class="px-5 py-4 text-right tabular-nums font-black {% if p.unrealized_pnl >= 0 %}text-green-600 dark:text-emerald-400{% else %}text-red-500 dark:text-red-400{% endif %}">
+                        {% if p.unrealized_pnl >= 0 %}+{% endif %}₹{{ "{:,.0f}".format(p.unrealized_pnl) }}
+                    </td>
+                    <td class="px-5 py-4 text-center">
+                        <span class="inline-block px-2.5 py-1 rounded-full text-[11px] font-black
+                             {% if p.r_multiple >= 3 %}bg-emerald-500 text-white{% elif p.r_multiple >= 2 %}bg-green-100 dark:bg-green-500/15 text-green-700 dark:text-green-400{% elif p.r_multiple >= 1 %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% elif p.r_multiple >= 0 %}bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400{% else %}bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400{% endif %}">
+                            {{ '{:+.2f}'.format(p.r_multiple) }}R
+                        </span>
+                        {% if p.target_1 > 0 %}
+                        <div class="text-[8px] text-gray-400 dark:text-slate-500 mt-0.5">T1: ₹{{ "{:,.0f}".format(p.target_1) }}{% if p.target1_distance_pct > 0 %} (+{{ p.target1_distance_pct }}%){% endif %}</div>
+                        {% endif %}
+                    </td>
+                    <td class="px-5 py-4 text-center">
+                        <span class="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-black
+                             {% if p.rs_percentile >= 80 %}bg-indigo-600 text-white{% elif p.rs_percentile >= 60 %}bg-indigo-100 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300{% else %}bg-gray-100 dark:bg-slate-800 text-gray-500{% endif %}">
+                            {{ p.rs_percentile }}
+                        </span>
+                        {% if p.entry_rs_pct %}
+                        <div class="text-[8px] text-gray-400 dark:text-slate-500 mt-0.5">Entry: {{ p.entry_rs_pct }}</div>
+                        {% endif %}
+                    </td>
+                    <td class="px-5 py-4 text-center font-black tabular-nums {% if p.vol_ratio >= 3 %}text-red-600 dark:text-red-400{% elif p.vol_ratio >= 1.5 %}text-amber-600 dark:text-amber-300{% else %}text-gray-500 dark:text-slate-400{% endif %}">
+                        {{ p.vol_ratio }}×
+                    </td>
+                    <td class="px-5 py-4 text-center">
+                        <span class="inline-block px-2 py-0.5 rounded-full text-[10px] font-black tabular-nums
+                             {% if p.closing_pct >= 70 %}bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300{% elif p.closing_pct >= 50 %}bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-slate-400{% else %}bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400{% endif %}">
+                            {{ p.closing_pct }}%
+                        </span>
+                    </td>
+                    <td class="px-5 py-4 text-center">
+                        {% if p.dist_days_3 >= 2 %}
+                        <span class="text-[9px] px-2 py-0.5 bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 rounded font-black uppercase border border-red-200 dark:border-red-900 animate-pulse">{{ p.dist_days_3 }} days ⚠️</span>
+                        {% elif p.dist_days_3 == 1 %}
+                        <span class="text-[9px] px-2 py-0.5 bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-300 rounded font-bold uppercase">1 day 👀</span>
+                        {% else %}
+                        <span class="text-[9px] text-gray-300 dark:text-slate-600">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-5 py-4 text-right tabular-nums">
+                        <span class="font-bold {% if p.stop_distance_pct >= 5 %}text-green-600 dark:text-emerald-400{% elif p.stop_distance_pct >= 2 %}text-gray-600 dark:text-slate-400{% else %}text-red-500 dark:text-red-400{% endif %}">
+                            {{ p.stop_distance_pct }}%
+                        </span>
+                        <div class="text-[8px] text-gray-400 dark:text-slate-500">SL: ₹{{ "{:,.2f}".format(p.stop_loss) }}</div>
+                    </td>
+                    <td class="px-5 py-4 text-center font-bold text-gray-500 dark:text-slate-400 tabular-nums">
+                        {{ p.days_held }}d
+                        <div class="text-[8px] text-gray-400 dark:text-slate-500">{{ p.entry_date }}</div>
+                    </td>
+                    <td class="px-5 py-4 text-right">
+                        <div class="flex flex-col items-end gap-1.5">
+                            <!-- Close position -->
+                            <button type="button" onclick="openCloseModal('{{ p.id }}','{{ p.symbol }}','{{ p.current_price }}')"
+                                    class="text-[8px] px-2.5 py-1 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 rounded font-black uppercase hover:bg-emerald-100 transition border border-emerald-200 dark:border-emerald-900 whitespace-nowrap">
+                                ✅ Close
+                            </button>
+                            <!-- Delete -->
+                            <form method="POST" action="{{ url_for('position_tracker.position_delete', position_id=p.id) }}" class="m-0">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <button type="submit" onclick="return confirm('Delete {{ p.symbol }}? This won\'t be journaled.');"
+                                        class="text-[8px] px-2.5 py-1 bg-gray-50 dark:bg-slate-800 text-gray-400 dark:text-slate-500 rounded font-bold uppercase hover:bg-red-50 hover:text-red-500 transition whitespace-nowrap">
+                                    🗑 Delete
+                                </button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="12" class="px-6 py-12 text-center text-gray-400 dark:text-slate-500 italic">
+                        No open positions. Add one from the <a href="{{ url_for('momentum_scan.momentum_scanner_process') }}" class="text-indigo-500 hover:underline">Momentum Scanner</a> or the form below.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Add Position Form -->
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm dark:shadow-none p-6 mb-8">
+        <h3 class="text-xs font-black uppercase text-gray-700 dark:text-slate-300 mb-4">➕ Add Position Manually</h3>
+        <form method="POST" action="{{ url_for('position_tracker.position_add') }}" class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            {% set fields = [
+                ('symbol', 'Symbol', 'text', '', True),
+                ('entry_price', 'Entry Price (₹)', 'number', '0.05', True),
+                ('stop_loss', 'Stop Loss (₹)', 'number', '0.05', True),
+                ('qty', 'Quantity', 'number', '1', True),
+                ('target_1', 'Target 1 (₹)', 'number', '0.05', False),
+                ('target_2', 'Target 2 (₹)', 'number', '0.05', False),
+                ('entry_date', 'Entry Date', 'date', '', True),
+                ('entry_rs_pct', 'Entry RS %tile', 'number', '1', False),
+            ] %}
+            {% for name, label, type_, step, required in fields %}
+            <div>
+                <label class="block text-[9px] font-black uppercase text-gray-400 dark:text-slate-500 mb-1">{{ label }}</label>
+                <input type="{{ type_ }}" name="{{ name }}" {% if step %}step="{{ step }}"{% endif %} {% if required %}required{% endif %}
+                       class="w-full px-3 py-2 text-xs rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 font-bold focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                       {% if name == 'entry_date' %}value="{{ now_date }}"{% endif %}>
+            </div>
+            {% endfor %}
+            <div class="md:col-span-2">
+                <label class="block text-[9px] font-black uppercase text-gray-400 dark:text-slate-500 mb-1">Notes</label>
+                <input type="text" name="notes" placeholder="Setup reason, screener source…"
+                       class="w-full px-3 py-2 text-xs rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-400">
+            </div>
+            <div class="md:col-span-2 flex items-end">
+                <button type="submit" class="w-full bg-indigo-600 text-white px-6 py-2.5 rounded-xl font-black text-xs uppercase hover:bg-indigo-700 transition shadow-lg shadow-indigo-200 dark:shadow-indigo-950/40">
+                    ➕ Add Position
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Exit signal guide -->
+    <div class="bg-white dark:bg-slate-900 rounded-xl border border-gray-100 dark:border-slate-800 shadow-sm p-5">
+        <h3 class="text-[10px] font-black uppercase text-gray-700 dark:text-slate-300 mb-3">📖 Exit Signal Guide</h3>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-[9px] text-gray-600 dark:text-slate-400">
+            <div class="space-y-1.5">
+                <div class="font-black uppercase text-red-600 dark:text-red-400">⚠️ Exit Now</div>
+                <div>2+ distribution days in 3 sessions (high vol + weak close &lt;40%). Institutions are selling.</div>
+                <div>Price breaks below stop loss.</div>
+                <div>RS percentile drops below entry RS.</div>
+            </div>
+            <div class="space-y-1.5">
+                <div class="font-black uppercase text-amber-600 dark:text-amber-400">👀 Watch Closely</div>
+                <div>1 distribution day — caution, not yet a sell signal.</div>
+                <div>Close % drops below 50% on elevated volume.</div>
+                <div>Price below EMA200 (momentum fading).</div>
+            </div>
+            <div class="space-y-1.5">
+                <div class="font-black uppercase text-emerald-600 dark:text-emerald-400">✅ Hold / Add</div>
+                <div>R-multiple ≥ 2: consider moving stop to breakeven.</div>
+                <div>R-multiple ≥ 3: book 50% at Target 1.</div>
+                <div>R-multiple ≥ 4: trail remaining with 10-day low.</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Close Position Modal -->
+<div id="closeModal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+    <div class="bg-white dark:bg-slate-900 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+        <h3 class="text-sm font-black uppercase text-indigo-900 dark:text-indigo-300 mb-4">✅ Close Position: <span id="closeSymbol"></span></h3>
+        <form id="closeForm" method="POST" action="">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <div class="space-y-3">
+                <div>
+                    <label class="block text-[9px] font-black uppercase text-gray-400 dark:text-slate-500 mb-1">Exit Price (₹)</label>
+                    <input type="number" name="exit_price" id="closePrice" step="0.05" required
+                           class="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 font-bold focus:outline-none focus:ring-2 focus:ring-emerald-400">
+                </div>
+                <div>
+                    <label class="block text-[9px] font-black uppercase text-gray-400 dark:text-slate-500 mb-1">Exit Reason</label>
+                    <select name="exit_reason" class="w-full px-3 py-2 text-xs rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 font-bold focus:outline-none focus:ring-2 focus:ring-emerald-400">
+                        <option>Target 1 reached (2R) — partial book</option>
+                        <option>Target 2 reached (4R) — full book</option>
+                        <option>Distribution signal — 2+ days</option>
+                        <option>Stop loss hit</option>
+                        <option>Trailing stop hit</option>
+                        <option>ROC exhaustion (>20%)</option>
+                        <option>RS fading</option>
+                        <option>Manual exit</option>
+                    </select>
+                </div>
+            </div>
+            <div class="flex justify-end gap-3 mt-5">
+                <button type="button" onclick="document.getElementById('closeModal').classList.add('hidden')" class="px-4 py-2 rounded-lg text-xs font-bold uppercase text-gray-500 hover:bg-gray-100 transition">Cancel</button>
+                <button type="submit" class="px-6 py-2 bg-emerald-600 text-white rounded-lg text-xs font-black uppercase hover:bg-emerald-700 transition">✅ Confirm Close</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+const REFRESH_URL = "{{ url_for('position_tracker.position_tracker_refresh_status') }}";
+
+function openCloseModal(id, sym, price) {
+    document.getElementById('closeSymbol').textContent = sym;
+    document.getElementById('closePrice').value = price;
+    document.getElementById('closeForm').action = `/position-tracker/close/${id}`;
+    document.getElementById('closeModal').classList.remove('hidden');
+}
+document.getElementById('closeModal').addEventListener('click', function(e) {
+    if (e.target === this) this.classList.add('hidden');
+});
+
+{% if is_refreshing %}
+function pollRefresh() {
+    fetch(REFRESH_URL).then(r=>r.json()).then(d=>{
+        const fill = document.getElementById('refreshFill');
+        const lbl  = document.getElementById('refreshLabel');
+        if (d.stage === 'fetching_benchmark') { fill.style.width='20%'; lbl.textContent='Fetching benchmark…'; }
+        else if (d.stage === 'fetching_prices') { fill.style.width='60%'; lbl.textContent='Fetching prices…'; }
+        else if (d.stage === 'computing') { fill.style.width='90%'; lbl.textContent='Computing…'; }
+        else if (!d.active) { fill.style.width='100%'; lbl.textContent='✅ Done'; setTimeout(()=>location.reload(),600); return; }
+        setTimeout(pollRefresh, 800);
+    }).catch(()=>setTimeout(pollRefresh, 1500));
+}
+pollRefresh();
+{% endif %}
+</script>
+{% endblock %}

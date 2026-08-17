@@ -89,11 +89,16 @@ def _run_scan_and_save(filepath, source_name):
             old_ranks = {s.get('symbol_clean', s['symbol']): s['rank'] for s in old_stocks}
     old_rs_history = {s.get('symbol_clean', s['symbol']): s.get('rs_h', []) for s in old_stocks}
 
-    results_df = screen_universe(
+    results_df, fetch_stats = screen_universe(
         symbols,
         benchmark_symbol=BENCHMARK_SYMBOL,
         progress_callback=_update_progress,
     )
+    cache_hits      = fetch_stats.get('cache_hits', 0)
+    yf_fetches      = fetch_stats.get('yf_fetches', 0)
+    price_data_asof = fetch_stats.get('price_data_asof')
+    stale_count     = fetch_stats.get('stale_count', 0)
+    stale_sample    = fetch_stats.get('stale_sample', [])
 
     scanned_count = total
     insufficient_data_count = total - len(results_df)
@@ -159,6 +164,11 @@ def _run_scan_and_save(filepath, source_name):
             'passed_count': passed_count,
             'rs80_count': rs80_count,
             'insufficient_data_count': insufficient_data_count,
+            'cache_hits': cache_hits,
+            'yf_fetches': yf_fetches,
+            'price_data_asof': price_data_asof,
+            'stale_count': stale_count,
+            'stale_sample': stale_sample,
         }, f)
 
     with _progress_lock:
@@ -221,6 +231,8 @@ def minervini_process():
     last_processed_time = None
     source_name = "None"
     scanned_count = passed_count = rs80_count = insufficient_data_count = 0
+    cache_hits = yf_fetches = stale_count = 0
+    price_data_asof = stale_sample = None
 
     if os.path.exists(RESULTS_JSON):
         with open(RESULTS_JSON, 'r') as f:
@@ -232,6 +244,11 @@ def minervini_process():
             passed_count = cache.get('passed_count', 0)
             rs80_count = cache.get('rs80_count', 0)
             insufficient_data_count = cache.get('insufficient_data_count', 0)
+            cache_hits = cache.get('cache_hits', 0)
+            yf_fetches = cache.get('yf_fetches', 0)
+            price_data_asof = cache.get('price_data_asof')
+            stale_count = cache.get('stale_count', 0)
+            stale_sample = cache.get('stale_sample', [])
 
     compare_mode = request.args.get('compare') == 'true'
     meta_history_file = os.path.join(HISTORY_CACHE_DIR, 'meta_history.json')
@@ -262,6 +279,11 @@ def minervini_process():
         passed_count=passed_count,
         rs80_count=rs80_count,
         insufficient_data_count=insufficient_data_count,
+        cache_hits=cache_hits,
+        yf_fetches=yf_fetches,
+        price_data_asof=price_data_asof,
+        stale_count=stale_count,
+        stale_sample=stale_sample,
     )
 
 

@@ -86,6 +86,13 @@
                 {% else %}
                 | Source: <span class="text-emerald-600 dark:text-emerald-400">✅ {{ source_name|default('Uploaded File') }}</span>
                 {% endif %}
+                {% if price_data_asof %}
+                | Price Data As Of: <span class="text-emerald-500 dark:text-emerald-300" title="Most recent trading-day close in the cached price data">{{ price_data_asof }}</span>
+                {% endif %}
+                {% if cache_hits is defined and (cache_hits > 0 or yf_fetches > 0) %}
+                | 💾 Cache: <span class="text-emerald-500 dark:text-emerald-300">{{ cache_hits }} hits</span>
+                · <span class="{% if yf_fetches > 0 %}text-amber-500 dark:text-amber-400{% else %}text-gray-400 dark:text-slate-500{% endif %}" title="Symbols re-fetched from yfinance this scan">{{ yf_fetches }} from yfinance</span>
+                {% endif %}
             </p>
         </div>
         <div class="flex gap-3">

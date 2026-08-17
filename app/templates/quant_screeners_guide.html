@@ -1,0 +1,184 @@
+{% extends 'base_authenticated.html' %}
+{% block content %}
+<div class="max-w-6xl mx-auto px-4 py-8">
+
+    <!-- Header Navigation -->
+    <div class="flex items-center justify-between gap-4 mb-8 pb-6 border-b border-gray-100 dark:border-slate-800">
+        <div>
+            <div class="flex items-center gap-2 mb-1">
+                <a href="{{ url_for('quant_screeners.quant_screeners_view') }}" 
+                   class="text-xs font-black text-indigo-600 dark:text-indigo-400 hover:underline uppercase flex items-center gap-1">
+                    ← Back to Screener
+                </a>
+            </div>
+            <h1 class="text-2xl font-black text-indigo-950 dark:text-indigo-300 uppercase tracking-tight">
+                Quantitative Trading & Risk Execution Manual
+            </h1>
+            <p class="text-xs text-gray-500 dark:text-slate-400 mt-1">
+                Mathematical foundations, entry triggers, regime interpretation, and trailing exit mechanics.
+            </p>
+        </div>
+        <a href="{{ url_for('quant_screeners.quant_screeners_view') }}"
+           class="bg-indigo-600 text-white px-5 py-2 rounded-xl text-xs font-black uppercase hover:bg-indigo-700 transition shadow-lg">
+            Launch Screener 🚀
+        </a>
+    </div>
+
+    <!-- Quick Reference Summary Table -->
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 p-6 shadow-sm mb-10">
+        <h2 class="text-sm font-black uppercase tracking-wider text-gray-900 dark:text-slate-100 mb-4 flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+            Master Trade Execution Matrix
+        </h2>
+        <div class="overflow-x-auto">
+            <table class="min-w-full text-left text-xs">
+                <thead class="bg-gray-50 dark:bg-slate-800/60 border-b border-gray-100 dark:border-slate-800">
+                    <tr>
+                        <th class="px-4 py-3 font-bold uppercase text-gray-400">Screener Model</th>
+                        <th class="px-4 py-3 font-bold uppercase text-indigo-500">Primary Buy Trigger</th>
+                        <th class="px-4 py-3 font-bold uppercase text-emerald-500">Target / Profit Taking</th>
+                        <th class="px-4 py-3 font-bold uppercase text-red-500">Hard Invalidation Stop</th>
+                        <th class="px-4 py-3 font-bold uppercase text-purple-400">Trailing Stop Mechanism</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100 dark:divide-slate-800 font-medium">
+                    <tr>
+                        <td class="px-4 py-3.5 font-bold text-gray-800 dark:text-slate-200">1. StatArb (O-U Process)</td>
+                        <td class="px-4 py-3.5 text-gray-600 dark:text-slate-400">s-score &le; -1.75 + Stage 2 Uptrend (> EMA 200)</td>
+                        <td class="px-4 py-3.5 text-emerald-600 dark:text-emerald-400 font-bold">s-score &ge; 0.0 (Equilibrium Reversion)</td>
+                        <td class="px-4 py-3.5 text-red-500 font-bold">Daily close &lt; 20 EMA</td>
+                        <td class="px-4 py-3.5 text-gray-600 dark:text-slate-400">Trail EMA 20 daily</td>
+                    </tr>
+                    <tr>
+                        <td class="px-4 py-3.5 font-bold text-gray-800 dark:text-slate-200">2. HMM Regime Transition</td>
+                        <td class="px-4 py-3.5 text-gray-600 dark:text-slate-400">State Flip (0 &rarr; 1) with Posterior Prob &gt; 70%</td>
+                        <td class="px-4 py-3.5 text-emerald-600 dark:text-emerald-400 font-bold">1:2 Risk-Reward or Distribution Candle</td>
+                        <td class="px-4 py-3.5 text-red-500 font-bold">Break below Regime Entry Low</td>
+                        <td class="px-4 py-3.5 text-purple-600 dark:text-purple-400 font-bold">Chandelier Stop (2.5 &times; ATR 14)</td>
+                    </tr>
+                    <tr>
+                        <td class="px-4 py-3.5 font-bold text-gray-800 dark:text-slate-200">3. VOLAR & Trend Breakout</td>
+                        <td class="px-4 py-3.5 text-gray-600 dark:text-slate-400">Price &gt; EMA 20 &gt; 50 &gt; 200 + Vol &ge; 1.5&times; SMA20</td>
+                        <td class="px-4 py-3.5 text-emerald-600 dark:text-emerald-400 font-bold">Book 50% at +12% extension over EMA 20</td>
+                        <td class="px-4 py-3.5 text-red-500 font-bold">Break below breakout candle low</td>
+                        <td class="px-4 py-3.5 text-purple-600 dark:text-purple-400 font-bold">Chandelier Stop (2.5 &times; ATR 14)</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Section 1: HMM & Regime Concepts -->
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 p-6 shadow-sm mb-8">
+        <div class="flex items-center gap-2 mb-4">
+            <span class="w-3 h-3 rounded-full bg-emerald-500"></span>
+            <h2 class="text-base font-black uppercase text-indigo-950 dark:text-indigo-300">
+                1. Hidden Markov Model (HMM) & Regime Detection
+            </h2>
+        </div>
+
+        <div class="space-y-4 text-xs text-gray-600 dark:text-slate-300 leading-relaxed">
+            <div>
+                <strong class="text-gray-900 dark:text-slate-100 text-sm block mb-1">What is a "Detected Regime"?</strong>
+                Financial markets are non-stationary: stock price distributions change depending on whether institutional money is quietly accumulating or aggressively pushing a trend. A Gaussian Hidden Markov Model models price returns as switching between two distinct, unobservable ("hidden") states:
+                <ul class="list-disc ml-5 mt-2 space-y-1">
+                    <li><strong>Regime 0 (Low Volatility / Accumulation):</strong> Price moves in sideways ranges with low standard deviation. Returns are mean-reverting.</li>
+                    <li><strong>Regime 1 (High Volatility / Momentum Expansion):</strong> Institutional participation expands volume and daily true range, creating directional velocity.</li>
+                </ul>
+                <span class="inline-block mt-2 px-2.5 py-1 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 rounded font-bold">
+                    🎯 Which is useful for you? <strong>Regime 1 (Expansion)</strong> is where swing traders capture rapid multi-day advances without suffering through weeks of dead money.
+                </span>
+            </div>
+
+            <div class="pt-3 border-t border-gray-100 dark:border-slate-800">
+                <strong class="text-gray-900 dark:text-slate-100 text-sm block mb-1">What is "Posterior Probability"?</strong>
+                The <strong>Posterior Probability</strong> is the mathematical confidence (between 0% and 100%) computed by the Baum-Welch and Viterbi algorithms that today's price bar belongs to the Expansion Regime based on recent price action.
+                <ul class="list-disc ml-5 mt-1 space-y-0.5">
+                    <li><strong>&gt; 70% Probability:</strong> High-conviction entry signal. The statistical parameters overwhelmingly fit an expansion state.</li>
+                    <li><strong>&lt; 50% Probability:</strong> High likelihood of chop; no trade.</li>
+                </ul>
+            </div>
+
+            <div class="pt-3 border-t border-gray-100 dark:border-slate-800">
+                <strong class="text-gray-900 dark:text-slate-100 text-sm block mb-1">What is a "Regime Flip"?</strong>
+                A <strong>Regime Flip</strong> occurs when a stock spent the previous session in Regime 0 (Chop/Accumulation) and officially crosses into Regime 1 (Expansion) on today's close. Buying right on the flip allows you to enter at the beginning of a fresh impulse move rather than chasing an extended stock.
+            </div>
+
+            <div class="pt-3 border-t border-gray-100 dark:border-slate-800 bg-gray-50 dark:bg-slate-800/40 p-3 rounded-xl">
+                <span class="font-bold text-gray-800 dark:text-slate-200">Recommended Learning Topics:</span>
+                <p class="text-gray-500 dark:text-slate-400 mt-0.5">
+                    To dive deeper into the mathematics, search for <em>"Hidden Markov Models for Algorithmic Trading with hmmlearn"</em> or <em>"Stefan Jansen - Machine Learning for Algorithmic Trading (HMMs Chapter)"</em>.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Section 2: Chandelier Stop & Exit Methodology -->
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 p-6 shadow-sm mb-8">
+        <div class="flex items-center gap-2 mb-4">
+            <span class="w-3 h-3 rounded-full bg-red-500"></span>
+            <h2 class="text-base font-black uppercase text-indigo-950 dark:text-indigo-300">
+                2. Chandelier Stop & Multi-Tiered Exits
+            </h2>
+        </div>
+
+        <div class="space-y-4 text-xs text-gray-600 dark:text-slate-300 leading-relaxed">
+            <div>
+                <strong class="text-gray-900 dark:text-slate-100 text-sm block mb-1">What is a Chandelier Stop and How Does it Work?</strong>
+                Developed by market technician Chuck LeBeau, the <strong>Chandelier Stop</strong> is an adaptive trailing stop designed to keep you in winning trends while preventing premature stop-outs during ordinary pullbacks.
+                
+                <p class="mt-2">
+                    It gets its name because it <em>hangs down from the ceiling of the price</em>. As the stock achieves new 52-week or cycle highs, the ceiling rises, pulling the stop line up with it. <strong>The Chandelier Stop only ratchets higher—it never moves downward.</strong>
+                </p>
+
+                <div class="bg-slate-100 dark:bg-slate-800 p-3 rounded-xl font-mono text-indigo-700 dark:text-indigo-300 my-3 text-center">
+                    $$\text{Chandelier Stop} = \text{Highest High Since Entry} - (2.5 \times \text{ATR}_{14})$$
+                </div>
+
+                <ul class="list-disc ml-5 space-y-1">
+                    <li><strong>ATR (Average True Range 14):</strong> Measures the stock's true daily volatility across high, low, and gap closes.</li>
+                    <li><strong>2.5 Multiplier:</strong> Gives the stock enough breathing room to absorb daily institutional shakeouts without breaching structural support.</li>
+                </ul>
+            </div>
+
+            <div class="pt-3 border-t border-gray-100 dark:border-slate-800">
+                <strong class="text-gray-900 dark:text-slate-100 text-sm block mb-1">How to Use the Chandelier Stop in Daily Execution:</strong>
+                <ol class="list-decimal ml-5 space-y-1">
+                    <li><strong>After Entry:</strong> Note the current Chandelier Stop displayed in the screener table. Place this as your initial GTT (Good-Till-Triggered) or mental stop.</li>
+                    <li><strong>During the Trend:</strong> If the stock makes a new high tomorrow, re-run the screener or recalculate the stop. Update your stop level upward to lock in unrealized profits.</li>
+                    <li><strong>The Exit Trigger:</strong> If a daily candle closes below the Chandelier line, close the entire position at market open or on the daily close. Do not hold through a breakdown.</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+
+    <!-- Section 3: StatArb & VOLAR Breakdown -->
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 p-6 shadow-sm mb-8">
+        <div class="flex items-center gap-2 mb-4">
+            <span class="w-3 h-3 rounded-full bg-indigo-500"></span>
+            <h2 class="text-base font-black uppercase text-indigo-950 dark:text-indigo-300">
+                3. StatArb Residuals (O-U Process) & VOLAR Metrics
+            </h2>
+        </div>
+
+        <div class="space-y-4 text-xs text-gray-600 dark:text-slate-300 leading-relaxed">
+            <div>
+                <strong class="text-gray-900 dark:text-slate-100 text-sm block mb-1">Statistical Arbitrage & the s-score:</strong>
+                Using Principal Component Analysis (PCA), we strip away broad market movements (Nifty factor, sector beta) to isolate the idiosyncratic return of the single stock. We then fit an <strong>Ornstein-Uhlenbeck (O-U)</strong> stochastic mean-reverting process to these residuals:
+                <ul class="list-disc ml-5 mt-1 space-y-1">
+                    <li><strong>s-score &le; -1.75:</strong> The stock is statistically oversold relative to its peer group by nearly 2 standard deviations.</li>
+                    <li><strong>Half-Life (2 to 25 Days):</strong> The estimated duration in days it will take for the mispricing to revert half the distance to its fair-value equilibrium.</li>
+                    <li><strong>Exit Target:</strong> Exit when the s-score climbs back to <strong>0.0</strong> (statistical equilibrium reached).</li>
+                </ul>
+            </div>
+
+            <div class="pt-3 border-t border-gray-100 dark:border-slate-800">
+                <strong class="text-gray-900 dark:text-slate-100 text-sm block mb-1">3M VOLAR (Volume / Volatility-Adjusted Return):</strong>
+                $$\text{VOLAR}_{3M} = \frac{\text{3-Month Total Return}}{\sigma(\text{Daily Returns})}$$
+                A stock up 20% with calm, orderly daily candles has a much higher VOLAR than a stock up 20% on violent whipsaws. High VOLAR signifies clean institutional accumulation without retail erratic behavior.
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}

@@ -70,7 +70,17 @@ def create_app():
     from app.routes.ipo_screener import ipo_screener_bp
     from app.routes.minervini_ind_screener import minervini_bp
     from app.routes.delivery_surge_screener import delivery_surge_bp
+    from app.routes.us_volume_surge_screener import us_vol_surge_bp
+    from app.routes.quant_screeners import quant_screeners_bp
+    from app.routes.momentum_scanner  import momentum_scan_bp
+    from app.routes.position_tracker  import position_tracker_bp
+    from app.routes.trade_journal     import trade_journal_bp
 
+    app.register_blueprint(momentum_scan_bp)
+    app.register_blueprint(position_tracker_bp)
+    app.register_blueprint(trade_journal_bp)
+    app.register_blueprint(quant_screeners_bp)
+    app.register_blueprint(us_vol_surge_bp, url_prefix="/us-vol")
     app.register_blueprint(delivery_surge_bp, url_prefix="/delivery")
     app.register_blueprint(minervini_bp)
     app.register_blueprint(ipo_screener_bp)

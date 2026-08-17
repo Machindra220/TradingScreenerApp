@@ -49,6 +49,7 @@ from datetime import datetime, timedelta, date
 
 import pandas as pd
 import yfinance as yf
+from zoneinfo import ZoneInfo   # stdlib ≥ 3.9; no pip install needed
 
 # Anchor to __file__ (app/services/market_data_cache.py → project root is two levels up)
 # Using os.getcwd() here is fragile: the Werkzeug reloader can run in a different
@@ -60,6 +61,33 @@ BACKUP_DIR = os.path.join(DATA_DIR, 'backups')
 BACKUP_LIMIT = 5
 INTRADAY_MAX_DAYS = 729  # Yahoo hard-cap for intraday history
 
+# ── Market close times (timezone-aware) ─────────────────────────────────────
+# Used by _last_settled_bar_date() to decide whether today's bar is final.
+# A bar is only "settled" once the market has been closed for ≥ 15 minutes
+# (a small buffer for yfinance data to propagate).
+#
+# Key insight: if you run a screener at 11 AM IST (market open), yfinance
+# returns an incomplete bar for today.  _is_stale() must know the bar is NOT
+# yet settled and force a re-fetch after market close.
+#
+# IND: NSE closes 15:30 IST  (UTC+5:30)
+# US:  NYSE/NASDAQ closes 16:00 ET (UTC-5 or UTC-4 during DST)
+_MARKET_CONFIG = {
+    "IND": {
+        "tz":           ZoneInfo("Asia/Kolkata"),
+        "close_hour":   15,
+        "close_minute": 30,
+        "label":        "NSE (IND)",
+    },
+    "US": {
+        "tz":           ZoneInfo("America/New_York"),
+        "close_hour":   16,
+        "close_minute": 0,
+        "label":        "NYSE/NASDAQ (US)",
+    },
+}
+_SETTLE_BUFFER_MINUTES = 15   # wait this long after close before treating bar as final
+
 os.makedirs(DATA_DIR,   exist_ok=True)
 os.makedirs(BACKUP_DIR, exist_ok=True)
 
@@ -68,8 +96,9 @@ class MarketCache:
     """One instance per market/DB file. All internal state is per-instance so
     the IND and US caches are completely independent."""
 
-    def __init__(self, db_filename):
+    def __init__(self, db_filename, market="IND"):
         self.db_path    = os.path.join(DATA_DIR, db_filename)
+        self.market     = market.upper() if market.upper() in _MARKET_CONFIG else "IND"
         self._backed_up_today = False
         self._init_db()
 
@@ -145,11 +174,52 @@ class MarketCache:
     # Staleness helpers
     # ------------------------------------------------------------------
 
-    def _last_completed_trading_date(self):
-        d = datetime.now()
-        while d.weekday() >= 5:
-            d -= timedelta(days=1)
-        return d.date()
+    def _last_settled_bar_date(self):
+        """
+        Returns the date of the most recent FULLY SETTLED daily bar for
+        this market — i.e. a bar whose close price is final and complete.
+
+        A bar is settled only after the market has closed AND at least
+        _SETTLE_BUFFER_MINUTES have elapsed (so yfinance data propagates).
+
+        Examples (IND market, NSE closes 15:30 IST):
+          - Run at 10:00 IST (market open)  → yesterday's bar is last settled
+          - Run at 15:45 IST (just closed)  → today's bar is now settled
+          - Run at 18:00 IST (evening)      → today's bar is settled
+          - Run at 10:00 UTC on a UTC server → same as 15:30 IST → still yesterday
+
+        Weekend / holiday handling:
+          Walk backwards from the last-settled calendar date until we land
+          on a weekday.  Full exchange holiday calendars are not bundled here
+          (would require pandas-market-calendars dependency), but the
+          yfinance fetch itself naturally returns no row for holidays — the
+          missing date simply stays absent from the cache rather than
+          causing a crash.
+        """
+        cfg        = _MARKET_CONFIG[self.market]
+        tz         = cfg["tz"]
+        now_local  = datetime.now(tz)                      # tz-aware local time
+        today      = now_local.date()
+
+        # Build today's settlement deadline in market-local time
+        settle_dt  = now_local.replace(
+            hour   = cfg["close_hour"],
+            minute = cfg["close_minute"] + _SETTLE_BUFFER_MINUTES,
+            second = 0, microsecond = 0
+        )
+
+        # If we are past today's settlement time, today's bar is settled.
+        # Otherwise the last settled bar is from the previous calendar day.
+        if now_local >= settle_dt:
+            candidate = today
+        else:
+            candidate = today - timedelta(days=1)
+
+        # Walk back over weekends (Mon=0 … Sun=6; Sat=5, Sun=6 are non-trading)
+        while candidate.weekday() >= 5:
+            candidate -= timedelta(days=1)
+
+        return candidate
 
     def _get_meta(self, symbol, interval):
         with self._get_conn() as conn:
@@ -159,11 +229,55 @@ class MarketCache:
             ).fetchone()
 
     def _is_stale(self, symbol, interval):
+        """
+        A cached entry is stale when:
+          (a) it has never been fetched, OR
+          (b) its last_bar_date is older than the last settled bar date,  OR
+          (c) its last_bar_date equals the last settled bar date BUT the
+              fetch happened before today's market close — meaning the
+              stored bar was captured mid-session and the close price is
+              incomplete.
+
+        Case (c) is the bug you hit: you scanned at 10 AM (market open),
+        the cache stored today's date as last_bar_date, _is_stale() saw
+        last_bar == today and returned False (not stale), but the close
+        price was still an intraday snapshot, not the final EOD figure.
+        """
         row = self._get_meta(symbol, interval)
         if not row or not row[0]:
+            return True                                    # never fetched
+
+        last_bar        = datetime.strptime(row[0], "%Y-%m-%d").date()
+        last_fetched_at = row[1]                           # ISO string or None
+        settled_date    = self._last_settled_bar_date()
+
+        # (b) bar is from a previous trading day
+        if last_bar < settled_date:
             return True
-        last_bar = datetime.strptime(row[0], "%Y-%m-%d").date()
-        return last_bar < self._last_completed_trading_date()
+
+        # (c) bar date matches today's settled date but was fetched
+        #     BEFORE the market settled — the stored close is partial
+        if last_bar == settled_date and last_fetched_at:
+            try:
+                cfg       = _MARKET_CONFIG[self.market]
+                tz        = cfg["tz"]
+                fetch_dt  = datetime.fromisoformat(last_fetched_at)
+                # Make fetch_dt timezone-aware if it is naive (stored without tz)
+                if fetch_dt.tzinfo is None:
+                    fetch_dt = fetch_dt.replace(tzinfo=ZoneInfo("UTC"))
+                settle_dt = datetime.now(tz).replace(
+                    hour   = cfg["close_hour"],
+                    minute = cfg["close_minute"] + _SETTLE_BUFFER_MINUTES,
+                    second = 0, microsecond = 0
+                ).astimezone(ZoneInfo("UTC"))
+                # Convert to the settled date in local tz for comparison
+                settle_date_local = settle_dt.astimezone(tz).date()
+                if settle_date_local == settled_date and fetch_dt.astimezone(ZoneInfo("UTC")) < settle_dt:
+                    return True   # fetched before close — close price is incomplete
+            except (ValueError, TypeError):
+                pass              # malformed timestamp — treat as not stale
+
+        return False
 
     # ------------------------------------------------------------------
     # Fetch / store
@@ -328,10 +442,10 @@ class MarketCache:
 # ---------------------------------------------------------------------------
 
 # Indian / NSE equities — renamed from the original market_data.db
-ind_cache = MarketCache("market_data_ind.db")
+ind_cache = MarketCache("market_data_ind.db", market="IND")
 
 # US / S&P 500 equities — separate file so symbol namespaces never collide
-us_cache  = MarketCache("market_data_us.db")
+us_cache  = MarketCache("market_data_us.db", market="US")
 
 
 # ---------------------------------------------------------------------------
