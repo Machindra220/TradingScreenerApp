@@ -1,0 +1,251 @@
+{% extends 'base_authenticated.html' %}
+{% block content %}
+<div class="max-w-6xl mx-auto px-4 py-8">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between gap-4 mb-8 pb-6 border-b border-gray-100 dark:border-slate-800">
+        <div>
+            <div class="flex items-center gap-2 mb-1">
+                <a href="{{ url_for('quant_screeners_us.quant_screeners_us_view') }}"
+                   class="text-xs font-black text-indigo-600 dark:text-indigo-400 hover:underline uppercase flex items-center gap-1">
+                    ← Back to US Screener
+                </a>
+            </div>
+            <h1 class="text-2xl font-black text-indigo-950 dark:text-indigo-300 uppercase tracking-tight">
+                🇺🇸 US Quantitative Trading &amp; Risk Execution Manual
+            </h1>
+            <p class="text-xs text-gray-500 dark:text-slate-400 mt-1">
+                Mathematical foundations, S&P 500 entry triggers, regime interpretation, and trailing exit mechanics for US equity markets.
+            </p>
+        </div>
+        <a href="{{ url_for('quant_screeners_us.quant_screeners_us_view') }}"
+           class="bg-indigo-600 text-white px-5 py-2 rounded-xl text-xs font-black uppercase hover:bg-indigo-700 transition shadow-lg shrink-0">
+            Launch US Screener 🚀
+        </a>
+    </div>
+
+    <!-- Quick Reference Matrix -->
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 p-6 shadow-sm mb-10">
+        <h2 class="text-sm font-black uppercase tracking-wider text-gray-900 dark:text-slate-100 mb-4 flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+            Master US Trade Execution Matrix
+        </h2>
+        <div class="overflow-x-auto">
+            <table class="min-w-full text-left text-xs">
+                <thead class="bg-gray-50 dark:bg-slate-800/60 border-b border-gray-100 dark:border-slate-800">
+                    <tr>
+                        <th class="px-4 py-3 font-bold uppercase text-gray-400">Screener Model</th>
+                        <th class="px-4 py-3 font-bold uppercase text-indigo-500">Primary Buy Trigger</th>
+                        <th class="px-4 py-3 font-bold uppercase text-emerald-500">Target / Profit Taking</th>
+                        <th class="px-4 py-3 font-bold uppercase text-red-500">Hard Invalidation Stop</th>
+                        <th class="px-4 py-3 font-bold uppercase text-purple-400">Trailing Stop Mechanism</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100 dark:divide-slate-800 font-medium">
+                    <tr>
+                        <td class="px-4 py-3.5 font-bold text-gray-800 dark:text-slate-200">1. StatArb (O-U Process)</td>
+                        <td class="px-4 py-3.5 text-gray-600 dark:text-slate-400">s-score ≤ -1.75 + above EMA200 · Half-life 2–25 days</td>
+                        <td class="px-4 py-3.5 text-emerald-600 dark:text-emerald-400 font-bold">s-score ≥ 0.0 (Statistical Equilibrium Reversion)</td>
+                        <td class="px-4 py-3.5 text-red-500 font-bold">Daily close below EMA20</td>
+                        <td class="px-4 py-3.5 text-gray-600 dark:text-slate-400">Trail EMA20 daily close</td>
+                    </tr>
+                    <tr>
+                        <td class="px-4 py-3.5 font-bold text-gray-800 dark:text-slate-200">2. HMM Regime Transition</td>
+                        <td class="px-4 py-3.5 text-gray-600 dark:text-slate-400">State Flip (Accumulation → Expansion) + Posterior &gt; 70% + price &gt; EMA50</td>
+                        <td class="px-4 py-3.5 text-emerald-600 dark:text-emerald-400 font-bold">1:2 Risk-Reward or regime flip back to Accumulation</td>
+                        <td class="px-4 py-3.5 text-red-500 font-bold">Close below Chandelier Stop</td>
+                        <td class="px-4 py-3.5 text-purple-600 dark:text-purple-400 font-bold">Chandelier Stop (2.5 × ATR 14)</td>
+                    </tr>
+                    <tr>
+                        <td class="px-4 py-3.5 font-bold text-gray-800 dark:text-slate-200">3. VOLAR Trend Breakout</td>
+                        <td class="px-4 py-3.5 text-gray-600 dark:text-slate-400">Price &gt; EMA20 &gt; EMA50 &gt; EMA200 + Vol ≥ 1.5× avg20 + RSI 55–72 + within 10% of 52W high</td>
+                        <td class="px-4 py-3.5 text-emerald-600 dark:text-emerald-400 font-bold">Book 50% at +12% extension above EMA20</td>
+                        <td class="px-4 py-3.5 text-red-500 font-bold">Close below breakout candle low or EMA20</td>
+                        <td class="px-4 py-3.5 text-purple-600 dark:text-purple-400 font-bold">Chandelier Stop (2.5 × ATR 14)</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- US Market Context -->
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 p-6 shadow-sm mb-8">
+        <div class="flex items-center gap-2 mb-4">
+            <span class="w-3 h-3 rounded-full bg-blue-500"></span>
+            <h2 class="text-base font-black uppercase text-indigo-950 dark:text-indigo-300">0. US vs IND Market Context</h2>
+        </div>
+        <div class="space-y-4 text-xs text-gray-600 dark:text-slate-300 leading-relaxed">
+            <p>These three quantitative models are mathematically identical to the IND (Nifty 500) versions. The S&P 500 adaptations are structural only:</p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="p-4 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-800 space-y-2">
+                    <div class="font-black text-blue-700 dark:text-blue-300 text-[10px] uppercase">S&amp;P 500 Specifics</div>
+                    <ul class="list-disc ml-4 space-y-1 text-[11px]">
+                        <li>Benchmark: <strong>^GSPC</strong> (S&P 500) — not ^CRSLDX / ^NSEI</li>
+                        <li>Data: <strong>market_data_us.db</strong> via us_cache</li>
+                        <li>Symbols: bare tickers (<code>AAPL</code>, <code>MSFT</code>) — no <code>.NS</code> suffix</li>
+                        <li>Currency: <strong>USD ($)</strong> — stops and targets in dollars</li>
+                        <li>Liquidity: S&P 500 stocks are far more liquid than Nifty 500 mid-caps; ATR multiplier of 2.5 remains appropriate</li>
+                    </ul>
+                </div>
+                <div class="p-4 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-800 space-y-2">
+                    <div class="font-black text-amber-700 dark:text-amber-300 text-[10px] uppercase">US Market Hours</div>
+                    <ul class="list-disc ml-4 space-y-1 text-[11px]">
+                        <li>NYSE / NASDAQ open: <strong>9:30 AM ET</strong></li>
+                        <li>Market close: <strong>4:00 PM ET</strong></li>
+                        <li>Cache settles after: <strong>4:15 PM ET</strong> (15-min buffer for yfinance)</li>
+                        <li>Run screeners <strong>after 4:15 PM ET</strong> for final EOD bars</li>
+                        <li>Pre-market and after-hours data not captured in daily bars</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Section 1: HMM -->
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 p-6 shadow-sm mb-8">
+        <div class="flex items-center gap-2 mb-4">
+            <span class="w-3 h-3 rounded-full bg-emerald-500"></span>
+            <h2 class="text-base font-black uppercase text-indigo-950 dark:text-indigo-300">
+                1. Hidden Markov Model (HMM) &amp; Regime Detection
+            </h2>
+        </div>
+        <div class="space-y-4 text-xs text-gray-600 dark:text-slate-300 leading-relaxed">
+            <div>
+                <strong class="text-gray-900 dark:text-slate-100 text-sm block mb-1">What is a "Detected Regime"?</strong>
+                US equity markets alternate between two distinct, unobservable states modelled by a 2-state Gaussian Hidden Markov Model fitted to daily percentage returns:
+                <ul class="list-disc ml-5 mt-2 space-y-1">
+                    <li><strong>Regime 0 (Low Volatility / Accumulation):</strong> Price consolidates in a narrow range. Returns have low standard deviation and are mean-reverting. Institutional money is being positioned quietly. Common before earnings-driven breakouts.</li>
+                    <li><strong>Regime 1 (High Volatility / Momentum Expansion):</strong> Institutional participation accelerates volume and ATR, creating directional momentum. This is where S&P 500 leaders make their fastest multi-week moves.</li>
+                </ul>
+                <span class="inline-block mt-2 px-2.5 py-1 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 rounded font-bold">
+                    🎯 US Relevance: After Fed decision days, earnings beats, or sector rotation events, large-cap names frequently flip from Accumulation → Expansion overnight. The HMM detects this algorithmically before price visually confirms.
+                </span>
+            </div>
+            <div class="pt-3 border-t border-gray-100 dark:border-slate-800">
+                <strong class="text-gray-900 dark:text-slate-100 text-sm block mb-1">Technical Implementation</strong>
+                <ul class="list-disc ml-5 space-y-1">
+                    <li>Algorithm: <code>GaussianHMM(n_components=2, covariance_type="diag", n_iter=100)</code> from hmmlearn</li>
+                    <li>Expansion state = state with higher return variance (argmax over state variances)</li>
+                    <li>Regime flip = previous bar in non-expansion, current bar in expansion</li>
+                    <li>Posterior probability threshold: <strong>&gt; 70%</strong> (Baum-Welch forward-backward algorithm)</li>
+                    <li>Minimum history required: <strong>120 daily bars</strong> (~6 months)</li>
+                </ul>
+            </div>
+            <div class="pt-3 border-t border-gray-100 dark:border-slate-800">
+                <strong class="text-gray-900 dark:text-slate-100 text-sm block mb-1">What is "Posterior Probability"?</strong>
+                The mathematical confidence (0–100%) that today's price bar belongs to the Expansion regime based on recent return sequence. &gt;70% = high-conviction entry. &lt;50% = likely chop; no trade.
+            </div>
+            <div class="pt-3 border-t border-gray-100 dark:border-slate-800 bg-gray-50 dark:bg-slate-800/40 p-3 rounded-xl">
+                <span class="font-bold text-gray-800 dark:text-slate-200">Execution Note for US Markets:</span>
+                <p class="text-gray-500 dark:text-slate-400 mt-0.5">
+                    Since US stocks frequently gap on earnings and macro events, enter regime flip setups <strong>only if the gap-up is ≤ 3%</strong> from prior close. Larger gaps on the flip day mean you're chasing; wait for the first pullback to EMA20 instead.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Section 2: Chandelier Stop -->
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 p-6 shadow-sm mb-8">
+        <div class="flex items-center gap-2 mb-4">
+            <span class="w-3 h-3 rounded-full bg-red-500"></span>
+            <h2 class="text-base font-black uppercase text-indigo-950 dark:text-indigo-300">
+                2. Chandelier Stop &amp; Multi-Tiered US Exits
+            </h2>
+        </div>
+        <div class="space-y-4 text-xs text-gray-600 dark:text-slate-300 leading-relaxed">
+            <div>
+                <strong class="text-gray-900 dark:text-slate-100 text-sm block mb-1">Formula (Chuck LeBeau, verified correct):</strong>
+                <div class="bg-slate-100 dark:bg-slate-800 p-3 rounded-xl font-mono text-indigo-700 dark:text-indigo-300 my-3 text-center text-sm">
+                    Chandelier Stop = 52W Highest High − (2.5 × ATR₁₄)
+                </div>
+                <ul class="list-disc ml-5 space-y-1">
+                    <li><strong>ATR (Average True Range 14):</strong> max(H−L, |H−prev_close|, |L−prev_close|) rolled 14 bars — standard Wilder formula.</li>
+                    <li><strong>2.5 Multiplier:</strong> Calibrated for S&P 500 stocks. Large-caps like AAPL or MSFT have lower ATR relative to price; small-caps need wider stops. The screener uses a uniform 2.5× — adjust per stock's historical ATR-to-price ratio for live trading.</li>
+                    <li><strong>One-directional ratchet:</strong> The stop only moves up as the stock makes new highs — it never steps down.</li>
+                </ul>
+            </div>
+            <div class="pt-3 border-t border-gray-100 dark:border-slate-800">
+                <strong class="text-gray-900 dark:text-slate-100 text-sm block mb-1">US-Specific Exit Tiers:</strong>
+                <ol class="list-decimal ml-5 space-y-1">
+                    <li><strong>Initial stop:</strong> Place a stop-loss at the Chandelier Stop value shown in the table immediately after entry.</li>
+                    <li><strong>At +1R:</strong> Move stop to breakeven. Never let a 1R winner become a loss.</li>
+                    <li><strong>At +2R:</strong> Book 50% of position. Let remaining half trail the Chandelier Stop.</li>
+                    <li><strong>At +4R:</strong> Trail remaining position with a 10-day low stop (tighter than Chandelier for extended moves).</li>
+                    <li><strong>Regime Flip Exit:</strong> If the HMM model detects a flip back to Accumulation (next scan), exit regardless of current P&L.</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+
+    <!-- Section 3: StatArb O-U -->
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 p-6 shadow-sm mb-8">
+        <div class="flex items-center gap-2 mb-4">
+            <span class="w-3 h-3 rounded-full bg-indigo-500"></span>
+            <h2 class="text-base font-black uppercase text-indigo-950 dark:text-indigo-300">
+                3. StatArb Residuals (O-U Process) &amp; VOLAR for US Markets
+            </h2>
+        </div>
+        <div class="space-y-4 text-xs text-gray-600 dark:text-slate-300 leading-relaxed">
+            <div>
+                <strong class="text-gray-900 dark:text-slate-100 text-sm block mb-1">Statistical Arbitrage in the S&P 500:</strong>
+                PCA strips away the S&P 500's three dominant systematic factors (broad market beta, growth/value tilt, sector rotation) leaving idiosyncratic residuals. An O-U process fitted to these residuals identifies stocks temporarily dislocated from their factor-implied fair value:
+                <ul class="list-disc ml-5 mt-1 space-y-1">
+                    <li><strong>s-score ≤ -1.75:</strong> Stock is ~1.75 standard deviations below its PCA-adjusted equilibrium — statistically cheap vs its factor basket.</li>
+                    <li><strong>Half-Life 2–25 Days:</strong> Mean reversion expected within 2–25 sessions. This is the practical S&P 500 window; longer half-lives (>25 days) drift into value territory which requires fundamental catalysts the model doesn't capture.</li>
+                    <li><strong>Above EMA200:</strong> Structural uptrend filter — prevents bottom-fishing in genuine downtrends where the O-U assumption breaks down.</li>
+                    <li><strong>Exit at s-score ≥ 0.0:</strong> Statistical equilibrium reached — the mispricing has fully reverted.</li>
+                </ul>
+                <div class="mt-2 p-3 bg-indigo-50 dark:bg-indigo-500/10 rounded-xl border border-indigo-200 dark:border-indigo-800 text-[11px]">
+                    <strong class="text-indigo-700 dark:text-indigo-300">US-Specific Note:</strong> In the S&P 500, StatArb residuals are typically triggered by sector rotation (e.g. Energy names temporarily lagging Materials during a commodity trade), post-earnings vol crush on adjacent names, or index rebalancing pressure on recently added constituents.
+                </div>
+            </div>
+            <div class="pt-3 border-t border-gray-100 dark:border-slate-800">
+                <strong class="text-gray-900 dark:text-slate-100 text-sm block mb-1">3M VOLAR for US Stocks (formula verified correct):</strong>
+                <div class="bg-slate-100 dark:bg-slate-800 p-3 rounded-xl font-mono text-indigo-700 dark:text-indigo-300 my-2 text-center text-sm">
+                    VOLAR₃M = 3-Month Total Return ÷ σ(Daily Returns)
+                </div>
+                <p>In US markets, VOLAR is especially useful to separate earnings-driven momentum (messy, high volatility) from genuine institutional accumulation (clean, low daily volatility). A stock with VOLAR &gt; 2.0 is advancing efficiently — this is the Minervini-style "tight price action" expressed as a ratio.</p>
+                <ul class="list-disc ml-5 mt-2 space-y-1">
+                    <li><strong>VOLAR ≥ 2.0:</strong> Excellent quality of advance — institutional buying is orderly</li>
+                    <li><strong>VOLAR 1.0–2.0:</strong> Acceptable — some volatility but trend intact</li>
+                    <li><strong>VOLAR &lt; 1.0:</strong> Choppy move — requires wider stops, lower position size</li>
+                </ul>
+            </div>
+            <div class="pt-3 border-t border-gray-100 dark:border-slate-800 bg-gray-50 dark:bg-slate-800/40 p-3 rounded-xl">
+                <span class="font-bold text-gray-800 dark:text-slate-200">Recommended US Learning Resources:</span>
+                <p class="text-gray-500 dark:text-slate-400 mt-0.5">
+                    <em>"Ernie Chan — Algorithmic Trading: Winning Strategies and Their Rationale"</em> (O-U / mean reversion) · <em>"Mark Minervini — Trade Like a Stock Market Wizard"</em> (VOLAR / VCP setup) · <em>"Stefan Jansen — Machine Learning for Algorithmic Trading"</em> (HMM chapter)
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Position Sizing -->
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 p-6 shadow-sm">
+        <div class="flex items-center gap-2 mb-4">
+            <span class="w-3 h-3 rounded-full bg-purple-500"></span>
+            <h2 class="text-base font-black uppercase text-indigo-950 dark:text-indigo-300">4. US Position Sizing &amp; Risk Rules</h2>
+        </div>
+        <div class="space-y-3 text-xs text-gray-600 dark:text-slate-300 leading-relaxed">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="p-4 rounded-xl bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-800">
+                    <div class="font-black text-red-700 dark:text-red-300 text-[10px] uppercase mb-1">Risk per Trade</div>
+                    <div class="text-sm font-black text-red-600 dark:text-red-400">1% of Capital</div>
+                    <p class="text-[10px] mt-1 text-gray-500 dark:text-slate-400">Never risk more than 1% of total account on a single setup regardless of conviction level. Position size = (Account × 1%) ÷ (Entry − Stop).</p>
+                </div>
+                <div class="p-4 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-800">
+                    <div class="font-black text-amber-700 dark:text-amber-300 text-[10px] uppercase mb-1">Max Open Exposure</div>
+                    <div class="text-sm font-black text-amber-600 dark:text-amber-400">6 Positions Max</div>
+                    <p class="text-[10px] mt-1 text-gray-500 dark:text-slate-400">Running more than 6 concurrent positions from quantitative screeners dilutes monitoring quality. Focus on the top 3 StatArb + top 2 HMM + top 1 VOLAR.</p>
+                </div>
+                <div class="p-4 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-800">
+                    <div class="font-black text-emerald-700 dark:text-emerald-300 text-[10px] uppercase mb-1">Sector Concentration</div>
+                    <div class="text-sm font-black text-emerald-600 dark:text-emerald-400">Max 2 per GICS Sector</div>
+                    <p class="text-[10px] mt-1 text-gray-500 dark:text-slate-400">Never hold more than 2 positions in the same GICS sector simultaneously. Sector events (earnings, regulatory, commodity) can hit multiple names at once.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}

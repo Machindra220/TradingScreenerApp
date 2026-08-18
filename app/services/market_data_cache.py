@@ -287,7 +287,17 @@ class MarketCache:
         ticker = yf.Ticker(symbol)
         if interval == '1d':
             if existing_last_date:
-                start = (datetime.strptime(existing_last_date, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
+                start_dt = datetime.strptime(existing_last_date, "%Y-%m-%d") + timedelta(days=1)
+                today    = date.today()
+                # Guard: if start would be in the future yfinance raises
+                # "Invalid input - start date cannot be after end date".
+                # This happens when existing_last_date is already today
+                # (e.g. a partial bar was stored during market hours and
+                # force_refresh is run the same evening).
+                # Fall back to a 5-day pull which overwrites today's row.
+                if start_dt.date() > today:
+                    return ticker.history(period="5d", interval="1d")
+                start = start_dt.strftime("%Y-%m-%d")
                 return ticker.history(start=start, interval='1d')
             return ticker.history(period="max", interval='1d')
         return ticker.history(period=f"{INTRADAY_MAX_DAYS}d", interval=interval)
@@ -320,7 +330,7 @@ class MarketCache:
                   last_fetched_at=excluded.last_fetched_at,
                   last_bar_date=excluded.last_bar_date,
                   last_fetch_status=excluded.last_fetch_status""",
-                (symbol, interval, datetime.now().isoformat(), last_date, 'ok'))
+                (symbol, interval, datetime.now(ZoneInfo("UTC")).isoformat(), last_date, 'ok'))
         return len(rows)
 
     def _mark_fetch_error(self, symbol, interval, error):
@@ -331,7 +341,7 @@ class MarketCache:
                 ON CONFLICT(symbol, interval) DO UPDATE SET
                   last_fetched_at=excluded.last_fetched_at,
                   last_fetch_status=excluded.last_fetch_status""",
-                (symbol, interval, datetime.now().isoformat(), f'error: {error}'))
+                (symbol, interval, datetime.now(ZoneInfo("UTC")).isoformat(), f'error: {error}'))
 
     def _read_cached(self, symbol, interval, lookback_days=None):
         with self._get_conn() as conn:
@@ -381,12 +391,29 @@ class MarketCache:
         """
         self.backup_if_needed()
         results = {}
-        report  = {"fetched": 0, "from_cache": 0, "failed": []}
+        report  = {"fetched": 0, "from_cache": 0, "failed": [], "skipped": []}
         total   = len(symbols)
 
         for i, symbol in enumerate(symbols):
             if progress_callback:
                 progress_callback(i, total, symbol)
+
+            # Skip obviously invalid symbols — these come from malformed CSV
+            # rows (e.g. a header row read as data, Excel #NAME? errors,
+            # dollar-prefixed symbols, or empty cells).
+            # NSE: alphanumeric + optional .NS suffix (e.g. RELIANCE.NS, M&M.NS)
+            # US:  alphanumeric + optional dots  (e.g. BRK.B, BF.B)
+            _INVALID_NAMES = {"SYMBOL","TICKER","NAME","COMPANY","ISIN",
+                              "SERIES","N/A","NA","NONE","NULL","#NAME?"}
+            clean = symbol.replace(".NS", "").replace(".BSE", "").strip()
+            if (not clean
+                    or clean.startswith("$")
+                    or clean.startswith("#")
+                    or clean.upper() in _INVALID_NAMES
+                    or not all(c.isalnum() or c in (".", "-", "&", "^") for c in clean)):
+                print(f"  [CACHE] Skipping invalid symbol: {symbol!r}")
+                report.setdefault("skipped", []).append(symbol)
+                continue
 
             if not self._is_stale(symbol, interval):
                 results[symbol] = self._read_cached(symbol, interval, lookback_days)
@@ -422,6 +449,64 @@ class MarketCache:
             progress_callback(total, total, "")
 
         return results, report
+
+    def force_refresh_all(self, interval='1d'):
+        """
+        Clears last_fetched_at for ALL symbols so _is_stale() returns True
+        for every symbol on the next screener run, forcing yfinance re-fetches.
+
+        This does NOT delete price rows — it only resets the "I fetched this
+        recently" flag. Existing OHLCV history stays intact; only today's
+        (potentially partial) bar gets overwritten on next fetch.
+
+        Call this from the Cache Admin page when prices look stale/wrong.
+        """
+        with self._get_conn() as conn:
+            # Set last_fetched_at far in the past so _is_stale() case (c)
+            # always triggers, and last_bar_date stays so incremental fetch works
+            conn.execute(
+                "UPDATE fetch_meta SET last_fetched_at=? WHERE interval=?",
+                ("1970-01-01T00:00:00+00:00", interval)
+            )
+            count = conn.execute(
+                "SELECT changes()"
+            ).fetchone()[0]
+        return count
+
+    def force_refresh_symbol(self, symbol, interval='1d'):
+        """Force-refresh a single symbol by clearing its fetch timestamp."""
+        with self._get_conn() as conn:
+            conn.execute(
+                "UPDATE fetch_meta SET last_fetched_at=? WHERE symbol=? AND interval=?",
+                ("1970-01-01T00:00:00+00:00", symbol, interval)
+            )
+
+    def inspect_symbols(self, interval='1d', limit=50, stale_only=False):
+        """
+        Returns a list of dicts with per-symbol cache status for the admin page.
+        Each dict: symbol, last_bar_date, last_fetched_at, last_fetch_status, is_stale
+        """
+        with self._get_conn() as conn:
+            rows = conn.execute("""
+                SELECT symbol, last_bar_date, last_fetched_at, last_fetch_status
+                FROM fetch_meta WHERE interval=?
+                ORDER BY last_bar_date ASC, symbol ASC
+            """, (interval,)).fetchall()
+
+        settled = self._last_settled_bar_date()
+        result  = []
+        for symbol, last_bar_date, last_fetched_at, status in rows:
+            stale = self._is_stale(symbol, interval)
+            if stale_only and not stale:
+                continue
+            result.append({
+                "symbol":          symbol,
+                "last_bar_date":   last_bar_date or "—",
+                "last_fetched_at": last_fetched_at or "—",
+                "status":          status or "—",
+                "is_stale":        stale,
+            })
+        return result[:limit], len(rows), settled.isoformat()
 
     def cache_stats(self):
         with self._get_conn() as conn:

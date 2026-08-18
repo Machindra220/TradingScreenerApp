@@ -34,12 +34,15 @@ os.makedirs(DATA_FOLDER,   exist_ok=True)
 os.makedirs(os.path.join(_PROJECT_ROOT, 'instance'), exist_ok=True)
 
 # ── Shared market-data cache (US) ────────────────────────────────────────────
-def _get_cache():
-    try:
-        from app.services.market_data_cache import get_price_history_bulk
-        return get_price_history_bulk
-    except ImportError:
-        return None
+# Import us_cache directly — NOT the module-level get_price_history_bulk wrapper
+# which routes to ind_cache (IND database). US screener must use us_cache so
+# symbols are looked up in market_data_us.db, not market_data_ind.db.
+try:
+    from app.services.market_data_cache import us_cache as _us_cache, latest_bar_date
+    _US_CACHE_AVAILABLE = True
+except ImportError:
+    _us_cache = None
+    _US_CACHE_AVAILABLE = False
 
 # ── Progress tracking ────────────────────────────────────────────────────────
 _progress = {"pct": 0, "msg": "Idle", "running": False,
@@ -321,35 +324,40 @@ def _run_scan(stock_items, source_name):
 
     sector_cache = _load_sector_cache()
 
-    # ── Step 0: Fetch ^GSPC benchmark ONCE ──────────────────────────────────
+    # ── Step 0: Fetch ^GSPC benchmark ONCE via us_cache ────────────────────
+    # CORRECT params: interval="1d", lookback_days=504 (≈2 trading years).
+    # DO NOT pass period= — that is yfinance's .history() API, not the cache API.
     _set_progress(1, "Fetching S&P 500 benchmark (^GSPC)…")
     bench_close = None
     try:
-        get_bulk = _get_cache()
-        if get_bulk:
-            bench_data, _ = get_bulk(
+        if _US_CACHE_AVAILABLE:
+            bench_data, _ = _us_cache.get_price_history_bulk(
                 ["^GSPC"],
-                period="2y",
+                interval="1d",
+                lookback_days=504,
                 progress_callback=lambda i, t, s: None,
             )
             bdf = bench_data.get("^GSPC")
             if bdf is not None and not bdf.empty:
                 bdf = _normalise_df(bdf, "^GSPC")
-                if bdf is not None and 'Close' in bdf.columns:
-                    bench_close = bdf['Close']
+                if bdf is not None and "Close" in bdf.columns:
+                    bench_close = bdf["Close"]
         if bench_close is None:
+            # Genuine fallback only when cache service is unavailable
             bdf = yf.Ticker("^GSPC").history(period="2y")
             if not bdf.empty:
-                bench_close = bdf['Close']
+                bench_close = bdf["Close"]
     except Exception as e:
         print(f"[HHHL-US] benchmark fetch error: {e}")
 
     # ── Step 1: Bulk price-history fetch via US cache ────────────────────────
     price_data   = {}
     fetch_report = {"from_cache": 0, "fetched": 0, "failed": []}
-    get_bulk     = _get_cache()
 
-    if get_bulk is not None:
+    if _US_CACHE_AVAILABLE:
+        # CORRECT params: interval + lookback_days, NOT period=.
+        # us_cache routes to market_data_us.db (US symbols only).
+        # ind_cache (the old wrapper) would query market_data_ind.db → wrong db.
         _set_progress(3, f"Loading {total} symbols from US cache…")
 
         def _cb(idx, ttl, sym):
@@ -357,16 +365,18 @@ def _run_scan(stock_items, source_name):
             _set_progress(pct, f"[Cache] {sym} ({idx}/{ttl})")
 
         try:
-            price_data, fetch_report = get_bulk(
+            price_data, fetch_report = _us_cache.get_price_history_bulk(
                 symbols,
-                period="2y",
+                interval="1d",
+                lookback_days=504,        # ≈ 2 trading years; enough for 200-bar MA
                 progress_callback=_cb,
             )
         except Exception as e:
-            print(f"[HHHL-US] Cache bulk fetch failed, falling back to yf: {e}")
-            get_bulk = None
+            print(f"[HHHL-US] Cache bulk fetch error: {e}")
+            fetch_report = {"from_cache": 0, "fetched": 0, "failed": list(symbols)}
+    price_data_asof = latest_bar_date(price_data) if price_data else None
 
-    if get_bulk is None:
+    if not _US_CACHE_AVAILABLE:
         _set_progress(3, f"Fetching {total} symbols via yfinance (no cache)…")
         for i, sym in enumerate(symbols):
             pct = 3 + int((i / total) * 52)
@@ -385,10 +395,10 @@ def _run_scan(stock_items, source_name):
 
     for sym in symbols:
         raw    = price_data.get(sym)
-        # Normalise handles simple-column and MultiIndex bulk-fetch formats
-        df     = _normalise_df(raw, sym) if raw is not None else None
+        # Pass raw df directly — _analyse_us() calls _normalise_df internally.
+        # Pre-normalising here caused double _normalise_df (here + inside _analyse_us).
         sector = sec_map.get(sym, "N/A")
-        res    = _analyse_us(sym, df, sector, bench_close)
+        res    = _analyse_us(sym, raw, sector, bench_close)
         if res:
             passing.append(res)
 
@@ -443,9 +453,10 @@ def _run_scan(stock_items, source_name):
         "source":     source_name,
         "count":      len(stocks),
         "rs90_count": rs90_count,
-        "cache_hits": fetch_report.get("from_cache", 0),
-        "yf_fetches": fetch_report.get("fetched", 0),
-        "failed":     len(fetch_report.get("failed", [])),
+        "cache_hits":      fetch_report.get("from_cache", 0),
+        "yf_fetches":      fetch_report.get("fetched", 0),
+        "failed":          len(fetch_report.get("failed", [])),
+        "price_data_asof": price_data_asof,
         "stocks":     stocks,
     }
 
@@ -548,6 +559,7 @@ def hh_hl_us_view():
     # ── Load cached results ──────────────────────────────────────────────────
     stocks, last_run_time, cached_source = [], "Never", source_name
     rs90_count = cache_hits = yf_fetches = failed_count = 0
+    price_data_asof = None
 
     if os.path.exists(RESULTS_JSON):
         try:
@@ -559,7 +571,8 @@ def hh_hl_us_view():
                 rs90_count    = cached.get("rs90_count", 0)
                 cache_hits    = cached.get("cache_hits", 0)
                 yf_fetches    = cached.get("yf_fetches", 0)
-                failed_count  = cached.get("failed", 0)
+                failed_count      = cached.get("failed", 0)
+                price_data_asof   = cached.get("price_data_asof")
             else:
                 stocks = cached
         except Exception:
@@ -637,6 +650,7 @@ def hh_hl_us_view():
         cache_hits=cache_hits,
         yf_fetches=yf_fetches,
         failed_count=failed_count,
+        price_data_asof=price_data_asof,
     )
 
 @hh_hl_us_bp.route("/hh-hl-us/restore/<filename>")

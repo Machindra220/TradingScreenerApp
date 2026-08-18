@@ -31,13 +31,15 @@ os.makedirs(HISTORY_DIR,   exist_ok=True)
 os.makedirs(DATA_FOLDER,   exist_ok=True)
 
 # ── Shared market-data cache (IND) ───────────────────────────────────────────
-# Import lazily so the blueprint doesn't crash if the service isn't wired yet.
-def _get_cache():
-    try:
-        from app.services.market_data_cache import get_price_history_bulk
-        return get_price_history_bulk
-    except ImportError:
-        return None
+# Import ind_cache directly — the correct object with the right method signature.
+# get_price_history_bulk(symbols, interval, lookback_days, progress_callback)
+# NOT period= (that is yfinance's own .history() API, not the cache API).
+try:
+    from app.services.market_data_cache import ind_cache as _ind_cache
+    _IND_CACHE_AVAILABLE = True
+except ImportError:
+    _ind_cache = None
+    _IND_CACHE_AVAILABLE = False
 
 # ── Progress tracking ────────────────────────────────────────────────────────
 _progress = {"pct": 0, "msg": "Idle", "running": False,
@@ -304,10 +306,12 @@ def _run_scan(symbols, source_name):
     price_data  = {}   # yf_sym → DataFrame | None
     fetch_report = {"from_cache": 0, "fetched": 0, "failed": []}
 
-    get_bulk = _get_cache()
-
-    if get_bulk is not None:
+    if _IND_CACHE_AVAILABLE:
         # ── Cache path ──────────────────────────────────────────────────────
+        # CORRECT signature: lookback_days=504 ≈ 2 years of trading days.
+        # DO NOT pass period= — that is yfinance's API, not the cache's API.
+        # Passing period="2y" caused a TypeError which was silently caught and
+        # fell through to the yfinance fallback, bypassing the cache every run.
         _set_progress(2, f"Loading {total} symbols from cache…")
 
         def _progress_cb(idx, ttl, sym):
@@ -315,16 +319,19 @@ def _run_scan(symbols, source_name):
             _set_progress(pct, f"[Cache] {sym} ({idx}/{ttl})")
 
         try:
-            price_data, fetch_report = get_bulk(
+            price_data, fetch_report = _ind_cache.get_price_history_bulk(
                 yf_symbols,
-                period="2y",
+                interval="1d",
+                lookback_days=504,        # ≈ 2 trading years; enough for 200-bar MA
                 progress_callback=_progress_cb,
             )
         except Exception as e:
-            print(f"[HHHL] Cache bulk fetch failed, falling back to yf: {e}")
-            get_bulk = None   # trigger fallback below
+            print(f"[HHHL] Cache bulk fetch error: {e}")
+            # Don't silently fall back — surface the error and use empty data
+            # so the terminal log shows the real problem, not a ghost yf run.
+            fetch_report = {"from_cache": 0, "fetched": 0, "failed": list(yf_symbols)}
 
-    if get_bulk is None:
+    if not _IND_CACHE_AVAILABLE:
         # ── Fallback: individual yf.Ticker calls (original behaviour) ───────
         _set_progress(2, f"Fetching {total} symbols via yfinance (no cache)…")
         for i, yf_sym in enumerate(yf_symbols):
@@ -345,10 +352,9 @@ def _run_scan(symbols, source_name):
     for i, yf_sym in enumerate(yf_symbols):
         bare = sym_map[yf_sym]
         raw  = price_data.get(yf_sym)
-        # Normalise handles simple-column and MultiIndex bulk-fetch formats
-        df   = _normalise_df(raw, yf_sym) if raw is not None else None
-        # Pass "N/A" sector for now; we'll fill it in for passing symbols only
-        res  = _analyse(bare, df, "N/A")
+        # Pass raw df directly — _analyse() calls _normalise_df internally.
+        # Previously _normalise_df was called here AND inside _analyse (double).
+        res  = _analyse(bare, raw, "N/A")
         if res:
             passing.append((bare, yf_sym, res))
 

@@ -17,6 +17,10 @@
         <span>•</span>
         <span>🏆 <span class="text-amber-400 font-bold">{{ rs90_count }}</span> RS outperformers</span>
         {% endif %}
+        {% if price_data_asof %}
+        <span>•</span>
+        <span>📅 Price Data As Of: <span class="text-emerald-400 font-bold">{{ price_data_asof }}</span></span>
+        {% endif %}
         {% if cache_hits or yf_fetches %}
         <span>•</span>
         <span>💾 Cache: <span class="text-emerald-400 font-bold">{{ cache_hits }} hits</span> · <span class="{{ 'text-amber-400' if yf_fetches else 'text-slate-400' }} font-bold">{{ yf_fetches }} from yf</span>{% if failed_count %} · <span class="text-red-400 font-bold">{{ failed_count }} failed</span>{% endif %}</span>

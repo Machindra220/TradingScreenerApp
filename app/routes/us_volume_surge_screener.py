@@ -241,6 +241,12 @@ def run_scan(source_path, source_name):
                       error=f"Could not fetch benchmark {US_BENCHMARK[0]}.")
         return
     bench_close = bench_df['Close'].dropna()
+    # Normalise to tz-naive DatetimeIndex so reindex() matches stock indexes
+    # from the SQLite cache (which are always tz-naive date strings).
+    # tz-aware vs tz-naive comparison in reindex() returns ALL NaN —
+    # that single .isna().any() check then kills every symbol.
+    if hasattr(bench_close.index, 'tz') and bench_close.index.tz is not None:
+        bench_close.index = bench_close.index.tz_localize(None)
     benchmark_label = f"{US_BENCHMARK[1]} ({US_BENCHMARK[0]})"
 
     # Bulk-fetch all symbols via shared US cache (Memory #13)
@@ -333,11 +339,34 @@ def run_scan(source_path, source_name):
             roc_21d = round(((current_price / float(close.iloc[-(ROC_WINDOW+1)])) - 1) * 100, 2)
 
             # RS vs S&P 500 (ratio-of-relatives, Memory #1)
-            bench_aligned = bench_close.reindex(close.index).ffill()
-            if len(bench_aligned) < ROC_WINDOW + 1 or bench_aligned.isna().any():
+            #
+            # Robust alignment — two bugs fixed vs original:
+            #
+            # Bug A (critical): bench_close from yfinance/cache may have a
+            # tz-aware index while close has a tz-naive index (or vice versa).
+            # reindex() requires EXACT index match — tz-aware != tz-naive even
+            # for the same date, so ALL rows come back NaN and .isna().any()
+            # skips every symbol. Fix: strip tz from close before reindex.
+            #
+            # Bug B (secondary): ffill() fills forward only. If the benchmark
+            # starts 1 day before the stock's first date, the first row stays
+            # NaN → .isna().any() = True → symbol skipped even though 99%
+            # of rows are valid. Fix: use ffill().bfill() and check overlap %.
+            close_idx = close.index
+            if hasattr(close_idx, 'tz') and close_idx.tz is not None:
+                close_idx = close_idx.tz_localize(None)
+            close_normalised = close.copy()
+            close_normalised.index = close_idx
+
+            bench_aligned = bench_close.reindex(close_normalised.index).ffill().bfill()
+
+            # Require at least ROC_WINDOW+1 valid (non-NaN) bars to compute RS
+            valid_bars = bench_aligned.notna().sum()
+            if valid_bars < ROC_WINDOW + 1:
                 continue
+
             rs_val = _compute_rs_ratio(
-                close.iloc[-(ROC_WINDOW+1):],
+                close_normalised.iloc[-(ROC_WINDOW+1):],
                 bench_aligned.iloc[-(ROC_WINDOW+1):]
             )
             if rs_val is None:
