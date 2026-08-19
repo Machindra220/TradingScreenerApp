@@ -26,42 +26,42 @@
         <!-- In-shell toolbar: stays visible in fullscreen since it's inside chart-shell -->
         <div id="shell-toolbar" class="bg-gray-900 px-3 py-2 flex items-center justify-between gap-2 border-b border-gray-800 flex-wrap">
             <div class="flex items-center gap-2 flex-wrap">
-                <span id="active-ticker-badge" class="text-[11px] bg-indigo-950 text-indigo-300 font-bold px-2 py-1 rounded border border-indigo-800/50 uppercase whitespace-nowrap">
+                <span id="active-ticker-badge" class="text-[9px] bg-indigo-950 text-indigo-300 font-bold px-2 py-1 rounded border border-indigo-800/50 uppercase whitespace-nowrap">
                     Syncing Data...
                 </span>
                 <div id="market-toggle" class="flex items-center bg-gray-950 border border-gray-800 rounded-lg overflow-hidden">
-                    <button data-market="US" onclick="setMarket('US')" class="market-btn text-[11px] font-black uppercase px-3 py-1.5 text-gray-400 hover:text-gray-200 transition">US</button>
-                    <button data-market="NSE" onclick="setMarket('NSE')" class="market-btn text-[11px] font-black uppercase px-3 py-1.5 text-gray-400 hover:text-gray-200 transition">NSE</button>
+                    <button data-market="US" onclick="setMarket('US')" class="market-btn text-[9px] font-black uppercase px-3 py-1.5 text-gray-400 hover:text-gray-200 transition">US</button>
+                    <button data-market="NSE" onclick="setMarket('NSE')" class="market-btn text-[9px] font-black uppercase px-3 py-1.5 text-gray-400 hover:text-gray-200 transition">NSE</button>
                 </div>
                 <input type="text" id="ticker-search" placeholder="Symbol..." value="{{ default_stock }}"
-                       class="bg-gray-950 text-gray-200 text-[12px] font-bold uppercase px-3 py-1.5 rounded-lg border border-gray-800 focus:outline-none focus:border-indigo-500 w-36 transition-all"
+                       class="bg-gray-950 text-gray-200 text-[12px] font-bold uppercase px-3 py-1.5 rounded-lg border border-gray-800 focus:outline-none focus:border-indigo-500 w-36 transition-all ticker-search-input"
                        onkeypress="if(event.key==='Enter') loadCombinedTelemetry(this.value)">
-                <button onclick="loadCombinedTelemetry(document.getElementById('ticker-search').value)" class="bg-indigo-600 hover:bg-indigo-700 text-white font-black text-[11px] uppercase px-3 py-1.5 rounded-lg transition">
+                <button onclick="loadCombinedTelemetry(document.getElementById('ticker-search').value)" class="bg-indigo-600 hover:bg-indigo-700 text-white font-black text-[9px] uppercase px-3 py-1.5 rounded-lg transition">
                     Analyze
                 </button>
                 <div id="range-selector" class="flex items-center bg-gray-950 border border-gray-800 rounded-lg overflow-hidden">
-                    <button data-range="3M" onclick="setRange('3M')" class="range-btn text-[11px] font-black uppercase px-2.5 py-1.5 text-gray-400 hover:text-gray-200 transition">3M</button>
-                    <button data-range="6M" onclick="setRange('6M')" class="range-btn text-[11px] font-black uppercase px-2.5 py-1.5 text-gray-400 hover:text-gray-200 transition">6M</button>
-                    <button data-range="1Y" onclick="setRange('1Y')" class="range-btn text-[11px] font-black uppercase px-2.5 py-1.5 text-gray-400 hover:text-gray-200 transition">1Y</button>
-                    <button data-range="2Y" onclick="setRange('2Y')" class="range-btn text-[11px] font-black uppercase px-2.5 py-1.5 text-gray-400 hover:text-gray-200 transition">2Y</button>
+                    <button data-range="3M" onclick="setRange('3M')" class="range-btn text-[9px] font-black uppercase px-2.5 py-1.5 text-gray-400 hover:text-gray-200 transition">3M</button>
+                    <button data-range="6M" onclick="setRange('6M')" class="range-btn text-[9px] font-black uppercase px-2.5 py-1.5 text-gray-400 hover:text-gray-200 transition">6M</button>
+                    <button data-range="1Y" onclick="setRange('1Y')" class="range-btn text-[9px] font-black uppercase px-2.5 py-1.5 text-gray-400 hover:text-gray-200 transition">1Y</button>
+                    <button data-range="2Y" onclick="setRange('2Y')" class="range-btn text-[9px] font-black uppercase px-2.5 py-1.5 text-gray-400 hover:text-gray-200 transition">2Y</button>
                 </div>
             </div>
             <div class="flex items-center gap-2">
                 <button id="export-png-btn" onclick="exportChartPNG()" title="Download PNG snapshot"
-                        class="bg-gray-800 hover:bg-gray-700 text-gray-200 font-black text-[11px] uppercase px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 border border-gray-700">
+                        class="bg-gray-800 hover:bg-gray-700 text-gray-200 font-black text-[9px] uppercase px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 border border-gray-700">
                     <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
                     <span>PNG</span>
                 </button>
                 <button id="share-link-btn" onclick="copyShareLink()" title="Copy shareable link"
-                        class="bg-gray-800 hover:bg-gray-700 text-gray-200 font-black text-[11px] uppercase px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 border border-gray-700">
+                        class="bg-gray-800 hover:bg-gray-700 text-gray-200 font-black text-[9px] uppercase px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 border border-gray-700">
                     <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.07 0l2.83-2.83a5 5 0 0 0-7.07-7.07L11.5 4.5M14 11a5 5 0 0 0-7.07 0L4.1 13.83a5 5 0 0 0 7.07 7.07L12.5 19.5"/></svg>
                     <span>Share</span>
                 </button>
                 <button id="fullscreen-btn" onclick="toggleChartFullscreen()" title="Toggle fullscreen"
-                        class="bg-gray-800 hover:bg-gray-700 text-gray-200 font-black text-[11px] uppercase px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 border border-gray-700">
+                        class="bg-gray-800 hover:bg-gray-700 text-gray-200 font-black text-[9px] uppercase px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 border border-gray-700">
                     <svg id="fs-icon-expand" xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
                     <svg id="fs-icon-collapse" xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v4a2 2 0 0 1-2 2H3M15 3v4a2 2 0 0 0 2 2h4M9 21v-4a2 2 0 0 0-2-2H3M15 21v-4a2 2 0 0 1 2-2h4"/></svg>
-                    <span id="fs-label">Fullscreen</span>
+                    <span id="fs-label">Full</span>
                 </button>
             </div>
         </div>
@@ -77,7 +77,7 @@
 
         <div class="border-t border-gray-800/60"></div>
 
-        <!-- Pane 2: RS Ratio (right axis) + Accumulation (left axis) overlaid, divergence phase as background tint -->
+        <!-- Pane 2: RS Ratio family (right axis) + Benchmark index (left axis) + Accumulation (overlay strip), divergence phase as background tint -->
         <div class="pane-wrap relative bg-gray-950">
             <div id="rs-acc-bg-shading" class="absolute inset-0 pointer-events-none"></div>
             <div id="rs-acc-skeleton" class="skeleton-grid"></div>
@@ -105,6 +105,22 @@
         .pane-legend .leg-swatch { width: 10px; height: 2px; border-radius: 2px; display: inline-block; }
         #price-bg-shading .band, #rs-acc-bg-shading .band { position: absolute; top: 0; bottom: 0; }
         .range-btn.active, .market-btn.active { background: #4F46E5; color: #fff; }
+
+        /* Browser autofill (Chrome/Edge/Safari) forces a light background on
+           inputs the moment text is typed/pasted, which also makes light text
+           unreadable on top of it. background-color can't reliably override
+           this — the standard fix is to paint over it with an inset box-shadow
+           the size of the field, plus -webkit-text-fill-color for the text,
+           since color alone is also ignored under :-webkit-autofill. */
+        .ticker-search-input:-webkit-autofill,
+        .ticker-search-input:-webkit-autofill:hover,
+        .ticker-search-input:-webkit-autofill:focus,
+        .ticker-search-input:-webkit-autofill:active {
+            -webkit-box-shadow: 0 0 0 1000px #030712 inset;
+            box-shadow: 0 0 0 1000px #030712 inset;
+            -webkit-text-fill-color: #E5E7EB;
+            caret-color: #E5E7EB;
+        }
 
         /* Loading skeleton: static gridlines + shimmer, visible the instant the page paints,
            so there is no full-panel blackout while the first fetch is in flight. */
@@ -136,7 +152,8 @@
         <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-[#22D3EE] rounded inline-block"></span>EMA 100</span>
         <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-[#A3A3A3] rounded inline-block"></span>EMA 200</span>
         <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-[#39C973] rounded inline-block"></span>RS Ratio (right axis)</span>
-        <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-[#06B6D4] rounded inline-block"></span>Accumulation / Distribution (left axis)</span>
+        <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-[#94A3B8] rounded inline-block"></span>Benchmark Index (left axis)</span>
+        <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-[#06B6D4] rounded inline-block"></span>Accumulation / Distribution (bottom strip)</span>
         <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 bg-[#3B82F6]/15 rounded-sm inline-block border border-[#3B82F6]/40"></span>Shading: True Alpha Divergence</span>
         <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 bg-[#B91C1C]/15 rounded-sm inline-block border border-[#B91C1C]/40"></span>Shading: Flushing Phase</span>
         <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-green-500 inline-block"></span>RS rising 4 days (price marker)</span>
@@ -164,31 +181,43 @@
         <h4 class="text-[11px] font-black text-gray-300 uppercase tracking-wider mb-2">📋 What Each Pane Is Showing</h4>
         <ul class="space-y-1.5 text-[12px] text-gray-400 list-none">
             <li><span class="text-gray-200 font-bold">Price + EMAs —</span> Daily OHLC candles with five exponential moving averages (10/20/50/100/200) to read short-, medium-, and long-term trend. The background tint marks divergence-phase extremes (see below) so price action and relative strength can be read together without scanning down to a separate pane.</li>
-            <li><span class="text-gray-200 font-bold">RS Ratio + Accumulation —</span> Two indicators sharing one pane on independent axes. The RS Ratio (right axis, green) is stock price ÷ benchmark price — rising means the stock is gaining ground on the index. The Accumulation/Distribution line (left axis, cyan) is a running total of volume on up-days minus volume on down-days (OBV-style) — rising means net buying pressure, falling means net selling pressure. Reading them together: RS rising with Accumulation rising is the strongest combination — outperformance backed by real buying.</li>
+            <li><span class="text-gray-200 font-bold">RS Ratio + Benchmark + Accumulation —</span> Three indicators sharing one pane and one timeline. The RS Ratio family (right axis, green/blue/purple/amber) is stock price ÷ benchmark price — rising means the stock is gaining ground on the index; its 10 SMA / 21 EMA / 50 SMA confirm the trend isn't just noise. The Benchmark Index line (left axis, slate gray) is the raw S&amp;P 500 / Nifty 500 level, shown on its own real scale so you can read overall market regime alongside relative strength. The Accumulation/Distribution line (bottom overlay, cyan) is a running total of volume on up-days minus volume on down-days (OBV-style) — its absolute level doesn't matter, only its slope: rising means net buying pressure, falling means net selling pressure. Reading them together: RS rising, the benchmark flat or falling, and Accumulation rising is the strongest combination — outperformance backed by real buying, not a market-wide rally lifting everything.</li>
             <li><span class="text-gray-200 font-bold">Background shading (both panes) —</span> Blue tint = "True Alpha" divergence phase (RS rising while the benchmark falls). Red tint = "Flushing" phase (RS and the benchmark falling together). No tint = a mixed/neutral phase.</li>
             <li><span class="text-gray-200 font-bold">Green dot markers on price candles —</span> RS Ratio has risen for 4 consecutive sessions — an early relative-strength uptrend tell, placed directly on price so it's never hidden in a collapsed pane.</li>
         </ul>
     </div>
 </div>
 
-<!-- LightweightCharts v3.3.0 — stable API for multi-pane + dual price scales -->
-<script src="https://unpkg.com/lightweight-charts@3.3.0/dist/lightweight-charts.standalone.production.js"></script>
+<!-- Pinned to an exact version, not @latest: unpkg's unversioned URL has previously
+     served v5 (which removes addCandlestickSeries/addLineSeries entirely) during
+     outages/redirects. v4.2.3 keeps the v3-style add*Series() API working while
+     adding setCrosshairPosition and price-scale minimumWidth, both used below. -->
+<script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
 <script>
 let priceChart = null, rsAccChart = null;
 let candleSeries, volSeries, ema10S, ema20S, ema50S, ema100S, ema200S;
-let rsLineS, rsSma10S, rsEma21S, rsSma50S, accLineS;
+let rsLineS, rsSma10S, rsEma21S, rsSma50S, accLineS, spxLineS;
 let candleMap = {};
 let lastTelemetry = null;
 let currentSymbol = '{{ default_stock }}';
 let currentMarket = '{{ default_market }}';
 let currentRange = '1Y';
 
+// Single fixed price-scale width applied identically to every axis on both
+// panes (left and right, both charts). This is the actual root-cause fix for
+// the misaligned timelines: v3 had no way to control this and each chart
+// auto-sized its axis to its own widest label (e.g. "1234.56" on the price
+// pane vs "0.0512" on the RS pane), so the two plot areas ended up different
+// pixel widths even on identical dates. minimumWidth (added in v4.1) lets us
+// pin every axis to the same width so both plot areas are pixel-identical.
+const PRICE_SCALE_WIDTH = 70;
+
 const CONFIG = {
     layout: { background: { type: 'solid', color: 'rgba(0,0,0,0)' }, textColor: '#9CA3AF', fontFamily: 'Inter, sans-serif', fontSize: 12 },
     grid: { vertLines: { color: '#111827' }, horzLines: { color: '#111827' } },
     crosshair: { mode: LightweightCharts.CrosshairMode.Normal, vertLine: { color: '#4B5563', labelBackgroundColor: '#1F2937' }, horzLine: { color: '#4B5563', labelBackgroundColor: '#1F2937' } },
-    rightPriceScale: { borderColor: '#1F2937' },
-    leftPriceScale: { borderColor: '#1F2937', visible: true },
+    rightPriceScale: { borderColor: '#1F2937', minimumWidth: PRICE_SCALE_WIDTH },
+    leftPriceScale: { borderColor: '#1F2937', visible: true, minimumWidth: PRICE_SCALE_WIDTH },
     timeScale: { borderColor: '#1F2937', timeVisible: true }
 };
 
@@ -201,11 +230,12 @@ const LEGENDS = {
         { label: 'EMA 200', color: '#A3A3A3' }
     ],
     rsAcc: [
-        { label: 'RS Ratio (R)',  color: '#39C973' },
-        { label: '10 SMA',        color: '#3B82F6' },
-        { label: '21 EMA',        color: '#A78BFA' },
-        { label: '50 SMA',        color: '#F59E0B' },
-        { label: 'Accum/Dist (L)', color: '#06B6D4' }
+        { label: 'RS Ratio (R)',   color: '#39C973' },
+        { label: '10 SMA',         color: '#3B82F6' },
+        { label: '21 EMA',         color: '#A78BFA' },
+        { label: '50 SMA',         color: '#F59E0B' },
+        { label: 'S&P 500 (L)',    color: '#94A3B8' },
+        { label: 'Accum/Dist',     color: '#06B6D4' }
     ]
 };
 
@@ -216,7 +246,9 @@ function renderLegend(elId, items) {
 }
 function renderAllLegends() {
     renderLegend('price-legend', LEGENDS.price);
-    renderLegend('rs-acc-legend', LEGENDS.rsAcc);
+    const benchLabel = currentMarket === 'NSE' ? 'Nifty 500 (L)' : 'S&P 500 (L)';
+    const rsAccItems = LEGENDS.rsAcc.map(it => it.label.startsWith('S&P 500') ? { ...it, label: benchLabel } : it);
+    renderLegend('rs-acc-legend', rsAccItems);
 }
 
 function showError(message) {
@@ -260,7 +292,9 @@ function initCharts() {
 
     priceChart.subscribeCrosshairMove(p => {
         if (p.time) {
-            rsAccChart.setCrosshairPosition(NaN, p.time, rsLineS);
+            // rsLineS is created in loadCombinedTelemetry(), which runs right
+            // after initCharts() — guard in case this fires in that window.
+            if (rsLineS) rsAccChart.setCrosshairPosition(NaN, p.time, rsLineS);
             if (candleMap[p.time]) updateOHLCVTooltip(candleMap[p.time]);
         } else {
             rsAccChart.clearCrosshairPosition();
@@ -315,7 +349,7 @@ document.addEventListener('fullscreenchange', () => {
     const isFs = !!document.fullscreenElement;
     document.getElementById('fs-icon-expand').classList.toggle('hidden', isFs);
     document.getElementById('fs-icon-collapse').classList.toggle('hidden', !isFs);
-    document.getElementById('fs-label').innerText = isFs ? 'Exit Fullscreen' : 'Fullscreen';
+    document.getElementById('fs-label').innerText = isFs ? 'Exit' : 'Full';
     const shell = document.getElementById('chart-shell');
     shell.style.height = isFs ? '100vh' : '';
     if (isFs) {
@@ -485,15 +519,29 @@ function loadCombinedTelemetry(symbol, range, market) {
     ema50S  = priceChart.addLineSeries({ color: '#EC4899', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false });
     ema100S = priceChart.addLineSeries({ color: '#22D3EE', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false });
     ema200S = priceChart.addLineSeries({ color: '#A3A3A3', lineWidth: 2,   priceLineVisible: false, lastValueVisible: false });
-    volSeries = priceChart.addHistogramSeries({ priceFormat: { type: 'volume' }, priceScaleId: '', scaleMargins: { top: 0.82, bottom: 0 } });
+    volSeries = priceChart.addHistogramSeries({ priceFormat: { type: 'volume' }, priceScaleId: '' });
+    // v4+ ignores scaleMargins passed into series-creation options (it was
+    // only ever applied via the series' own price scale in v3) — set it
+    // explicitly via the chart's overlay scale instead, same as the
+    // Accumulation overlay below.
+    priceChart.priceScale('').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
 
-    // RS Ratio family on the right axis (default), Accumulation on the left axis —
-    // two independent value ranges sharing one pane and one timeline.
+
+    // RS Ratio family stays on the right axis (raw ratio values — also read
+    // directly by the signal panel, so its scale/meaning must not change).
+    // Benchmark index gets the left axis to itself (real S&P 500 / Nifty 500
+    // levels, ~1000s) since Lightweight Charts v3 only supports two real
+    // price scales per pane. Accumulation/Distribution only needs its SLOPE
+    // to be readable, not its absolute level, so it's pinned to a bottom
+    // overlay strip — the same convention already used for Volume above —
+    // rather than competing with the benchmark for the left axis's real numbers.
     rsLineS  = rsAccChart.addLineSeries({ color: '#39C973', lineWidth: 2, priceScaleId: 'right', priceLineVisible: false, lastValueVisible: false });
     rsSma10S = rsAccChart.addLineSeries({ color: '#3B82F6', lineWidth: 1, priceScaleId: 'right', priceLineVisible: false, lastValueVisible: false });
     rsEma21S = rsAccChart.addLineSeries({ color: '#A78BFA', lineWidth: 1, priceScaleId: 'right', priceLineVisible: false, lastValueVisible: false });
     rsSma50S = rsAccChart.addLineSeries({ color: '#F59E0B', lineWidth: 2, priceScaleId: 'right', priceLineVisible: false, lastValueVisible: false });
-    accLineS = rsAccChart.addLineSeries({ color: '#06B6D4', lineWidth: 1.5, priceScaleId: 'left', priceLineVisible: false, lastValueVisible: false });
+    spxLineS = rsAccChart.addLineSeries({ color: '#94A3B8', lineWidth: 2, priceScaleId: 'left', priceLineVisible: false, lastValueVisible: false });
+    accLineS = rsAccChart.addLineSeries({ color: '#06B6D4', lineWidth: 1.5, priceScaleId: '', priceLineVisible: false, lastValueVisible: false });
+    rsAccChart.priceScale('').applyOptions({ scaleMargins: { top: 0.78, bottom: 0 } });
 
     fetch(`/api/v1/chart-telemetry-combined/${symbol}?market=${market}&range=${range}`)
         .then(r => r.json())
@@ -518,6 +566,7 @@ function loadCombinedTelemetry(symbol, range, market) {
             rsSma10S.setData(data.series.rs_sma10);
             rsEma21S.setData(data.series.rs_ema21);
             rsSma50S.setData(data.series.rs_sma50);
+            spxLineS.setData(data.series.bench_line);
             accLineS.setData(data.series.acc_line);
 
             // RS-rising-4-days markers placed on the price candles
@@ -527,8 +576,16 @@ function loadCombinedTelemetry(symbol, range, market) {
                 })));
             }
 
+            // Fit ONE chart, then copy its resulting logical range onto the
+            // other rather than letting each chart call fitContent()
+            // independently. Both panes are built from the exact same dated
+            // rows (verified server-side), but two independent fitContent()
+            // calls can still settle on slightly different bar-spacing /
+            // right-offset internally, which visually drifts the timelines
+            // apart even though the underlying data lines up exactly.
             priceChart.timeScale().fitContent();
-            rsAccChart.timeScale().fitContent();
+            const syncedRange = priceChart.timeScale().getVisibleLogicalRange();
+            if (syncedRange) rsAccChart.timeScale().setVisibleLogicalRange(syncedRange);
 
             hideSkeletons();
             setTimeout(() => { paintShading('price'); paintShading('rsAcc'); }, 30);

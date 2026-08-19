@@ -140,6 +140,9 @@ def get_chart_telemetry_combined(symbol):
 
         # ------------------------------------------------------------------
         # RS ratio + smoothing — from the US chart
+        # Confirmed: 'bench' here is benchmark_symbol (^GSPC / S&P 500 for US,
+        # ^CRSLDX / Nifty 500 for NSE), so rs_ratio is genuinely stock-vs-index,
+        # not stock-vs-itself or any other accidental denominator.
         # ------------------------------------------------------------------
         combined['rs_ratio'] = combined['stock'] / combined['bench']
         combined['rs_sma10'] = calculate_sma(combined['rs_ratio'], 10)
@@ -211,7 +214,7 @@ def get_chart_telemetry_combined(symbol):
         series_data = {
             "candles": [], "ema10": [], "ema20": [], "ema50": [], "ema100": [], "ema200": [],
             "rs_ratio": [], "rs_sma10": [], "rs_ema21": [], "rs_sma50": [],
-            "acc_line": [], "div_hist": [], "rs_up_markers": []
+            "acc_line": [], "div_hist": [], "rs_up_markers": [], "bench_line": []
         }
 
         for idx, row in display.iterrows():
@@ -232,6 +235,7 @@ def get_chart_telemetry_combined(symbol):
             series_data["rs_sma50"].append({"time": date_str, "value": round(float(row['rs_sma50']), 6)})
 
             series_data["acc_line"].append({"time": date_str, "value": round(float(row['acc_line']), 0)})
+            series_data["bench_line"].append({"time": date_str, "value": round(float(row['bench']), 2)})
 
             v_strength = row['div_strength']
             color = '#3B82F6' if v_strength == 2.0 else ('#60A5FA' if v_strength == 1.0 else ('#F87171' if v_strength == -1.0 else '#B91C1C'))

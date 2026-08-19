@@ -25,9 +25,15 @@
         <!-- In-shell toolbar: this row stays visible in fullscreen since it's inside chart-shell -->
         <div id="shell-toolbar" class="bg-gray-900 px-3 py-2 flex items-center justify-between gap-2 border-b border-gray-800 flex-wrap">
             <div class="flex items-center gap-2 flex-wrap">
+                <!-- RS Status badge: primary quick-read for strong RS -->
+                <span id="rs-status-badge" class="hidden text-[11px] font-black px-3 py-1.5 rounded-lg border uppercase whitespace-nowrap tracking-wide transition-all">— RS —</span>
+                <!-- Persistent RS percentile pill -->
+                <span id="rs-pct-pill" class="hidden text-[10px] font-black px-2.5 py-1.5 rounded-lg border uppercase whitespace-nowrap tabular-nums"></span>
                 <span id="active-ticker-badge" class="text-[11px] bg-indigo-950 text-indigo-300 font-bold px-2 py-1 rounded border border-indigo-800/50 uppercase whitespace-nowrap">
                     Syncing Data...
                 </span>
+                <!-- GICS sector label -->
+                <span id="sector-badge" class="hidden text-[9px] text-gray-400 font-bold px-2 py-1 rounded border border-gray-800 uppercase whitespace-nowrap max-w-[140px] truncate"></span>
                 <input type="text" id="ticker-search" placeholder="US Symbol (e.g. NVDA)..." value="{{ default_stock }}"
                        class="bg-gray-950 text-gray-200 text-[12px] font-bold uppercase px-3 py-1.5 rounded-lg border border-gray-800 focus:outline-none focus:border-indigo-500 w-40 transition-all"
                        onkeypress="if(event.key==='Enter') loadUSChartTelemetry(this.value)">
@@ -118,15 +124,19 @@
         <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 bg-[#B91C1C] rounded-sm inline-block"></span>Flushing Phase</span>
         <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 bg-[#3B82F6]/15 rounded-sm inline-block border border-[#3B82F6]/40"></span>Price-pane shading: True Alpha</span>
         <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 bg-[#B91C1C]/15 rounded-sm inline-block border border-[#B91C1C]/40"></span>Price-pane shading: Flushing</span>
+        <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-[#22C55E] inline-block"></span>RS Rising 3 Days</span>
     </div>
 
     <!-- BUY-CASE SIGNAL PANEL : generated client-side from the fetched series, see buildSignalPanel() -->
     <div id="signal-panel" class="hidden bg-gradient-to-b from-emerald-950/40 to-gray-900 border border-emerald-800/40 rounded-xl px-4 py-3">
-        <div class="flex items-center justify-between mb-2">
+        <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
             <h4 class="text-[11px] font-black text-emerald-300 uppercase tracking-wider flex items-center gap-2">
                 ✅ Points Currently In The Bull Case
             </h4>
-            <span id="signal-score" class="text-[10px] font-bold text-gray-400 uppercase"></span>
+            <div class="flex items-center gap-3">
+                <span id="rs-outperf-label" class="hidden text-[10px] font-black tabular-nums text-gray-300 uppercase"></span>
+                <span id="signal-score" class="text-[10px] font-bold text-gray-400 uppercase"></span>
+            </div>
         </div>
         <ul id="signal-list" class="space-y-1.5 text-[12px] text-green-600 list-none"></ul>
         <p id="signal-empty" class="hidden text-[12px] text-gray-500 italic">No bullish conditions are currently confirmed — see the risk flags instead.</p>
@@ -148,20 +158,7 @@
         </ul>
     </div>
 
-    <!-- SUGGESTED IMPROVEMENTS -->
-    <div class="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
-        <h4 class="text-[11px] font-black text-gray-300 uppercase tracking-wider mb-2">💡 Further Improvements To Consider</h4>
-        <ul class="space-y-1.5 text-[12px] text-gray-400 list-none">
-            <li><span class="text-gray-200 font-bold">Drawing tools —</span> trendlines, horizontal rays, and rectangles (like the reference screenshot) via Lightweight Charts' plugin API, so users can mark up support/resistance directly.</li>
-            <li><span class="text-gray-200 font-bold">RS new-high markers —</span> dots on the RS line wherever it makes a fresh 52-week high — a classic relative-strength tell traders look for.</li>
-            <li><span class="text-gray-200 font-bold">Percent / log scale toggle</span> on the price and benchmark panes for fairer comparison across large price moves.</li>
-            <li><span class="text-gray-200 font-bold">Sector / industry RS line</span> as a second benchmark option (vs. sector ETF, not just SPX) to separate sector rotation from stock-specific strength.</li>
-            <li><span class="text-gray-200 font-bold">Saved watchlist / compare mode</span> to flip between tickers without retyping, and overlay two tickers' RS lines.</li>
-            <li><span class="text-gray-200 font-bold">Loading skeleton instead of full-panel blackout —</span> shows axis gridlines immediately so the layout doesn't jump when data arrives.</li>
-            <li><span class="text-gray-200 font-bold">Custom date-range picker</span> alongside the 3M/6M/1Y/2Y presets, for users who want an exact start/end date.</li>
-            <li><span class="text-gray-200 font-bold">Per-pane legend toggle</span> — click a legend item to show/hide that series, useful once more overlays are added.</li>
-        </ul>
-    </div>
+
 </div>
 
 <script src="https://unpkg.com/lightweight-charts@3.3.0/dist/lightweight-charts.standalone.production.js"></script>
@@ -173,7 +170,7 @@ let ema10S, ema20S, ema50S, ema100S, ema200S;
 let candleMap = {};
 let lastTelemetry = null;     // last successful fetch, reused by export/share/fullscreen redraw
 let currentSymbol = '{{ default_stock }}';
-let currentRange = '1Y';
+let currentRange = '6M';
 
 const CONFIG = {
     layout: { background: { type: 'solid', color: '#030712' }, textColor: '#9CA3AF', fontFamily: 'Inter, sans-serif', fontSize: 12 },
@@ -253,17 +250,44 @@ function initUSCharts() {
 
     renderAllLegends();
 
-    // Synchronization crosshair interaction controller layers
-    chart4.subscribeCrosshairMove(p => {
-        if (p.time) {
-            chart1.setCrosshairPosition(NaN, p.time, rsLineS);
-            chart2.setCrosshairPosition(NaN, p.time, spxSeries);
-            chart3.setCrosshairPosition(NaN, p.time, divSeries);
-            if (candleMap[p.time]) updateOHLCVTooltip(candleMap[p.time]);
-        } else {
-            [chart1, chart2, chart3].forEach(c => c.clearCrosshairPosition());
+    // ── Bidirectional crosshair sync across all 4 panes ─────────────────────
+    // Any pane the user hovers drives the crosshair on all others simultaneously.
+    // isSyncing flag prevents the cascade from triggering infinite re-entrancy
+    // (chart1 sets chart2 → chart2's handler fires → tries to set chart1 again).
+    let isSyncing = false;
+
+    function syncAllCrosshairs(time, sourceChart) {
+        if (isSyncing) return;
+        isSyncing = true;
+        try {
+            const all = [
+                { chart: chart1, series: rsLineS },
+                { chart: chart2, series: spxSeries },
+                { chart: chart3, series: divSeries },
+                { chart: chart4, series: candleSeries },
+            ];
+            if (time) {
+                all.forEach(({ chart, series }) => {
+                    if (chart !== sourceChart) {
+                        chart.setCrosshairPosition(NaN, time, series);
+                    }
+                });
+                // OHLCV bar always shows the hovered candle regardless of which pane
+                if (candleMap[time]) updateOHLCVTooltip(candleMap[time]);
+            } else {
+                all.forEach(({ chart }) => {
+                    if (chart !== sourceChart) chart.clearCrosshairPosition();
+                });
+            }
+        } finally {
+            isSyncing = false;
         }
-    });
+    }
+
+    chart1.subscribeCrosshairMove(p => syncAllCrosshairs(p.time || null, chart1));
+    chart2.subscribeCrosshairMove(p => syncAllCrosshairs(p.time || null, chart2));
+    chart3.subscribeCrosshairMove(p => syncAllCrosshairs(p.time || null, chart3));
+    chart4.subscribeCrosshairMove(p => syncAllCrosshairs(p.time || null, chart4));
 
     function bindTimeScale(src, ...targets) {
         src.timeScale().subscribeVisibleLogicalRangeChange(r => {
@@ -389,8 +413,8 @@ function paintDivergenceShading() {
         const left = Math.min(x1, x2) - 3;
         const right = Math.max(x1, x2) + 3;
         if (right < 0 || left > width) return ''; // off-screen, skip
-        const color = b.phase === 'alpha' ? 'rgba(59,130,246,0.10)' : 'rgba(185,28,28,0.10)';
-        const borderColor = b.phase === 'alpha' ? 'rgba(59,130,246,0.35)' : 'rgba(185,28,28,0.35)';
+        const color = b.phase === 'alpha' ? 'rgba(59,130,246,0.06)' : 'rgba(185,28,28,0.07)';
+        const borderColor = b.phase === 'alpha' ? 'rgba(59,130,246,0.25)' : 'rgba(185,28,28,0.25)';
         return `<div class="band" style="left:${left}px; width:${right-left}px; background:${color}; border-left:1px solid ${borderColor}; border-right:1px solid ${borderColor};"></div>`;
     }).join('');
 
@@ -479,7 +503,7 @@ function loadUSChartTelemetry(symbol, range) {
     // Setup chart elements (titles intentionally omitted — Lightweight Charts
     // anchors series titles to the right/price-axis side, which was covering
     // the RS line; names now live in the left-aligned legend overlay instead)
-    rsLineS  = chart1.addLineSeries({ color: '#39ac73', lineWidth: 2, priceLineVisible: false, lastValueVisible: false });
+    rsLineS  = chart1.addLineSeries({ color: '#22C55E', lineWidth: 3, priceLineVisible: false, lastValueVisible: false });
     rsSma10S = chart1.addLineSeries({ color: '#3B82F6', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
     rsEma21S = chart1.addLineSeries({ color: '#A78BFA', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
     rsSma50S = chart1.addLineSeries({ color: '#F59E0B', lineWidth: 2, priceLineVisible: false, lastValueVisible: false });
@@ -521,7 +545,52 @@ function loadUSChartTelemetry(symbol, range) {
             if (data.status === 'error') throw new Error(data.message);
             lastTelemetry = data;
 
-            document.getElementById('active-ticker-badge').innerText = `${data.symbol} · RS %tile: ${data.rs_percentile}`;
+            document.getElementById('active-ticker-badge').innerText = data.symbol;
+
+            // ── RS status badge ───────────────────────────────────────────
+            const rsBadge   = document.getElementById('rs-status-badge');
+            const rsPctPill = document.getElementById('rs-pct-pill');
+            const sectorEl  = document.getElementById('sector-badge');
+            const rsOutEl   = document.getElementById('rs-outperf-label');
+
+            const state = data.rs_trend_state;
+            const pct   = data.rs_percentile;
+
+            if (state === 'rising') {
+                rsBadge.className = 'text-[11px] font-black px-3 py-1.5 rounded-lg border uppercase whitespace-nowrap tracking-wide transition-all bg-emerald-950/60 text-emerald-300 border-emerald-700';
+                rsBadge.innerText = '📈 RS RISING';
+            } else if (state === 'falling') {
+                rsBadge.className = 'text-[11px] font-black px-3 py-1.5 rounded-lg border uppercase whitespace-nowrap tracking-wide transition-all bg-red-950/60 text-red-300 border-red-800';
+                rsBadge.innerText = '📉 RS FALLING';
+            } else {
+                rsBadge.className = 'text-[11px] font-black px-3 py-1.5 rounded-lg border uppercase whitespace-nowrap tracking-wide transition-all bg-amber-950/60 text-amber-300 border-amber-700';
+                rsBadge.innerText = '↔ RS NEUTRAL';
+            }
+            rsBadge.classList.remove('hidden');
+
+            // RS percentile pill (green ≥80 · amber 60–79 · red <60)
+            const pctCls = pct >= 80 ? 'bg-emerald-950/60 text-emerald-300 border-emerald-700'
+                         : pct >= 60 ? 'bg-amber-950/60 text-amber-300 border-amber-700'
+                         :             'bg-red-950/60 text-red-300 border-red-800';
+            rsPctPill.className = `text-[10px] font-black px-2.5 py-1.5 rounded-lg border uppercase whitespace-nowrap tabular-nums ${pctCls}`;
+            rsPctPill.innerText = `RS ${pct}%tile`;
+            rsPctPill.classList.remove('hidden');
+
+            // Sector
+            if (data.sector) { sectorEl.innerText = data.sector; sectorEl.classList.remove('hidden'); }
+            else { sectorEl.classList.add('hidden'); }
+
+            // RS outperformance (3M)
+            if (data.rs_outperf_3m !== null && data.rs_outperf_3m !== undefined) {
+                const sign = data.rs_outperf_3m >= 0 ? '+' : '';
+                rsOutEl.className = `text-[10px] font-black tabular-nums uppercase ${data.rs_outperf_3m >= 0 ? 'text-emerald-400' : 'text-red-400'}`;
+                rsOutEl.innerText = `${sign}${data.rs_outperf_3m}% vs S&P 500 (3M)`;
+                rsOutEl.classList.remove('hidden');
+            }
+
+            // RS line colour ramp
+            const rsColor = state === 'rising' ? '#22C55E' : state === 'falling' ? '#EF4444' : '#F59E0B';
+            rsLineS.applyOptions({ color: rsColor });
 
             data.series.candles.forEach(c => candleMap[c.time] = c);
 
@@ -543,8 +612,22 @@ function loadUSChartTelemetry(symbol, range) {
             rsOverlaySeries.setData(data.series.rs_ratio);           // 👈 ADD THIS POPULATION LINE RIGHT HERE: Diversion view 
             divSeries.setData(data.series.div_hist);
 
+            // ── Green dot markers where RS has risen 3 consecutive sessions ──
+            if (data.series.rs_up_markers && data.series.rs_up_markers.length) {
+                candleSeries.setMarkers(data.series.rs_up_markers.map(pt => ({
+                    time:     pt.time,
+                    position: 'belowBar',
+                    color:    '#22C55E',
+                    shape:    'circle',
+                    size:     1,
+                    text:     ''
+                })));
+            }
+
             [chart1, chart2, chart3, chart4].forEach(c => c.timeScale().fitContent());
             document.getElementById('chart-spinner').classList.add('hidden');
+            pushSymHistory(symbol);
+            _histIdx = -1;
 
             setTimeout(paintDivergenceShading, 30);
             buildSignalPanel(data);
@@ -684,11 +767,36 @@ function buildSignalPanel(data) {
     document.getElementById('signal-panel').classList.remove('hidden');
 }
 
+// ── Recent symbol history (keyboard navigation with ↑/↓) ────────────────────
+const MAX_HISTORY = 10;
+function getSymHistory() { try { return JSON.parse(localStorage.getItem('us_chart_sym_history') || '[]'); } catch { return []; } }
+function pushSymHistory(sym) {
+    let h = getSymHistory().filter(s => s !== sym);
+    h.unshift(sym);
+    if (h.length > MAX_HISTORY) h = h.slice(0, MAX_HISTORY);
+    try { localStorage.setItem('us_chart_sym_history', JSON.stringify(h)); } catch {}
+}
+let _histIdx = -1;
+document.addEventListener('keydown', e => {
+    const inp = document.getElementById('ticker-search');
+    if (document.activeElement !== inp) return;
+    const h = getSymHistory();
+    if (e.key === 'ArrowUp' && h.length) {
+        e.preventDefault();
+        _histIdx = Math.min(_histIdx + 1, h.length - 1);
+        inp.value = h[_histIdx];
+    } else if (e.key === 'ArrowDown' && h.length) {
+        e.preventDefault();
+        _histIdx = Math.max(_histIdx - 1, -1);
+        inp.value = _histIdx >= 0 ? h[_histIdx] : '';
+    }
+});
+
 document.addEventListener('DOMContentLoaded', () => {
     // Honor ?symbol= and ?range= in the URL so shared links restore state
     const params = new URLSearchParams(window.location.search);
     const initSymbol = params.get('symbol') || '{{ default_stock }}';
-    const initRange = params.get('range') || '1Y';
+    const initRange = params.get('range') || '6M';
     document.getElementById('ticker-search').value = initSymbol;
     setTimeout(() => loadUSChartTelemetry(initSymbol, initRange), 150);
 });

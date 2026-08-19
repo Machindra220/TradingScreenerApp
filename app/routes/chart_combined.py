@@ -5,14 +5,20 @@ import pandas as pd
 import yfinance as yf
 from flask import Blueprint, render_template, jsonify, request
 
+from app.services.market_data_cache import ind_cache, us_cache, latest_bar_date
+
 chart_combined_bp = Blueprint("chart_engine_combined", __name__)
+
+# Path anchored to __file__ — never os.getcwd() which breaks under the
+# Werkzeug reloader when the working directory shifts.
+_PROJECT_ROOT     = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 
 # Cache files reused from the existing per-market screeners — combined chart
 # doesn't compute its own RS percentile, it reads whichever cache matches
 # the requested market so the number on screen always matches the screener.
-US_UPLOAD_FOLDER  = os.path.abspath(os.path.join(os.getcwd(), 'uploads', 'volar_us'))
+US_UPLOAD_FOLDER  = os.path.join(_PROJECT_ROOT, 'uploads', 'volar_us')
 US_RESULTS_JSON   = os.path.join(US_UPLOAD_FOLDER, 'last_volar_us_results.json')
-NSE_UPLOAD_FOLDER = os.path.abspath(os.path.join(os.getcwd(), 'uploads', 'rs_roc'))
+NSE_UPLOAD_FOLDER = os.path.join(_PROJECT_ROOT, 'uploads', 'rs_roc')
 NSE_RESULTS_JSON  = os.path.join(NSE_UPLOAD_FOLDER, 'last_rs_roc_results.json')
 
 MARKET_CONFIG = {
@@ -87,37 +93,69 @@ def get_chart_telemetry_combined(symbol):
         symbol_clean = symbol.strip().upper().replace(".NS", "").replace(".", "-")
         fetch_symbol = f"{symbol_clean}{cfg['suffix']}" if market == "NSE" else symbol_clean
 
-        data = yf.download(
-            [fetch_symbol, benchmark_symbol],
-            period=range_cfg["download_period"],
-            interval="1d",
-            auto_adjust=True,
-            progress=False
-        )
+        # Primary: yfinance — charts always show the latest available price data.
+        # Fallback: SQLite cache — used only when yfinance is unavailable/rate-limited.
+        stock_df = bench_df = None
 
-        if data.empty:
-            return jsonify({"status": "error", "message": f"No data returned for '{symbol_clean}'."}), 400
+        try:
+            tmp = yf.download(
+                [fetch_symbol, benchmark_symbol],
+                period=range_cfg["download_period"],
+                interval="1d",
+                auto_adjust=True,
+                progress=False,
+            )
+            if not tmp.empty:
+                if isinstance(tmp.columns, pd.MultiIndex):
+                    if tmp.columns.names[0] != "Price":
+                        tmp.columns = tmp.columns.swaplevel(0, 1)
+                    tmp.columns.names = ["Price", "Ticker"]
 
-        if isinstance(data.columns, pd.MultiIndex):
-            if data.columns.names[0] != 'Price':
-                try:
-                    data.columns = data.columns.swaplevel(0, 1)
-                except Exception:
-                    pass
-            data.columns.names = ['Price', 'Ticker']
+                if "Close" in tmp and fetch_symbol in tmp["Close"].columns:
+                    stock_df = pd.DataFrame({
+                        "Close":  tmp["Close"][fetch_symbol],
+                        "Open":   tmp["Open"][fetch_symbol]   if "Open"   in tmp else tmp["Close"][fetch_symbol],
+                        "High":   tmp["High"][fetch_symbol]   if "High"   in tmp else tmp["Close"][fetch_symbol],
+                        "Low":    tmp["Low"][fetch_symbol]    if "Low"    in tmp else tmp["Close"][fetch_symbol],
+                        "Volume": tmp["Volume"][fetch_symbol] if "Volume" in tmp else 0,
+                    })
+                if "Close" in tmp and benchmark_symbol in tmp["Close"].columns:
+                    bench_df = pd.DataFrame({"Close": tmp["Close"][benchmark_symbol]})
+        except Exception as _yf_err:
+            print(f"[chart_combined] yfinance fetch failed ({_yf_err}), trying cache…")
 
-        if 'Close' not in data or fetch_symbol not in data['Close'].columns:
-            return jsonify({"status": "error", "message": f"Invalid {market} ticker '{symbol_clean}'."}), 400
+        # Fallback: SQLite cache when yfinance is unavailable / rate-limited
+        if stock_df is None or stock_df.empty:
+            try:
+                cache = us_cache if market == "US" else ind_cache
+                price_result, _ = cache.get_price_history_bulk(
+                    [fetch_symbol, benchmark_symbol],
+                    interval="1d",
+                    lookback_days=760,
+                )
+                stock_df = price_result.get(fetch_symbol)
+                bench_df = price_result.get(benchmark_symbol)
+            except Exception as _cache_err:
+                print(f"[chart_combined] Cache fallback also failed: {_cache_err}")
 
-        volume_series = data['Volume'][fetch_symbol] if 'Volume' in data else pd.Series(dtype=float)
+        if stock_df is None or stock_df.empty:
+            return jsonify({"status": "error", "message": f"No data for '{symbol_clean}' — yfinance and cache both failed."}), 400
+
+        # Normalise timezone (yfinance returns tz-aware; cache returns tz-naive)
+        for df in [stock_df, bench_df]:
+            if df is not None and getattr(df.index, "tz", None) is not None:
+                df.index = df.index.tz_localize(None)
+
+        volume_series = stock_df["Volume"] if "Volume" in stock_df.columns else pd.Series(dtype=float)
+        bench_series  = bench_df["Close"]  if bench_df is not None        else pd.Series(dtype=float)
 
         combined = pd.DataFrame({
-            "open":   data['Open'][fetch_symbol],
-            "high":   data['High'][fetch_symbol],
-            "low":    data['Low'][fetch_symbol],
-            "stock":  data['Close'][fetch_symbol],
-            "bench":  data['Close'][benchmark_symbol],
-            "volume": volume_series
+            "open":   stock_df["Open"]  if "Open"  in stock_df.columns else stock_df["Close"],
+            "high":   stock_df["High"]  if "High"  in stock_df.columns else stock_df["Close"],
+            "low":    stock_df["Low"]   if "Low"   in stock_df.columns else stock_df["Close"],
+            "stock":  stock_df["Close"],
+            "bench":  bench_series,
+            "volume": volume_series,
         })
 
         combined = combined.dropna(subset=["stock", "open", "high", "low"])
@@ -244,9 +282,49 @@ def get_chart_telemetry_combined(symbol):
             if int(row['rs_up_flag']) == 1:
                 series_data["rs_up_markers"].append({"time": date_str, "price": round(float(row['low']), 2)})
 
+        # ── RS trend state (for toolbar badge and line colour ramp) ────────
+        # Computed server-side so the client doesn't need to search back through
+        # 500 data points to find the last N values.
+        rs_vals     = [p["value"] for p in series_data["rs_ratio"] if p["value"] == p["value"]]
+        rs_sma10_v  = [p["value"] for p in series_data["rs_sma10"] if p["value"] == p["value"]]
+        rs_sma50_v  = [p["value"] for p in series_data["rs_sma50"] if p["value"] == p["value"]]
+        rs_ema21_v  = [p["value"] for p in series_data["rs_ema21"] if p["value"] == p["value"]]
+
+        rs_trend_state = "neutral"
+        if len(rs_vals) >= 2 and len(rs_sma10_v) >= 1 and len(rs_ema21_v) >= 1:
+            rs_now, rs_prev = rs_vals[-1], rs_vals[-2]
+            rising = rs_now > rs_sma10_v[-1] and rs_sma10_v[-1] > rs_ema21_v[-1]
+            falling = rs_now < rs_sma10_v[-1] and rs_sma10_v[-1] < rs_ema21_v[-1]
+            if rising:   rs_trend_state = "rising"
+            elif falling: rs_trend_state = "falling"
+
+        # RS outperformance vs benchmark over the display range (3M window)
+        rs_outperf_3m = None
+        if len(rs_vals) >= 63:
+            rs_outperf_3m = round((rs_vals[-1] / rs_vals[-63] - 1) * 100, 1)
+
+        # Sector from screener cache
+        cached_sector = ""
+        if os.path.exists(results_json):
+            try:
+                with open(results_json) as f:
+                    for s in json.load(f).get("stocks", []):
+                        if s.get("symbol", "").strip().upper() == symbol_clean:
+                            cached_sector = s.get("sector", "")
+                            break
+            except Exception:
+                pass
+
         return jsonify({
-            "status": "success", "symbol": symbol_clean, "market": market, "range": range_key,
-            "rs_percentile": cached_rs_pct, "series": series_data
+            "status":        "success",
+            "symbol":        symbol_clean,
+            "market":        market,
+            "range":         range_key,
+            "rs_percentile": cached_rs_pct,
+            "rs_trend_state": rs_trend_state,
+            "rs_outperf_3m": rs_outperf_3m,
+            "sector":        cached_sector,
+            "series":        series_data,
         })
 
     except Exception as e:

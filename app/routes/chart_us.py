@@ -8,8 +8,9 @@ from flask import Blueprint, render_template, jsonify, request
 
 chart_us_bp = Blueprint("chart_engine_us", __name__)
 
-UPLOAD_FOLDER = os.path.abspath(os.path.join(os.getcwd(), 'uploads', 'volar_us'))
-RESULTS_JSON  = os.path.join(UPLOAD_FOLDER, 'last_volar_us_results.json')
+_PROJECT_ROOT    = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+UPLOAD_FOLDER    = os.path.join(_PROJECT_ROOT, 'uploads', 'volar_us')
+RESULTS_JSON     = os.path.join(UPLOAD_FOLDER, 'last_volar_us_results.json')
 BENCHMARK_SYMBOL = "^GSPC"
 
 def calculate_ema(series, span):
@@ -141,6 +142,17 @@ def get_chart_telemetry_us(symbol):
                             break
                 except Exception: pass
 
+        # RS rising 3-day flag: True when RS has increased for 3 consecutive sessions.
+        # Must be computed on the FULL combined DataFrame BEFORE slicing to display
+        # range — otherwise the 'display' view won't have the column and row['rs_up_3d']
+        # raises KeyError ("Couldn't load APA: 'rs_up_3d'").
+        combined['rs_inc']   = combined['rs_ratio'] > combined['rs_ratio'].shift(1)
+        combined['rs_up_3d'] = (
+            combined['rs_inc'].rolling(window=3).sum()
+            .apply(lambda x: 1 if x == 3 else 0)
+            .fillna(0)
+        )
+
         # Trim outputs down to the requested display range to keep payloads lightweight
         range_start = combined.index[-1] - pd.DateOffset(months=range_cfg["months"])
         display = combined[combined.index >= range_start]
@@ -148,7 +160,7 @@ def get_chart_telemetry_us(symbol):
         series_data = {
             "candles": [], "ema10": [], "ema20": [], "ema50": [], "ema100": [], "ema200": [],
             "rs_ratio": [], "rs_sma10": [], "rs_ema21": [], "rs_sma50": [],
-            "spx_line": [], "div_hist": []
+            "spx_line": [], "div_hist": [], "rs_up_markers": []
         }
 
         for idx, row in display.iterrows():
@@ -178,9 +190,50 @@ def get_chart_telemetry_us(symbol):
             color = '#3B82F6' if v_strength == 2.0 else ('#60A5FA' if v_strength == 1.0 else ('#F87171' if v_strength == -1.0 else '#B91C1C'))
             series_data["div_hist"].append({"time": date_str, "value": float(v_strength), "color": color})
 
+            if int(row['rs_up_3d']) == 1:
+                series_data["rs_up_markers"].append({
+                    "time":  date_str,
+                    "price": round(float(row['low']), 2)
+                })
+
+        # ── RS trend state for toolbar badge and line colour ramp ──────────
+        rs_vals    = [p["value"] for p in series_data["rs_ratio"]]
+        rs_sma10_v = [p["value"] for p in series_data["rs_sma10"]]
+        rs_ema21_v = [p["value"] for p in series_data["rs_ema21"]]
+
+        rs_trend_state = "neutral"
+        if len(rs_vals) >= 2 and rs_sma10_v and rs_ema21_v:
+            rising  = rs_vals[-1] > rs_sma10_v[-1] and rs_sma10_v[-1] > rs_ema21_v[-1]
+            falling = rs_vals[-1] < rs_sma10_v[-1] and rs_sma10_v[-1] < rs_ema21_v[-1]
+            if rising:   rs_trend_state = "rising"
+            elif falling: rs_trend_state = "falling"
+
+        # RS outperformance vs S&P 500 over last 3 months (~63 bars)
+        rs_outperf_3m = None
+        if len(rs_vals) >= 63:
+            rs_outperf_3m = round((rs_vals[-1] / rs_vals[-63] - 1) * 100, 1)
+
+        # Sector from screener cache
+        cached_sector = ""
+        if os.path.exists(RESULTS_JSON):
+            try:
+                with open(RESULTS_JSON) as f:
+                    for s in json.load(f).get("stocks", []):
+                        if s.get("symbol", "").strip().upper() == symbol_clean:
+                            cached_sector = s.get("sector", "")
+                            break
+            except Exception:
+                pass
+
         return jsonify({
-            "status": "success", "symbol": symbol_clean, "range": range_key,
-            "rs_percentile": cached_rs_pct, "series": series_data
+            "status":          "success",
+            "symbol":          symbol_clean,
+            "range":           range_key,
+            "rs_percentile":   cached_rs_pct,
+            "rs_trend_state":  rs_trend_state,
+            "rs_outperf_3m":   rs_outperf_3m,
+            "sector":          cached_sector,
+            "series":          series_data,
         })
 
     except Exception as e:
