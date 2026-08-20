@@ -243,3 +243,78 @@ def cache_admin_stale_list():
     cache  = ind_cache if market == "IND" else us_cache
     rows, total, settled = cache.inspect_symbols(interval="1d", limit=500, stale_only=True)
     return jsonify({"stale": rows, "total_meta": total, "settled_date": settled})
+
+
+@cache_admin_bp.route("/cache-admin/delete-symbol", methods=["POST"])
+def cache_admin_delete_symbol():
+    """
+    Permanently delete ALL cached data for a symbol:
+      - Every OHLCV row in price_history (the bulk of the data)
+      - The fetch_meta row (last_bar_date, last_fetched_at)
+
+    After deletion, runs VACUUM so the freed pages are actually returned
+    to the OS and the .db file shrinks on disk.
+
+    If you run a screener that reads the same CSV, the symbol will be
+    re-fetched from yfinance. To permanently exclude it, also remove it
+    from your source CSV (nifty_500.csv / sp500.csv).
+    """
+    raw    = request.form.get("symbol", "").strip().upper()
+    market = request.form.get("market", "IND").upper()
+    if not raw:
+        return redirect(url_for("cache_admin.cache_admin_view", market=market))
+
+    symbol = _normalise_symbol(raw, market)
+    cache  = ind_cache if market == "IND" else us_cache
+
+    deleted_rows = 0
+    try:
+        with cache._get_conn() as conn:
+            # Delete all OHLCV price rows for this symbol (across all intervals)
+            r1 = conn.execute("DELETE FROM price_history WHERE symbol = ?", (symbol,))
+            # Delete the fetch_meta row
+            r2 = conn.execute("DELETE FROM fetch_meta WHERE symbol = ?", (symbol,))
+            deleted_rows = r1.rowcount + r2.rowcount
+        # VACUUM: compacts the DB file so freed pages are returned to the OS.
+        # Must run outside a transaction — use a separate connection.
+        import sqlite3
+        with sqlite3.connect(cache.db_path) as vac_conn:
+            vac_conn.execute("VACUUM")
+    except Exception as e:
+        return redirect(url_for("cache_admin.cache_admin_view",
+                                market=market, delete_error=str(e)[:80]))
+
+    return redirect(url_for("cache_admin.cache_admin_view",
+                            market=market, deleted=symbol, deleted_rows=deleted_rows))
+
+
+@cache_admin_bp.route("/cache-admin/delete-stale-all", methods=["POST"])
+def cache_admin_delete_stale_all():
+    """
+    Delete ALL stale symbols in one go, then VACUUM.
+    Useful for cleaning up delisted stocks after a screener run.
+    """
+    market = request.form.get("market", "IND").upper()
+    cache  = ind_cache if market == "IND" else us_cache
+
+    stale_rows, _, _ = cache.inspect_symbols(interval="1d", limit=10000, stale_only=True)
+    stale_symbols    = [r["symbol"] for r in stale_rows]
+    total_deleted    = 0
+
+    try:
+        with cache._get_conn() as conn:
+            for sym in stale_symbols:
+                r1 = conn.execute("DELETE FROM price_history WHERE symbol = ?", (sym,))
+                r2 = conn.execute("DELETE FROM fetch_meta  WHERE symbol = ?", (sym,))
+                total_deleted += r1.rowcount + r2.rowcount
+        import sqlite3
+        with sqlite3.connect(cache.db_path) as vac_conn:
+            vac_conn.execute("VACUUM")
+    except Exception as e:
+        return redirect(url_for("cache_admin.cache_admin_view",
+                                market=market, delete_error=str(e)[:80]))
+
+    return redirect(url_for("cache_admin.cache_admin_view",
+                            market=market,
+                            deleted_stale_count=len(stale_symbols),
+                            deleted_rows=total_deleted))

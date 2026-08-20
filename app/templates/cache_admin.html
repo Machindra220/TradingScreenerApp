@@ -37,6 +37,22 @@
         </div>
     </div>
 
+    {% if request.args.get('deleted') %}
+    <div class="px-4 py-3 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-900 text-[11px] font-bold text-emerald-700 dark:text-emerald-300 uppercase">
+        🗑 Deleted <strong>{{ request.args.get('deleted') }}</strong> — {{ request.args.get('deleted_rows', '?') }} rows removed · DB compacted (VACUUM run)
+    </div>
+    {% endif %}
+    {% if request.args.get('deleted_stale_count') %}
+    <div class="px-4 py-3 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-900 text-[11px] font-bold text-emerald-700 dark:text-emerald-300 uppercase">
+        🗑 Deleted <strong>{{ request.args.get('deleted_stale_count') }} stale symbols</strong> · {{ request.args.get('deleted_rows', '?') }} rows removed · DB compacted (VACUUM run)
+    </div>
+    {% endif %}
+    {% if request.args.get('delete_error') %}
+    <div class="px-4 py-3 rounded-xl bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-900 text-[11px] font-bold text-red-600 dark:text-red-300 uppercase">
+        ⚠️ Delete failed: {{ request.args.get('delete_error') }}
+    </div>
+    {% endif %}
+
     {% if not market_closed %}
     <div class="px-4 py-3 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-800 text-[11px] font-bold text-amber-700 dark:text-amber-300">
         ⚠️ <strong>{{ market_label }} is currently open.</strong>
@@ -45,6 +61,16 @@
         If you ran screeners earlier today, use <strong>Force Refresh</strong> below to discard partial bars and re-fetch after market close.
     </div>
     {% endif %}
+
+    <!-- DB size / VACUUM note -->
+    <div class="px-4 py-3 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-800 text-[11px] text-blue-700 dark:text-blue-300">
+        <strong class="font-black">ℹ️ About DB size &amp; deleting symbols:</strong>
+        Deleting a symbol removes all its OHLCV history rows <em>and</em> its fetch_meta entry from the SQLite file.
+        SQLite doesn't shrink the file automatically — it just marks the pages as free.
+        The <strong>Delete</strong> buttons here always run <code>VACUUM</code> afterward, which rewrites the DB file
+        and returns freed space to the OS. The DB size card below will reflect the new size after a delete.
+        Note: if your source CSV still contains the symbol, the next screener run will re-fetch it.
+    </div>
 
     <!-- Stats cards -->
     <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -93,6 +119,19 @@
                     </button>
                 </form>
                 <p class="text-[9px] text-gray-400 dark:text-slate-500 text-center">Run AFTER {{ settle_time }}</p>
+            </div>
+            <!-- Delete all stale symbols -->
+            <div class="shrink-0 space-y-2">
+                <form method="POST" action="{{ url_for('cache_admin.cache_admin_delete_stale_all') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="hidden" name="market" value="{{ market }}">
+                    <button type="submit"
+                            onclick="return confirm('Delete ALL stale symbols from {{ market_label }} cache and run VACUUM? This frees disk space but those symbols will be re-fetched next time you run a screener.')"
+                            class="px-6 py-3 bg-red-600 text-white rounded-xl text-xs font-black uppercase hover:bg-red-700 transition shadow-lg shadow-red-200 dark:shadow-red-950/40">
+                        🗑 Delete All Stale
+                    </button>
+                </form>
+                <p class="text-[9px] text-gray-400 dark:text-slate-500 text-center">Removes + compacts DB</p>
             </div>
         </div>
     </div>
@@ -160,7 +199,7 @@
                         <th class="px-5 py-3 font-bold uppercase text-gray-400 dark:text-slate-400 text-center">Fetched At (UTC)</th>
                         <th class="px-5 py-3 font-bold uppercase text-gray-400 dark:text-slate-400 text-center">Status</th>
                         <th class="px-5 py-3 font-bold uppercase text-gray-400 dark:text-slate-400 text-center">Stale?</th>
-                        <th class="px-5 py-3 font-bold uppercase text-gray-400 dark:text-slate-400 text-right">Action</th>
+                        <th class="px-5 py-3 font-bold uppercase text-gray-400 dark:text-slate-400 text-right">Actions</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-50 dark:divide-slate-800">
@@ -204,6 +243,23 @@
                                     <input type="hidden" name="symbol" value="{{ s.symbol }}">
                                     <button type="submit" class="text-[9px] font-black uppercase px-2 py-1 rounded border border-emerald-200 dark:border-emerald-800 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition">
                                         ⚡ Refresh
+                                    </button>
+                                </form>
+                                <!-- Delete symbol + VACUUM -->
+                                <form method="POST" action="{{ url_for('cache_admin.cache_admin_delete_symbol') }}" class="m-0">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                    <input type="hidden" name="market" value="{{ market }}">
+                                    <input type="hidden" name="symbol" value="{{ s.symbol }}">
+                                    <button type="submit"
+                                            onclick="return confirm('Permanently delete ALL cached data for {{ s.symbol }}?
+
+                                                This removes every OHLCV row and runs VACUUM to shrink the DB file.
+                                                The symbol will be re-fetched next time you run a screener that includes it.
+
+                                                To permanently exclude it, also remove it from your source CSV.');"
+                                            class="text-[9px] font-black uppercase px-2 py-1 rounded border border-red-200 dark:border-red-900 text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition"
+                                            title="Delete all data for {{ s.symbol }} from cache + run VACUUM">
+                                        ✕ Delete
                                     </button>
                                 </form>
                             </div>

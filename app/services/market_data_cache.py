@@ -83,7 +83,7 @@ _MARKET_CONFIG = {
         "tz":           ZoneInfo("America/New_York"),
         "close_hour":   16,
         "close_minute": 0,
-        "label":        "NYSE/NASDAQ (US)",
+        "label":        "NASDAQ (US)",
     },
 }
 _SETTLE_BUFFER_MINUTES = 15   # wait this long after close before treating bar as final
