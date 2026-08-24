@@ -626,25 +626,70 @@ def add_favorite_us():
 @volar_us_bp.route("/view-favorites-us")
 def view_favorites_us():
     fav_path = os.path.join(UPLOAD_FOLDER, 'favorites_us.json')
-    stocks = []
-    if os.path.exists(fav_path):
-        with open(fav_path, 'r') as f:
-            symbols = json.load(f)
-        idx_data, _ = us_cache.get_price_history_bulk(
-            [US_INDEX[0]], interval="1d", lookback_days=500, progress_callback=lambda *a: None
-        )
-        index_df_raw = idx_data.get(US_INDEX[0])
-        index_df     = _normalise_df(index_df_raw, US_INDEX[0])
-        price_data, _ = us_cache.get_price_history_bulk(
-            symbols, interval="1d", lookback_days=500, progress_callback=lambda *a: None
-        )
-        for sym in symbols:
-            raw_df = price_data.get(sym)
-            norm_df = _normalise_df(raw_df, sym) if raw_df is not None else None
-            data = is_volar_us_candidate(sym, index_df, norm_df) if index_df is not None else None
-            if data:
-                stocks.append(data)
-    return render_template("view_favorites.html", stocks=stocks, market="US", currency="$")
+    stocks   = []
+
+    if not os.path.exists(fav_path):
+        return render_template("view_favorites.html", stocks=[], market="US", currency="$",
+                               benchmark_label=f"{US_INDEX[1]} ({US_INDEX[0]})")
+
+    try:
+        with open(fav_path) as f:
+            raw_entries = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        raw_entries = []
+
+    # Normalise: support both old plain-string and new dict format
+    entries = [
+        {"symbol": e, "added_price": None, "added_date": None}
+        if isinstance(e, str) else e
+        for e in raw_entries
+    ]
+    symbols = [e["symbol"] for e in entries]
+
+    idx_data, _ = us_cache.get_price_history_bulk(
+        [US_INDEX[0]], interval="1d", lookback_days=500, progress_callback=lambda *a: None
+    )
+    index_df_raw = idx_data.get(US_INDEX[0])
+    index_df     = _normalise_df(index_df_raw, US_INDEX[0])
+    price_data, _ = us_cache.get_price_history_bulk(
+        symbols, interval="1d", lookback_days=500, progress_callback=lambda *a: None
+    )
+
+    raw_results = []
+    for entry in entries:
+        sym    = entry["symbol"]
+        raw_df  = price_data.get(sym)
+        norm_df = _normalise_df(raw_df, sym) if raw_df is not None else None
+        data    = is_volar_us_candidate(sym, index_df, norm_df) if index_df is not None else None
+        if data:
+            data["symbol_clean"]     = sym
+            data["added_price"]      = entry.get("added_price")
+            data["added_date"]       = entry.get("added_date")
+            data["current_price"]    = data["price"]
+            ap = entry.get("added_price")
+            if ap and ap > 0:
+                data["change_since_add"] = round(((data["current_price"] - ap) / ap) * 100, 2)
+            else:
+                data["change_since_add"] = None
+            raw_results.append(data)
+
+    # Compute rs_percentile across the watchlist batch
+    if raw_results:
+        import pandas as _pd
+        df_fav = _pd.DataFrame(raw_results)
+        rs_col = "relative_strength" if "relative_strength" in df_fav.columns else None
+        if rs_col:
+            df_fav["rs_percentile"] = (
+                df_fav[rs_col].rank(pct=True).mul(100).round(0).fillna(0).astype(int)
+            )
+        else:
+            df_fav["rs_percentile"] = 0
+        stocks = df_fav.to_dict(orient="records")
+    else:
+        stocks = []
+
+    return render_template("view_favorites.html", stocks=stocks, market="US", currency="$",
+                           benchmark_label=f"{US_INDEX[1]} ({US_INDEX[0]})")
 
 
 @volar_us_bp.route("/remove-favorite-us", methods=["POST"])
@@ -659,3 +704,144 @@ def remove_favorite_us():
             with open(fav_path, 'w') as f:
                 json.dump(favorites, f)
     return {"status": "success"}
+
+
+@volar_us_bp.route("/add-to-strategy-us", methods=["POST"])
+def add_to_strategy_us():
+    """Add a US stock to a named strategy watchlist, storing entry price from cache."""
+    symbol   = request.form.get('symbol', '').strip().upper()
+    strategy = request.form.get('strategy', '').strip()
+    if not symbol or not strategy:
+        return {"status": "error", "message": "symbol and strategy are required"}
+
+    fav_path = os.path.join(UPLOAD_FOLDER,
+                            f'strategy_us_{strategy.lower().replace(" ", "_")}.json')
+
+    entry_price = None
+    try:
+        res, _ = us_cache.get_price_history_bulk([symbol], interval="1d", lookback_days=5)
+        df = res.get(symbol)
+        if df is not None:
+            norm = _normalise_df(df, symbol)
+            if norm is not None and 'Close' in norm.columns:
+                entry_price = round(float(norm['Close'].iloc[-1]), 2)
+    except Exception as e:
+        print(f"[add_to_strategy_us] price fetch error for {symbol}: {e}")
+
+    new_entry = {
+        "symbol":      symbol,
+        "entry_date":  datetime.now().strftime("%Y-%m-%d"),
+        "entry_price": entry_price,
+    }
+
+    data = []
+    if os.path.exists(fav_path):
+        try:
+            with open(fav_path) as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            data = []
+
+    if not any(item['symbol'] == symbol for item in data):
+        data.append(new_entry)
+        with open(fav_path, 'w') as f:
+            json.dump(data, f)
+
+    price_str = f"${entry_price}" if entry_price else "N/A"
+    return {"status": "success",
+            "message": f"{symbol} added to {strategy} strategy at {price_str}"}
+
+
+@volar_us_bp.route("/view-strategy-us/<name>")
+def view_strategy_us(name):
+    """Show performance of all stocks in a named US strategy."""
+    fav_path  = os.path.join(UPLOAD_FOLDER,
+                             f'strategy_us_{name.lower()}.json')
+    currency  = "$"
+    bench_label = f"{US_INDEX[1]} ({US_INDEX[0]})"
+
+    if not os.path.exists(fav_path):
+        return render_template("strategy_watchlist.html", stocks=[],
+                               strategy_name=name.upper(), currency=currency,
+                               benchmark_label=bench_label, market="us")
+
+    try:
+        with open(fav_path) as f:
+            entries = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        entries = []
+
+    if not entries:
+        return render_template("strategy_watchlist.html", stocks=[],
+                               strategy_name=name.upper(), currency=currency,
+                               benchmark_label=bench_label, market="us")
+
+    symbols = [item['symbol'] for item in entries]
+
+    # Fetch benchmark + all symbols in one bulk call
+    idx_data, _ = us_cache.get_price_history_bulk(
+        [US_INDEX[0]], interval="1d", lookback_days=500, progress_callback=lambda *a: None
+    )
+    index_df_raw = idx_data.get(US_INDEX[0])
+    index_df     = _normalise_df(index_df_raw, US_INDEX[0])
+
+    price_data, _ = us_cache.get_price_history_bulk(
+        symbols, interval="1d", lookback_days=500, progress_callback=lambda *a: None
+    )
+
+    raw_results = []
+    for item in entries:
+        sym = item['symbol']
+        try:
+            raw_df  = price_data.get(sym)
+            norm_df = _normalise_df(raw_df, sym) if raw_df is not None else None
+            metrics = is_volar_us_candidate(sym, index_df, norm_df) if index_df is not None else None
+
+            current_price = metrics['price'] if metrics else (
+                round(float(norm_df['Close'].iloc[-1]), 2)
+                if norm_df is not None and 'Close' in norm_df.columns else None
+            )
+            entry_price = item.get('entry_price')
+            ret_pct = round(((current_price - entry_price) / entry_price) * 100, 2)                       if current_price and entry_price and entry_price > 0 else None
+
+            raw_results.append({
+                "symbol":            sym,
+                "symbol_clean":      sym,
+                "entry_date":        item.get('entry_date', ''),
+                "entry_price":       entry_price,
+                "current_price":     current_price,
+                "return_pct":        ret_pct,
+                "pullback_pct":      metrics['pullback_pct']      if metrics else None,
+                "volar":             metrics['volar']             if metrics else None,
+                "relative_strength": metrics['relative_strength'] if metrics else None,
+                "performance":       metrics['performance']       if metrics else None,
+                "rs_percentile":     0,
+            })
+        except Exception as e:
+            print(f"[view_strategy_us] Error {sym}: {e}")
+
+    # Compute rs_percentile across the strategy batch
+    if raw_results:
+        import pandas as _pd
+        df_s = _pd.DataFrame(raw_results)
+        if 'relative_strength' in df_s.columns and df_s['relative_strength'].notna().any():
+            valid = df_s['relative_strength'].notna()
+            df_s.loc[valid, 'rs_percentile'] = (
+                df_s.loc[valid, 'relative_strength']
+                .rank(pct=True).mul(100).round(0).fillna(0).astype(int)
+            )
+        stocks = df_s.to_dict(orient='records')
+    else:
+        stocks = []
+
+    return render_template("strategy_watchlist.html",
+                           stocks=stocks,
+                           strategy_name=name.upper(),
+                           currency=currency,
+                           benchmark_label=bench_label,
+                           market="us")
+
+
+@volar_us_bp.route("/view-strategy-us-default")
+def view_strategy_us_default():
+    return view_strategy_us('momentum')

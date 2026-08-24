@@ -1,79 +1,198 @@
 {% extends 'base_authenticated.html' %}
+{% block title %}{{ market }} Watch-list{% endblock %}
 {% block content %}
+<style>
+    .tabular-nums { font-variant-numeric: tabular-nums; }
+    #favTable th { cursor: pointer; user-select: none; }
+    #favTable th:hover { color: #6366f1; }
+    .sort-arrow { display: inline-block; width: 10px; font-size: 9px; }
+</style>
+
 <div class="max-w-7xl mx-auto px-4 py-8">
-    <div class="flex justify-between items-center mb-8">
-        <h2 class="text-2xl font-black text-indigo-900 dark:text-indigo-300 uppercase tracking-tight">🧡 {{ market }} Watch-list</h2>
-        <span class="text-[10px] font-bold text-gray-400 dark:text-slate-500 uppercase tracking-widest">Live Performance Mode</span>
+
+    <!-- Header -->
+    <div class="flex flex-wrap justify-between items-start gap-4 mb-6">
+        <div>
+            <h2 class="text-2xl font-black text-indigo-900 dark:text-indigo-300 uppercase tracking-tight">🧡 {{ market }} Watch-list</h2>
+            <p class="text-[10px] font-bold text-gray-400 dark:text-slate-500 mt-1 uppercase flex flex-wrap gap-x-2 gap-y-1">
+                <span>Live Performance Mode · {{ stocks|length }} stocks</span>
+                {% if benchmark_label %}
+                <span class="text-gray-300 dark:text-slate-700">|</span>
+                <span>RS vs <span class="text-indigo-400">{{ benchmark_label }}</span></span>
+                {% endif %}
+            </p>
+        </div>
     </div>
 
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm dark:shadow-none overflow-hidden">
-        <div class="overflow-x-auto">
-            <table class="min-w-full text-left text-xs">
-                <thead class="bg-gray-50 dark:bg-slate-800/60 border-b border-gray-100 dark:border-slate-800 text-gray-400 dark:text-slate-400 font-bold uppercase text-[10px] tracking-widest">
-                    <tr>
-                        <th class="px-6 py-4">Symbol</th>
-                        <th class="px-6 py-4">Price</th>
-                        <th class="px-6 py-4 text-center">RS %tile</th>
-                        <th class="px-6 py-4">VOLAR</th>
-                        <th class="px-6 py-4">Perf %</th>
-                        <th class="px-6 py-4 text-right">Action</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-gray-50 dark:divide-slate-800 text-gray-800 dark:text-slate-200">
-                    {% for stock in stocks %}
-                    <tr id="row-{{ stock.symbol_clean if stock.symbol_clean else stock.symbol }}" class="hover:bg-indigo-50/30 dark:hover:bg-indigo-500/10 transition-colors">
-                        <td class="px-6 py-4 font-black text-indigo-700 dark:text-indigo-300">
-                            {{ stock.symbol_clean if stock.symbol_clean else stock.symbol }}
-                        </td>
-                        <td class="px-6 py-4 font-bold text-gray-900 dark:text-slate-100">{{ currency }}{{ stock.price }}</td>
-                        <td class="px-6 py-4 text-center">
-                            <span class="inline-block px-3 py-1 rounded-full text-[10px] font-black {% if stock.rs_percentile|default(0) >= 90 %}bg-blue-600 text-white shadow-sm{% else %}bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400{% endif %}">
-                                {{ stock.rs_percentile|default('N/A') }}
-                            </span>
-                        </td>
-                        <td class="px-6 py-4 font-black text-indigo-600 dark:text-indigo-400">{{ stock.volar }}</td>
-                        <td class="px-6 py-4 font-bold {% if stock.performance > 0 %}text-green-600 dark:text-emerald-400{% else %}text-red-500 dark:text-red-400{% endif %}">
-                            {{ stock.performance }}%
-                        </td>
-                        <td class="px-6 py-4 text-right">
-                            <button onclick="removeFavorite('{{ stock.symbol_clean if stock.symbol_clean else stock.symbol }}')" 
-                                    class="text-red-400 hover:text-red-600 dark:hover:text-red-300 transition font-bold uppercase text-[9px]">
-                                Delete 🗑️
-                            </button>
-                        </td>
-                    </tr>
-                    {% else %}
-                    <tr>
-                        <td colspan="6" class="px-6 py-12 text-center text-gray-400 dark:text-slate-500 italic bg-gray-50/30 dark:bg-slate-800/20">Your {{ market }} watch-list is empty. Star some stocks to see them here!</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+    <!-- Summary cards -->
+    {% if stocks %}
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+        <div class="bg-white dark:bg-slate-900 rounded-xl border border-gray-100 dark:border-slate-800 p-4 shadow-sm">
+            <div class="text-[9px] font-black uppercase text-gray-400 dark:text-slate-500 mb-1">Total Stocks</div>
+            <div class="text-xl font-black text-gray-900 dark:text-slate-100">{{ stocks|length }}</div>
         </div>
+        <div class="bg-white dark:bg-slate-900 rounded-xl border border-gray-100 dark:border-slate-800 p-4 shadow-sm">
+            <div class="text-[9px] font-black uppercase text-gray-400 dark:text-slate-500 mb-1">Winners (vs add price)</div>
+            <div class="text-xl font-black text-emerald-600 dark:text-emerald-400">
+                {{ stocks | selectattr('change_since_add', 'defined') | selectattr('change_since_add', 'ne', none) | selectattr('change_since_add', 'greaterthan', 0) | list | length }} /
+                {{ stocks | selectattr('added_price') | list | length }}
+            </div>
+        </div>
+        <div class="bg-white dark:bg-slate-900 rounded-xl border border-gray-100 dark:border-slate-800 p-4 shadow-sm">
+            <div class="text-[9px] font-black uppercase text-gray-400 dark:text-slate-500 mb-1">RS ≥ 90</div>
+            <div class="text-xl font-black text-indigo-600 dark:text-indigo-300">
+                {{ stocks | selectattr('rs_percentile', 'greaterthan', 89) | list | length }}
+            </div>
+        </div>
+        <div class="bg-white dark:bg-slate-900 rounded-xl border border-gray-100 dark:border-slate-800 p-4 shadow-sm">
+            <div class="text-[9px] font-black uppercase text-gray-400 dark:text-slate-500 mb-1">Avg RS %tile</div>
+            <div class="text-xl font-black text-indigo-600 dark:text-indigo-300">
+                {% if stocks %}{{ (stocks | map(attribute='rs_percentile') | map('default', 0) | list | sum / (stocks|length)) | round(0) | int }}{% else %}—{% endif %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Table -->
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm dark:shadow-none overflow-x-auto">
+        <table id="favTable" class="min-w-full text-left text-xs">
+            <thead class="bg-gray-50 dark:bg-slate-800/60 border-b border-gray-100 dark:border-slate-800 sticky top-0 z-10">
+                <tr>
+                    <th class="px-5 py-4 font-bold uppercase text-gray-400 dark:text-slate-400">#</th>
+                    <th class="px-5 py-4 font-bold uppercase text-gray-400 dark:text-slate-400" data-sort="sym" data-type="text">Symbol <span class="sort-arrow"></span></th>
+                    <th class="px-5 py-4 font-bold uppercase text-gray-400 dark:text-slate-400 text-right" data-sort="addedprice" data-type="num">Added Price <span class="sort-arrow"></span></th>
+                    <th class="px-5 py-4 font-bold uppercase text-gray-900 dark:text-slate-100 text-right" data-sort="currprice" data-type="num">Current Price <span class="sort-arrow"></span></th>
+                    <th class="px-5 py-4 font-bold uppercase text-emerald-500 text-right" data-sort="change" data-type="num">Change % <span class="sort-arrow"></span></th>
+                    <th class="px-5 py-4 font-bold uppercase text-indigo-500 dark:text-indigo-300 text-center" data-sort="rspct" data-type="num">RS %tile <span class="sort-arrow">▼</span></th>
+                    <th class="px-5 py-4 font-bold uppercase text-purple-500 text-right" data-sort="volar" data-type="num">VOLAR <span class="sort-arrow"></span></th>
+                    <th class="px-5 py-4 font-bold uppercase text-gray-400 dark:text-slate-400 text-right" data-sort="perf" data-type="num">Perf % <span class="sort-arrow"></span></th>
+                    <th class="px-5 py-4 font-bold uppercase text-gray-400 dark:text-slate-400 text-right" data-sort="pullback" data-type="num">52W Pullback % <span class="sort-arrow"></span></th>
+                    <th class="px-5 py-4"></th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-50 dark:divide-slate-800">
+                {% for stock in stocks %}
+                {% set sym = stock.symbol_clean if stock.symbol_clean else stock.symbol %}
+                {% set curr_price = stock.current_price|default(stock.price)|default(0) %}
+                {% set ch = stock.change_since_add|default(none) %}
+                <tr id="row-{{ sym }}" class="hover:bg-indigo-50/30 dark:hover:bg-indigo-500/10 transition-colors"
+                    data-sym="{{ sym|lower }}"
+                    data-addedprice="{{ stock.added_price if stock.added_price else '0' }}"
+                    data-currprice="{{ curr_price }}"
+                    data-change="{{ ch if ch is not none and ch != '' else '' }}"
+                    data-rspct="{{ stock.rs_percentile|default(0) }}"
+                    data-volar="{{ stock.volar|default(0) }}"
+                    data-perf="{{ stock.performance|default(0) }}"
+                    data-pullback="{{ stock.pullback_pct|default(0) }}">
+
+                    <td class="px-5 py-4 text-gray-400 dark:text-slate-500 font-bold tabular-nums text-[10px]">{{ loop.index }}</td>
+                    <td class="px-5 py-4 font-black text-indigo-700 dark:text-indigo-300 text-sm">
+                        {{ sym }}
+                        {% if stock.added_date %}
+                        <div class="text-[8px] text-gray-400 dark:text-slate-500 font-normal mt-0.5">Added {{ stock.added_date }}</div>
+                        {% endif %}
+                    </td>
+
+                    <td class="px-5 py-4 text-right tabular-nums">
+                        {% if stock.added_price %}
+                        <span class="font-bold text-gray-500 dark:text-slate-400">{{ currency }}{{ "{:,.2f}".format(stock.added_price) }}</span>
+                        {% else %}
+                        <span class="text-gray-300 dark:text-slate-600 text-[9px]">—</span>
+                        {% endif %}
+                    </td>
+
+                    <td class="px-5 py-4 text-right tabular-nums font-black text-gray-900 dark:text-slate-100">
+                        {{ currency }}{{ "{:,.2f}".format(curr_price) }}
+                    </td>
+
+                    <td class="px-5 py-4 text-right tabular-nums font-black">
+                        {% if ch is not none and ch != '' %}
+                        <span class="{% if ch >= 0 %}text-emerald-600 dark:text-emerald-400{% else %}text-red-500 dark:text-red-400{% endif %}">
+                            {{ '+' if ch >= 0 else '' }}{{ ch }}%
+                        </span>
+                        {% else %}
+                        <span class="text-gray-300 dark:text-slate-600 text-[9px]">—</span>
+                        {% endif %}
+                    </td>
+
+                    <td class="px-5 py-4 text-center">
+                        <span class="inline-block px-3 py-1 rounded-full text-[10px] font-black
+                              {% if stock.rs_percentile|default(0) >= 90 %}bg-indigo-600 text-white
+                              {% elif stock.rs_percentile|default(0) >= 70 %}bg-indigo-100 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300
+                              {% else %}bg-gray-100 dark:bg-slate-800 text-gray-500{% endif %}">
+                            {{ stock.rs_percentile|default('—') }}
+                        </span>
+                    </td>
+
+                    <td class="px-5 py-4 text-right tabular-nums font-bold
+                               {% if stock.volar|default(0) >= 2 %}text-purple-600 dark:text-purple-400
+                               {% elif stock.volar|default(0) >= 1 %}text-indigo-600 dark:text-indigo-300
+                               {% else %}text-gray-500 dark:text-slate-400{% endif %}">
+                        {{ stock.volar|default('—') }}
+                    </td>
+
+                    <td class="px-5 py-4 text-right tabular-nums font-bold
+                               {% if stock.performance|default(0) > 0 %}text-emerald-600 dark:text-emerald-400
+                               {% else %}text-red-500 dark:text-red-400{% endif %}">
+                        {{ '+' if stock.performance|default(0) > 0 else '' }}{{ stock.performance|default('—') }}%
+                    </td>
+
+                    <td class="px-5 py-4 text-right tabular-nums font-bold
+                               {% if stock.pullback_pct|default(0) <= 10 %}text-emerald-600 dark:text-emerald-400
+                               {% elif stock.pullback_pct|default(0) <= 20 %}text-gray-600 dark:text-slate-400
+                               {% else %}text-amber-600 dark:text-amber-400{% endif %}">
+                        -{{ stock.pullback_pct|default('—') }}%
+                    </td>
+
+                    <td class="px-5 py-4 text-right">
+                        <button onclick="removeFavorite('{{ sym }}')"
+                                class="text-[9px] font-black uppercase text-red-400 hover:text-red-600 transition px-2 py-1 rounded border border-red-200 dark:border-red-900 hover:bg-red-50 dark:hover:bg-red-500/10">
+                            🗑 Remove
+                        </button>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="10" class="px-6 py-12 text-center text-gray-400 dark:text-slate-500 italic">
+                        Your {{ market }} watch-list is empty. Add stocks from the screener to track them here.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
 </div>
 
 <script>
-function removeFavorite(symbol) {
-    if(!confirm("Remove " + symbol + " from watch-list?")) return;
-
-    const formData = new FormData();
-    formData.append('symbol', symbol);
-    formData.append('csrf_token', '{{ csrf_token }}');
-
-    // Dynamically pick the removal route based on the market
-    const route = "{{ market }}" === "India" ? "/remove-favorite-india" : "/remove-favorite-us";
-
-    fetch(route, {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => response.json())
-    .then(data => {
-        if(data.status === "success") {
-            document.getElementById('row-' + symbol).remove();
-        }
+let sortKey = 'rspct', sortDir = -1;
+document.querySelectorAll('#favTable th[data-sort]').forEach(th => {
+    th.addEventListener('click', () => {
+        const key  = th.dataset.sort;
+        const type = th.dataset.type || 'num';
+        sortDir = (sortKey === key) ? -sortDir : 1;
+        sortKey = key;
+        const tbody = document.querySelector('#favTable tbody');
+        Array.from(tbody.querySelectorAll('tr[data-sym]')).sort((a, b) => {
+            let va = a.dataset[key] ?? '', vb = b.dataset[key] ?? '';
+            if (type === 'num') { va = parseFloat(va) || -Infinity; vb = parseFloat(vb) || -Infinity; }
+            else { va = va.toLowerCase(); vb = vb.toLowerCase(); }
+            return (va < vb ? -1 : va > vb ? 1 : 0) * sortDir;
+        }).forEach(r => tbody.appendChild(r));
+        document.querySelectorAll('#favTable th .sort-arrow').forEach(a => a.textContent = '');
+        const arr = th.querySelector('.sort-arrow');
+        if (arr) arr.textContent = sortDir === 1 ? '▲' : '▼';
     });
+});
+
+function removeFavorite(symbol) {
+    if (!confirm(`Remove ${symbol} from watch-list?`)) return;
+    const fd = new FormData();
+    fd.append('symbol', symbol);
+    fd.append('csrf_token', '{{ csrf_token }}');
+    const route = "{{ market }}" === "India" ? "/remove-favorite-india" : "/remove-favorite-us";
+    fetch(route, { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(d => { if (d.status === 'success') document.getElementById('row-' + symbol)?.remove(); });
 }
 </script>
 {% endblock %}

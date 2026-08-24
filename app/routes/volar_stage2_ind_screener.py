@@ -496,6 +496,9 @@ def volar_process():
     stale_symbols_sample = []
     price_data_asof = None
 
+    cache_hits = 0   # initialised here so render_template never hits NameError
+    yf_fetches = 0   # if RESULTS_JSON doesn't exist yet
+
     if os.path.exists(RESULTS_JSON):
         try:
             with open(RESULTS_JSON, 'r') as f:
@@ -644,45 +647,158 @@ def export_volar():
 
 @volar_bp.route("/add-favorite-india", methods=["POST"])
 def add_favorite_india():
-    symbol = request.form.get('symbol')
-    fav_path = os.path.join(UPLOAD_FOLDER, 'favorites_india.json')
+    """
+    Stores each watchlist entry as a dict so we can show the price at the
+    time of adding alongside the current price in view_favorites_india().
+
+    Schema: {"symbol": "RELIANCE", "added_price": 2905.5, "added_date": "2026-08-20"}
+
+    Backward-compatible: the view route handles both plain strings (old
+    format) and dicts (new format) when reading the file.
+    """
+    symbol       = request.form.get('symbol', '').strip().upper()
+    added_price  = request.form.get('added_price')   # sent by the screener table
+    if not symbol:
+        return {"status": "error", "message": "No symbol provided"}
+
+    fav_path  = os.path.join(UPLOAD_FOLDER, 'favorites_india.json')
     favorites = []
     if os.path.exists(fav_path):
-        with open(fav_path, 'r') as f:
-            favorites = json.load(f)
-    if symbol not in favorites:
-        favorites.append(symbol)
+        try:
+            with open(fav_path, 'r') as f:
+                favorites = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            favorites = []
+
+    # Normalise old plain-string entries to dict format on first write
+    favorites = [
+        {"symbol": e, "added_price": None, "added_date": None}
+        if isinstance(e, str) else e
+        for e in favorites
+    ]
+
+    # Avoid duplicates
+    existing_syms = {e['symbol'] for e in favorites}
+    if symbol not in existing_syms:
+        # Use price from form if available, else fetch from cache
+        price_val = None
+        if added_price:
+            try:
+                price_val = round(float(added_price), 2)
+            except (ValueError, TypeError):
+                pass
+
+        if price_val is None:
+            try:
+                yf_sym = symbol if symbol.endswith(".NS") else f"{symbol}.NS"
+                res, _ = get_price_history_bulk([yf_sym], interval="1d", lookback_days=5,
+                                                progress_callback=lambda *a: None)
+                df = res.get(yf_sym)
+                if df is not None and not df.empty:
+                    norm = _normalise_df(df, yf_sym)
+                    if norm is not None and 'Close' in norm.columns:
+                        price_val = round(float(norm['Close'].iloc[-1]), 2)
+            except Exception:
+                pass
+
+        favorites.append({
+            "symbol":     symbol,
+            "added_price": price_val,
+            "added_date":  datetime.now().strftime("%Y-%m-%d"),
+        })
         with open(fav_path, 'w') as f:
             json.dump(favorites, f)
+
     return {"status": "success", "message": f"{symbol} added to India Watchlist"}
 
 
 @volar_bp.route("/view-favorites-india")
 def view_favorites_india():
+    """
+    Bugs fixed vs original:
+      1. rs_percentile was never computed — is_volar_candidate() doesn't
+         return it; it's computed only inside screen_volar(). Fixed by
+         ranking relative_strength across all watchlist stocks after fetch.
+      2. added_price / added_date not passed to template — fixed by reading
+         the new dict format from favorites_india.json.
+      3. current_price not a separate field — now explicitly set so the
+         template can show both price_at_add and current_price columns.
+    """
     fav_path = os.path.join(UPLOAD_FOLDER, 'favorites_india.json')
-    stocks = []
-    if os.path.exists(fav_path):
+    stocks   = []
+
+    if not os.path.exists(fav_path):
+        return render_template("view_favorites.html", stocks=[], market="India", currency="₹")
+
+    try:
         with open(fav_path, 'r') as f:
-            symbols = json.load(f)
-        index_df, _ = fetch_index_data()
-        yf_symbols = [s if s.endswith(".NS") else f"{s}.NS" for s in symbols]
-        # Same shared-cache bulk fetch as the main scan — a watchlist of even
-        # a couple dozen symbols was previously hitting yfinance once per
-        # symbol every time this page loaded.
-        price_data, _ = get_price_history_bulk(yf_symbols, interval="1d", lookback_days=500,
-                                            progress_callback=lambda *a: None) if index_df is not None else ({}, {})
-        for sym, yf_sym in zip(symbols, yf_symbols):
-            try:
-                raw_df = price_data.get(yf_sym)
-                norm_df = _normalise_df(raw_df, yf_sym) if raw_df is not None else None
-                data = is_volar_candidate(yf_sym, index_df, norm_df) if index_df is not None else None
-                if data:
-                    data['symbol_clean'] = sym
-                    stocks.append(data)
-            except Exception as e:
-                print(f"Error loading favorite {sym}: {e}")
-                continue
-    return render_template("view_favorites.html", stocks=stocks, market="India", currency="₹")
+            raw_entries = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        raw_entries = []
+
+    # Normalise: support both old plain-string and new dict format
+    entries = [
+        {"symbol": e, "added_price": None, "added_date": None}
+        if isinstance(e, str) else e
+        for e in raw_entries
+    ]
+
+    index_df, benchmark_label = fetch_index_data()
+    yf_symbols = [
+        e['symbol'] if e['symbol'].endswith(".NS") else f"{e['symbol']}.NS"
+        for e in entries
+    ]
+
+    price_data = {}
+    if index_df is not None and yf_symbols:
+        price_data, _ = get_price_history_bulk(
+            yf_symbols, interval="1d", lookback_days=500,
+            progress_callback=lambda *a: None
+        )
+
+    raw_results = []
+    for entry, yf_sym in zip(entries, yf_symbols):
+        try:
+            raw_df  = price_data.get(yf_sym)
+            norm_df = _normalise_df(raw_df, yf_sym) if raw_df is not None else None
+            data    = is_volar_candidate(yf_sym, index_df, norm_df) if index_df is not None else None
+            if data:
+                data['symbol_clean'] = entry['symbol'].replace('.NS', '')
+                data['added_price']  = entry.get('added_price')
+                data['added_date']   = entry.get('added_date')
+                # current_price is already in data['price'] from is_volar_candidate
+                data['current_price'] = data['price']
+                # change_since_add: only when we have both prices
+                ap = entry.get('added_price')
+                if ap and ap > 0:
+                    data['change_since_add'] = round(
+                        ((data['current_price'] - ap) / ap) * 100, 2
+                    )
+                else:
+                    data['change_since_add'] = None
+                raw_results.append(data)
+        except Exception as e:
+            print(f"[view_favorites_india] Error {entry['symbol']}: {e}")
+
+    # Compute rs_percentile across the watchlist batch (was always missing —
+    # is_volar_candidate() returns relative_strength but not the percentile;
+    # that ranking only happened inside screen_volar() which this route bypassed)
+    if raw_results:
+        import pandas as _pd
+        df_fav = _pd.DataFrame(raw_results)
+        df_fav['rs_percentile'] = (
+            df_fav['relative_strength']
+            .rank(pct=True).mul(100).round(0).fillna(0).astype(int)
+        )
+        stocks = df_fav.to_dict(orient='records')
+    else:
+        stocks = []
+
+    return render_template(
+        "view_favorites.html",
+        stocks=stocks, market="India", currency="₹",
+        benchmark_label=benchmark_label,
+    )
 
 
 @volar_bp.route("/remove-favorite-india", methods=["POST"])
@@ -701,53 +817,184 @@ def remove_favorite_india():
 
 @volar_bp.route("/add-to-strategy", methods=["POST"])
 def add_to_strategy():
-    symbol = request.form.get('symbol')
-    strategy = request.form.get('strategy')
-    market = request.form.get('market')
-    folder = UPLOAD_FOLDER if market == 'india' else os.path.join(_PROJECT_ROOT, 'uploads', 'volar_us')
+    """
+    Fix: replaced direct yf.Ticker().history() call with ind_cache / us_cache
+    bulk fetch so the entry price comes from the same cached data source as
+    the screener (no extra HTTP call per add).
+    """
+    from app.services.market_data_cache import us_cache
+    symbol   = request.form.get('symbol', '').strip().upper()
+    strategy = request.form.get('strategy', '').strip()
+    market   = request.form.get('market', 'india').strip().lower()
+    if not symbol or not strategy:
+        return {"status": "error", "message": "symbol and strategy are required"}
+
+    folder   = UPLOAD_FOLDER if market == 'india' else os.path.join(_PROJECT_ROOT, 'uploads', 'volar_us')
+    os.makedirs(folder, exist_ok=True)
     fav_path = os.path.join(folder, f'strategy_{strategy.lower().replace(" ", "_")}.json')
-    yf_sym = symbol if market == 'us' else (symbol if symbol.endswith(".NS") else f"{symbol}.NS")
-    ticker = yf.Ticker(yf_sym)
-    current_price = ticker.history(period="1d")['Close'].iloc[-1]
+
+    yf_sym   = symbol if market == 'us' else (symbol if symbol.endswith(".NS") else f"{symbol}.NS")
+    cache    = get_price_history_bulk if market == 'india' else None
+
+    entry_price = None
+    try:
+        if market == 'india':
+            res, _ = get_price_history_bulk([yf_sym], interval="1d", lookback_days=5,
+                                            progress_callback=lambda *a: None)
+        else:
+            res, _ = us_cache.get_price_history_bulk([yf_sym], interval="1d", lookback_days=5)
+        df = res.get(yf_sym)
+        if df is not None:
+            norm = _normalise_df(df, yf_sym)
+            if norm is not None and 'Close' in norm.columns:
+                entry_price = round(float(norm['Close'].iloc[-1]), 2)
+    except Exception as e:
+        print(f"[add_to_strategy] price fetch error for {yf_sym}: {e}")
+
+    currency_sym = "₹" if market == 'india' else "$"
     new_entry = {
-        "symbol": symbol,
-        "entry_date": datetime.now().strftime("%Y-%m-%d"),
-        "entry_price": round(current_price, 2)
+        "symbol":     symbol,
+        "entry_date":  datetime.now().strftime("%Y-%m-%d"),
+        "entry_price": entry_price,
     }
+
     data = []
     if os.path.exists(fav_path):
-        with open(fav_path, 'r') as f:
-            data = json.load(f)
+        try:
+            with open(fav_path, 'r') as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            data = []
+
     if not any(item['symbol'] == symbol for item in data):
         data.append(new_entry)
         with open(fav_path, 'w') as f:
             json.dump(data, f)
-    return {"status": "success", "message": f"{symbol} added to {strategy} strategy at ${round(current_price, 2)}"}
+
+    price_str = f"{currency_sym}{entry_price}" if entry_price else "N/A"
+    return {"status": "success", "message": f"{symbol} added to {strategy} strategy at {price_str}"}
 
 
 @volar_bp.route("/view-strategy/<name>")
 def view_strategy(name):
-    # NOTE: the route parameter used to be <n> while the function parameter
-    # was `name` — Flask passes route params as keyword args, so this raised
-    # a TypeError ("unexpected keyword argument 'n'") every time this route
-    # was hit. Fixed by matching the two.
-    market = request.args.get('market', 'india')
-    folder = UPLOAD_FOLDER if market == 'india' else os.path.join(_PROJECT_ROOT, 'uploads', 'volar_us')
+    """
+    Bugs fixed:
+      1. Per-symbol yf.Ticker().history() (N HTTP calls) → single bulk fetch
+      2. rs_percentile missing — computed after bulk fetch
+      3. volar / relative_strength / pullback_pct missing — now uses
+         is_volar_candidate() + rs_percentile ranking same as favorites view
+    """
+    from app.services.market_data_cache import us_cache
+    market    = request.args.get('market', 'india').strip().lower()
+    folder    = UPLOAD_FOLDER if market == 'india' else os.path.join(_PROJECT_ROOT, 'uploads', 'volar_us')
     file_path = os.path.join(folder, f'strategy_{name.lower()}.json')
-    performance_data = []
-    if os.path.exists(file_path):
+    currency  = "₹" if market == 'india' else "$"
+
+    if not os.path.exists(file_path):
+        return render_template("strategy_watchlist.html", stocks=[],
+                               strategy_name=name.upper(), currency=currency,
+                               benchmark_label=None)
+
+    try:
         with open(file_path, 'r') as f:
             entries = json.load(f)
-        for item in entries:
-            yf_sym = item['symbol'] if market == 'us' else f"{item['symbol']}.NS"
-            ticker = yf.Ticker(yf_sym)
-            current_price = ticker.history(period="1d")['Close'].iloc[-1]
-            ret_pct = ((current_price - item['entry_price']) / item['entry_price']) * 100
-            performance_data.append({
-                "symbol": item['symbol'],
-                "entry_date": item['entry_date'],
-                "entry_price": item['entry_price'],
-                "current_price": round(current_price, 2),
-                "return_pct": round(ret_pct, 2)
-            })
-    return render_template("strategy_watchlist.html", stocks=performance_data, strategy_name=name.upper(), currency="₹" if market == 'india' else "$")
+    except (json.JSONDecodeError, OSError):
+        entries = []
+
+    if not entries:
+        return render_template("strategy_watchlist.html", stocks=[],
+                               strategy_name=name.upper(), currency=currency,
+                               benchmark_label=None)
+
+    # Benchmark (only needed for IND; for US we'd need us_cache benchmark)
+    index_df, benchmark_label = fetch_index_data() if market == 'india' else (None, None)
+
+    yf_symbols = [
+        item['symbol'] if market == 'us'
+        else (item['symbol'] if item['symbol'].endswith(".NS") else f"{item['symbol']}.NS")
+        for item in entries
+    ]
+
+    # Single bulk fetch — no per-symbol HTTP calls
+    price_data = {}
+    try:
+        if market == 'india':
+            price_data, _ = get_price_history_bulk(
+                yf_symbols, interval="1d", lookback_days=500,
+                progress_callback=lambda *a: None
+            )
+        else:
+            price_data, _ = us_cache.get_price_history_bulk(
+                yf_symbols, interval="1d", lookback_days=500
+            )
+    except Exception as e:
+        print(f"[view_strategy] bulk fetch error: {e}")
+
+    raw_results = []
+    for item, yf_sym in zip(entries, yf_symbols):
+        try:
+            raw_df  = price_data.get(yf_sym)
+            norm_df = _normalise_df(raw_df, yf_sym) if raw_df is not None else None
+
+            # Get current metrics via is_volar_candidate (IND only; US has no index_df)
+            metrics = None
+            if index_df is not None:
+                metrics = is_volar_candidate(yf_sym, index_df, norm_df)
+
+            # Fallback: at minimum pull current price from norm_df
+            current_price = None
+            if metrics:
+                current_price = metrics['price']
+            elif norm_df is not None and 'Close' in norm_df.columns:
+                current_price = round(float(norm_df['Close'].iloc[-1]), 2)
+
+            entry_price = item.get('entry_price')
+            ret_pct = None
+            if current_price and entry_price and entry_price > 0:
+                ret_pct = round(((current_price - entry_price) / entry_price) * 100, 2)
+
+            row = {
+                "symbol":        item['symbol'],
+                "symbol_clean":  item['symbol'].replace('.NS', ''),
+                "entry_date":    item.get('entry_date', ''),
+                "entry_price":   entry_price,
+                "current_price": current_price,
+                "return_pct":    ret_pct,
+                # extras from is_volar_candidate (None for US until we add US index)
+                "pullback_pct":      metrics['pullback_pct']      if metrics else None,
+                "volar":             metrics['volar']             if metrics else None,
+                "relative_strength": metrics['relative_strength'] if metrics else None,
+                "performance":       metrics['performance']       if metrics else None,
+                "rs_percentile":     0,   # filled after ranking below
+            }
+            raw_results.append(row)
+        except Exception as e:
+            print(f"[view_strategy] Error {item['symbol']}: {e}")
+
+    # Compute rs_percentile across the strategy batch
+    if raw_results:
+        import pandas as _pd
+        df_s = _pd.DataFrame(raw_results)
+        valid_rs = df_s['relative_strength'].notna()
+        if valid_rs.any():
+            df_s.loc[valid_rs, 'rs_percentile'] = (
+                df_s.loc[valid_rs, 'relative_strength']
+                .rank(pct=True).mul(100).round(0).fillna(0).astype(int)
+            )
+        stocks = df_s.to_dict(orient='records')
+    else:
+        stocks = []
+
+    return render_template(
+        "strategy_watchlist.html",
+        stocks=stocks,
+        strategy_name=name.upper(),
+        currency=currency,
+        benchmark_label=benchmark_label,
+        market=market,
+    )
+
+
+@volar_bp.route("/view-strategy-default")
+def view_strategy_default():
+    return view_strategy('momentum')

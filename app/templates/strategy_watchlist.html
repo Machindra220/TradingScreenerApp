@@ -1,39 +1,227 @@
 {% extends 'base_authenticated.html' %}
 {% block content %}
-<div class="max-w-7xl mx-auto px-4 py-8">
-    <h2 class="text-2xl font-black text-indigo-900 dark:text-indigo-300 mb-8 uppercase tracking-tight">📈 Strategy: {{ strategy_name }}</h2>
+<style>
+    .tabular-nums { font-variant-numeric: tabular-nums; }
+    #stratTable th { cursor: pointer; user-select: none; }
+    #stratTable th:hover { color: #6366f1; }
+    .sort-arrow { display: inline-block; width: 10px; font-size: 9px; }
+</style>
 
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm dark:shadow-none overflow-hidden">
-        <div class="overflow-x-auto">
-            <table class="min-w-full text-left text-xs">
-                <thead class="bg-gray-50 dark:bg-slate-800/60 border-b border-gray-100 dark:border-slate-800 text-gray-400 dark:text-slate-400 font-bold uppercase text-[10px] tracking-widest">
-                    <tr>
-                        <th class="px-6 py-4">Symbol</th>
-                        <th class="px-6 py-4">Date Added</th>
-                        <th class="px-6 py-4">Entry Price</th>
-                        <th class="px-6 py-4">Current Price</th>
-                        <th class="px-6 py-4 text-right">Total Return %</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-gray-50 dark:divide-slate-800 text-gray-800 dark:text-slate-200">
-                    {% for stock in stocks %}
-                    <tr class="hover:bg-indigo-50/30 dark:hover:bg-indigo-500/10 transition-colors">
-                        <td class="px-6 py-4 font-black text-indigo-700 dark:text-indigo-300">{{ stock.symbol }}</td>
-                        <td class="px-6 py-4 text-gray-500 dark:text-slate-400 font-medium">{{ stock.entry_date }}</td>
-                        <td class="px-6 py-4 font-bold text-gray-900 dark:text-slate-100">{{ currency }}{{ stock.entry_price }}</td>
-                        <td class="px-6 py-4 font-bold text-gray-900 dark:text-slate-100">{{ currency }}{{ stock.current_price }}</td>
-                        <td class="px-6 py-4 text-right font-black {% if stock.return_pct >= 0 %}text-green-600 dark:text-emerald-400{% else %}text-red-500 dark:text-red-400{% endif %}">
-                            {{ "+" if stock.return_pct > 0 }}{{ stock.return_pct }}%
-                        </td>
-                    </tr>
-                    {% else %}
-                    <tr>
-                        <td colspan="5" class="px-6 py-8 text-center text-gray-400 dark:text-slate-500 italic bg-gray-50/30 dark:bg-slate-800/20">No stocks assigned to this strategy.</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+<div class="max-w-7xl mx-auto px-4 py-8">
+
+    <!-- Header -->
+    <div class="flex flex-wrap justify-between items-start gap-4 mb-6">
+        <div>
+            <h2 class="text-2xl font-black text-indigo-900 dark:text-indigo-300 uppercase tracking-tight">
+                📋 Strategy: {{ strategy_name }}
+            </h2>
+            <p class="text-[10px] font-bold text-gray-400 dark:text-slate-500 mt-1 uppercase flex flex-wrap gap-x-2 gap-y-1">
+                <span>{{ stocks|length }} stocks tracked</span>
+                {% if benchmark_label %}
+                <span class="text-gray-300 dark:text-slate-700">|</span>
+                <span>RS vs <span class="text-indigo-400">{{ benchmark_label }}</span></span>
+                {% endif %}
+                {% if market %}
+                <span class="text-gray-300 dark:text-slate-700">|</span>
+                <span>Market: <span class="text-blue-400 uppercase">{{ market }}</span></span>
+                {% endif %}
+            </p>
+        </div>
+    </div>
+
+    <!-- Summary cards -->
+    {% if stocks %}
+    {% set winners = stocks | selectattr('return_pct', 'greaterthan', 0) | list %}
+    {% set losers  = stocks | rejectattr('return_pct', 'greaterthan', 0) | selectattr('return_pct') | list %}
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+        <div class="bg-white dark:bg-slate-900 rounded-xl border border-gray-100 dark:border-slate-800 p-4 shadow-sm">
+            <div class="text-[9px] font-black uppercase text-gray-400 dark:text-slate-500 mb-1">Positions</div>
+            <div class="text-xl font-black text-gray-900 dark:text-slate-100">{{ stocks|length }}</div>
+        </div>
+        <div class="bg-white dark:bg-slate-900 rounded-xl border border-gray-100 dark:border-slate-800 p-4 shadow-sm">
+            <div class="text-[9px] font-black uppercase text-gray-400 dark:text-slate-500 mb-1">Winners / Losers</div>
+            <div class="text-xl font-black">
+                <span class="text-emerald-600 dark:text-emerald-400">{{ winners|length }}</span>
+                <span class="text-gray-400 dark:text-slate-500"> / </span>
+                <span class="text-red-500 dark:text-red-400">{{ losers|length }}</span>
+            </div>
+        </div>
+        <div class="bg-white dark:bg-slate-900 rounded-xl border border-gray-100 dark:border-slate-800 p-4 shadow-sm">
+            <div class="text-[9px] font-black uppercase text-gray-400 dark:text-slate-500 mb-1">Best Return</div>
+            {% set best = stocks | selectattr('return_pct') | sort(attribute='return_pct', reverse=True) | first %}
+            {% if best %}
+            <div class="text-xl font-black text-emerald-600 dark:text-emerald-400">
+                +{{ best.return_pct }}%
+                <div class="text-[9px] text-gray-400 font-normal">{{ best.symbol }}</div>
+            </div>
+            {% else %}
+            <div class="text-xl font-black text-gray-400">—</div>
+            {% endif %}
+        </div>
+        <div class="bg-white dark:bg-slate-900 rounded-xl border border-gray-100 dark:border-slate-800 p-4 shadow-sm">
+            <div class="text-[9px] font-black uppercase text-gray-400 dark:text-slate-500 mb-1">Avg RS %tile</div>
+            {% set rs_vals = stocks | map(attribute='rs_percentile') | select | list %}
+            <div class="text-xl font-black text-indigo-600 dark:text-indigo-300">
+                {% if rs_vals %}{{ (rs_vals | sum / rs_vals | length) | round(0) | int }}{% else %}—{% endif %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Table -->
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm dark:shadow-none overflow-x-auto mb-8">
+        <table id="stratTable" class="min-w-full text-left text-xs">
+            <thead class="bg-gray-50 dark:bg-slate-800/60 border-b border-gray-100 dark:border-slate-800 sticky top-0 z-10">
+                <tr>
+                    <th class="px-5 py-4 font-bold uppercase text-gray-400 dark:text-slate-400" data-sort="sym" data-type="text">Symbol <span class="sort-arrow"></span></th>
+                    <th class="px-5 py-4 font-bold uppercase text-gray-400 dark:text-slate-400" data-sort="date" data-type="text">Entry Date <span class="sort-arrow"></span></th>
+                    <th class="px-5 py-4 font-bold uppercase text-gray-400 dark:text-slate-400 text-right" data-sort="entryprice" data-type="num">Entry Price <span class="sort-arrow"></span></th>
+                    <th class="px-5 py-4 font-bold uppercase text-gray-900 dark:text-slate-100 text-right" data-sort="currprice" data-type="num">Current Price <span class="sort-arrow"></span></th>
+                    <th class="px-5 py-4 font-bold uppercase text-emerald-500 text-right" data-sort="retpct" data-type="num">Return % <span class="sort-arrow">▼</span></th>
+                    <th class="px-5 py-4 font-bold uppercase text-indigo-500 dark:text-indigo-300 text-center" data-sort="rspct" data-type="num">RS %tile <span class="sort-arrow"></span></th>
+                    <th class="px-5 py-4 font-bold uppercase text-purple-500 text-right" data-sort="volar" data-type="num">VOLAR <span class="sort-arrow"></span></th>
+                    <th class="px-5 py-4 font-bold uppercase text-gray-400 dark:text-slate-400 text-right" data-sort="pullback" data-type="num">52W Pullback % <span class="sort-arrow"></span></th>
+                    <th class="px-5 py-4 font-bold uppercase text-gray-400 dark:text-slate-400 text-right" data-sort="perf" data-type="num">Perf % <span class="sort-arrow"></span></th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-50 dark:divide-slate-800">
+                {% for stock in stocks %}
+                {% set sym = stock.symbol_clean if stock.symbol_clean else stock.symbol %}
+                {% set ret = stock.return_pct %}
+                {% set curr = stock.current_price %}
+                <tr class="hover:bg-indigo-50/30 dark:hover:bg-indigo-500/10 transition-colors"
+                    data-sym="{{ sym|lower }}"
+                    data-date="{{ stock.entry_date|default('') }}"
+                    data-entryprice="{{ stock.entry_price|default(0) }}"
+                    data-currprice="{{ curr|default(0) }}"
+                    data-retpct="{{ ret if ret is not none else '' }}"
+                    data-rspct="{{ stock.rs_percentile|default(0) }}"
+                    data-volar="{{ stock.volar|default(0) }}"
+                    data-pullback="{{ stock.pullback_pct|default(0) }}"
+                    data-perf="{{ stock.performance|default(0) }}">
+
+                    <!-- Symbol -->
+                    <td class="px-5 py-4 font-black text-indigo-700 dark:text-indigo-300 text-sm">{{ sym }}</td>
+
+                    <!-- Entry date -->
+                    <td class="px-5 py-4 text-gray-500 dark:text-slate-400 font-bold tabular-nums">
+                        {{ stock.entry_date|default('—') }}
+                    </td>
+
+                    <!-- Entry price -->
+                    <td class="px-5 py-4 text-right tabular-nums font-bold text-gray-500 dark:text-slate-400">
+                        {% if stock.entry_price %}{{ currency }}{{ "{:,.2f}".format(stock.entry_price) }}{% else %}—{% endif %}
+                    </td>
+
+                    <!-- Current price -->
+                    <td class="px-5 py-4 text-right tabular-nums font-black text-gray-900 dark:text-slate-100">
+                        {% if curr %}{{ currency }}{{ "{:,.2f}".format(curr) }}{% else %}—{% endif %}
+                    </td>
+
+                    <!-- Return % -->
+                    <td class="px-5 py-4 text-right tabular-nums font-black">
+                        {% if ret is not none %}
+                        <span class="{% if ret >= 0 %}text-emerald-600 dark:text-emerald-400{% else %}text-red-500 dark:text-red-400{% endif %}
+                                     px-2 py-0.5 rounded text-[10px] border
+                                     {% if ret >= 20 %}bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-800
+                                     {% elif ret >= 0 %}bg-emerald-50/50 dark:bg-emerald-500/5 border-emerald-100 dark:border-emerald-900
+                                     {% elif ret >= -10 %}bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-800
+                                     {% else %}bg-red-50 dark:bg-red-500/10 border-red-200 dark:border-red-900{% endif %}">
+                            {{ '+' if ret >= 0 else '' }}{{ ret }}%
+                        </span>
+                        {% else %}
+                        <span class="text-gray-300 dark:text-slate-600 text-[9px]">—</span>
+                        {% endif %}
+                    </td>
+
+                    <!-- RS percentile -->
+                    <td class="px-5 py-4 text-center">
+                        <span class="inline-block px-3 py-1 rounded-full text-[10px] font-black
+                              {% if stock.rs_percentile|default(0) >= 90 %}bg-indigo-600 text-white
+                              {% elif stock.rs_percentile|default(0) >= 70 %}bg-indigo-100 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300
+                              {% else %}bg-gray-100 dark:bg-slate-800 text-gray-500{% endif %}">
+                            {{ stock.rs_percentile|default('—') }}
+                        </span>
+                    </td>
+
+                    <!-- VOLAR -->
+                    <td class="px-5 py-4 text-right tabular-nums font-bold
+                               {% if stock.volar|default(0) >= 2 %}text-purple-600 dark:text-purple-400
+                               {% elif stock.volar|default(0) >= 1 %}text-indigo-600 dark:text-indigo-300
+                               {% else %}text-gray-500 dark:text-slate-400{% endif %}">
+                        {{ stock.volar|default('—') }}
+                    </td>
+
+                    <!-- 52W Pullback -->
+                    <td class="px-5 py-4 text-right tabular-nums font-bold
+                               {% if stock.pullback_pct|default(0) <= 10 %}text-emerald-600 dark:text-emerald-400
+                               {% elif stock.pullback_pct|default(0) <= 20 %}text-gray-600 dark:text-slate-400
+                               {% else %}text-amber-600 dark:text-amber-400{% endif %}">
+                        {% if stock.pullback_pct is not none %}-{{ stock.pullback_pct }}%{% else %}—{% endif %}
+                    </td>
+
+                    <!-- Perf % (all-time from first bar) -->
+                    <td class="px-5 py-4 text-right tabular-nums font-bold
+                               {% if stock.performance|default(0) > 0 %}text-emerald-600 dark:text-emerald-400
+                               {% else %}text-red-500 dark:text-red-400{% endif %}">
+                        {% if stock.performance is not none %}
+                        {{ '+' if stock.performance > 0 else '' }}{{ stock.performance }}%
+                        {% else %}—{% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="9" class="px-6 py-12 text-center text-gray-400 dark:text-slate-500 italic">
+                        No stocks in this strategy yet. Add stocks from the screener using the strategy button.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Strategy guide -->
+    <div style="background:linear-gradient(135deg,#0f172a 0%,#1e1b4b 100%);border-color:rgba(49,46,129,0.5);"
+         class="text-white rounded-2xl p-5 shadow-xl border">
+        <h3 style="color:#818cf8;" class="text-sm font-black uppercase tracking-tight mb-3 flex items-center gap-2">
+            💡 Reading Strategy Performance
+        </h3>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs text-slate-300">
+            <div style="background:rgba(30,41,59,0.7);border-color:rgba(51,65,85,0.6);" class="p-3 rounded-xl border">
+                <div style="color:#a5b4fc;" class="font-bold mb-1">Return %</div>
+                <p>Return since entry price. Green = profitable. The coloured badge intensity shows magnitude — bright green = +20%+, red = loss &gt;10%.</p>
+            </div>
+            <div style="background:rgba(30,41,59,0.7);border-color:rgba(51,65,85,0.6);" class="p-3 rounded-xl border">
+                <div style="color:#93c5fd;" class="font-bold mb-1">RS %tile</div>
+                <p>Relative Strength vs {{ benchmark_label|default('benchmark') }}, percentile-ranked within this strategy's stocks. Falling RS while price rises = narrowing leadership — consider reducing exposure.</p>
+            </div>
+            <div style="background:rgba(30,41,59,0.7);border-color:rgba(51,65,85,0.6);" class="p-3 rounded-xl border">
+                <div style="color:#fdba74;" class="font-bold mb-1">Exit Signal</div>
+                <p>Exit when RS %tile drops below 50 across two consecutive screener runs, OR when 52W Pullback exceeds 25%, OR on a Chandelier Stop breach (2.5 × ATR from 52W high).</p>
+            </div>
         </div>
     </div>
 </div>
+
+<script>
+let sortKey = 'retpct', sortDir = -1;
+document.querySelectorAll('#stratTable th[data-sort]').forEach(th => {
+    th.addEventListener('click', () => {
+        const key  = th.dataset.sort;
+        const type = th.dataset.type || 'num';
+        sortDir = (sortKey === key) ? -sortDir : 1;
+        sortKey = key;
+        const tbody = document.querySelector('#stratTable tbody');
+        Array.from(tbody.querySelectorAll('tr[data-sym]')).sort((a, b) => {
+            let va = a.dataset[key] ?? '', vb = b.dataset[key] ?? '';
+            if (type === 'num') { va = parseFloat(va) || -Infinity; vb = parseFloat(vb) || -Infinity; }
+            else { va = va.toLowerCase(); vb = vb.toLowerCase(); }
+            return (va < vb ? -1 : va > vb ? 1 : 0) * sortDir;
+        }).forEach(r => tbody.appendChild(r));
+        document.querySelectorAll('#stratTable th .sort-arrow').forEach(a => a.textContent = '');
+        const arr = th.querySelector('.sort-arrow');
+        if (arr) arr.textContent = sortDir === 1 ? '▲' : '▼';
+    });
+});
+</script>
 {% endblock %}
