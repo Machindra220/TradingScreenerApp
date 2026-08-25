@@ -1,178 +1,290 @@
 {% extends 'base_authenticated.html' %}
 {% block content %}
+<style>
+    .tabular-nums { font-variant-numeric: tabular-nums; }
+    .note-cell { max-width: 260px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .cat-badge { display: inline-block; padding: 2px 8px; border-radius: 9999px; font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; }
+    .filter-chip[data-active="true"] { background: #4f46e5 !important; color: #fff !important; border-color: #4f46e5 !important; }
+    #res-modal.open { display: flex !important; }
+</style>
 
-<!-- 🧭 Page Heading -->
-<h2 class="text-2xl font-semibold text-center text-gray-800 dark:text-slate-100 mb-6">🧰 Helpful Resources</h2>
+<div class="max-w-7xl mx-auto px-4 py-8">
 
-<!-- 🔔 Flash Messages -->
-{% with messages = get_flashed_messages(with_categories=true) %}
-  {% if messages %}
-    {% for category, msg in messages %}
-      <div class="mb-4 px-4 py-2 rounded bg-blue-100 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-300 text-sm max-w-3xl mx-auto">
-        {{ msg }}
-      </div>
-    {% endfor %}
-  {% endif %}
-{% endwith %}
-
-<!-- ➕ Add Resource Button -->
-<div class="text-center mb-6">
-  <button onclick="openAddModal()"
-          class="px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition font-bold text-xs uppercase shadow-md shadow-indigo-200 dark:shadow-indigo-950/40">
-    ➕ Add Resource
-  </button>
-</div>
-
-<hr class="mb-6 border-gray-200 dark:border-slate-800">
-
-<!-- 📋 Resources Table -->
-<div class="overflow-x-auto max-w-6xl mx-auto bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm dark:shadow-none">
-  <table class="min-w-full text-sm">
-    <thead class="bg-gray-100 dark:bg-slate-800/60 text-gray-700 dark:text-slate-300 border-b border-gray-200 dark:border-slate-800 text-xs font-bold uppercase">
-      <tr>
-        <th class="px-4 py-3 text-left">Title</th>
-        <th class="px-4 py-3 text-left">Category</th>
-        <th class="px-4 py-3 text-left">Note</th>
-        <th class="px-4 py-3 text-left">Pinned</th>
-        <th class="px-4 py-3 text-left">Last Accessed</th>
-        <th class="px-4 py-3 text-left">Actions</th>
-      </tr>
-    </thead>
-    <tbody class="divide-y divide-gray-100 dark:divide-slate-800 text-slate-800 dark:text-slate-200">
-      {% for r in resources %}
-      <tr class="hover:bg-indigo-50/30 dark:hover:bg-indigo-500/10 transition-colors">
-        <td class="px-4 py-3 flex items-center gap-2 font-semibold">
-          <img src="https://www.google.com/s2/favicons?domain={{ r.url }}" class="h-5 w-5">
-          <a href="{{ url_for('resources.access_resource', id=r.id) }}"
-             target="_blank"
-             rel="noopener noreferrer"
-             class="text-indigo-600 dark:text-indigo-400 hover:underline"
-             title="Access {{ r.title }} and update last used time">
-            {{ r.title }}
-          </a>
-        </td>
-        <td class="px-4 py-3 text-xs dark:text-slate-400">{{ r.category }}</td>
-        <td class="px-4 py-3 text-xs text-gray-500 dark:text-slate-400">{{ r.note }}</td>
-        <td class="px-4 py-3">{{ '📌' if r.pinned else '' }}</td>
-        <td class="px-4 py-3 text-xs text-gray-500 dark:text-slate-400">{{ r.last_accessed.strftime('%d-%m-%Y') if r.last_accessed else '—' }}</td>
-        <td class="px-4 py-3 whitespace-nowrap">
-          <div class="flex gap-2">
-            <!-- ✏️ Edit Button -->
-            <button type="button"
-                    onclick="openEditModal({{ r.id }}, '{{ r.title }}', '{{ r.url }}', '{{ r.category }}', `{{ r.note|escape }}`, {{ 'true' if r.pinned else 'false' }})"
-                    class="px-3 py-1 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-xs font-bold transition">
-              ✏️
+    <!-- ── Header ─────────────────────────────────────────────────────────── -->
+    <div class="flex flex-wrap justify-between items-center gap-4 mb-6">
+        <div>
+            <h2 class="text-2xl font-black text-indigo-900 dark:text-indigo-300 uppercase tracking-tight">🧰 Resources</h2>
+            <p class="text-[10px] font-bold text-gray-400 dark:text-slate-500 uppercase mt-1">{{ resources|length }} links · {{ resources|selectattr('pinned')|list|length }} pinned</p>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+            <a href="{{ url_for('resources.export_resources') }}"
+               class="px-4 py-2 bg-gray-900 dark:bg-slate-700 text-white rounded-xl text-[10px] font-black uppercase hover:bg-black transition shadow-lg">
+                📥 Export Excel
+            </a>
+            <button onclick="openAddModal()"
+                    class="px-4 py-2 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-indigo-700 transition shadow-lg shadow-indigo-200 dark:shadow-indigo-950/40">
+                ➕ Add Resource
             </button>
+        </div>
+    </div>
 
-            <!-- 🗑️ Delete Button -->
-            <form method="POST" action="{{ url_for('resources.delete_resource', id=r.id) }}">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-              <button type="submit"
-                      onclick="return confirm('Delete this resource?')"
-                      class="px-3 py-1 bg-red-600 text-white rounded-lg hover:bg-red-700 text-xs font-bold transition">
-                🗑️
-              </button>
-            </form>
-          </div>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
+    <!-- Flash messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}{% for category, msg in messages %}
+    <div class="mb-4 px-4 py-2.5 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-300 text-[10px] font-bold">{{ msg }}</div>
+    {% endfor %}{% endif %}
+    {% endwith %}
 
-<!-- ✏️ Add/Edit Modal -->
-<div id="resource-modal"
-     class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 hidden flex items-center justify-center">
-  <form method="POST"
-        id="resource-form"
-        class="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-2xl w-full max-w-lg space-y-4">
+    <!-- ── Pinned strip ────────────────────────────────────────────────────── -->
+    {% set pinned_list = resources|selectattr('pinned')|list %}
+    {% if pinned_list %}
+    <div class="mb-5 px-4 py-3 bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm">
+        <p class="text-[9px] font-black uppercase text-gray-400 dark:text-slate-500 tracking-widest mb-2">📌 Pinned</p>
+        <div class="flex flex-wrap gap-2">
+            {% for r in pinned_list %}
+            <a href="{{ url_for('resources.access_resource', id=r.id) }}" target="_blank" rel="noopener noreferrer"
+               class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-800 rounded-full text-[10px] font-black text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition">
+                <img src="https://www.google.com/s2/favicons?domain={{ r.url }}" class="h-3.5 w-3.5 rounded-full">
+                {{ r.title }}
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
 
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <!-- ── Search + Category filter ───────────────────────────────────────── -->
+    <div class="flex flex-wrap items-center gap-2 mb-4">
+        <input id="resSearch" type="text" placeholder="🔎 Search title or note…"
+               oninput="applyFilters()"
+               class="text-[10px] px-3 py-2 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-400 w-52">
 
-    <!-- 🏷️ Title -->
-    <input name="title"
-           id="modal-title"
-           placeholder="Title"
-           required
-           class="w-full px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 border border-gray-300 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm" />
+        <button class="filter-chip px-3 py-1.5 rounded-full text-[9px] font-black uppercase border border-gray-200 dark:border-slate-700 text-gray-500 transition"
+                data-active="true" data-cat="" onclick="setCat('',this)">All</button>
 
-    <!-- 🌐 URL -->
-    <input name="url"
-           id="modal-url"
-           placeholder="URL"
-           required
-           class="w-full px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 border border-gray-300 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm" />
+        <!-- Pinned filter -->
+        <button class="filter-chip px-3 py-1.5 rounded-full text-[9px] font-black uppercase border border-yellow-200 dark:border-yellow-800 text-yellow-600 transition"
+                data-active="false" data-cat="__pinned__" onclick="setCat('__pinned__',this)">📌 Pinned</button>
 
-    <!-- 📂 Category -->
-    <div>
-      <label class="block text-xs font-bold text-gray-700 dark:text-slate-400 uppercase tracking-widest mb-1">Category</label>
-      <select name="category"
-              id="modal-category"
-              class="w-full px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 border border-gray-300 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm">
-        <option value="">-- Select Existing --</option>
         {% for cat in categories %}
-          <option value="{{ cat }}">{{ cat }}</option>
+        <button class="filter-chip px-3 py-1.5 rounded-full text-[9px] font-black uppercase border border-gray-200 dark:border-slate-700 text-gray-500 transition"
+                data-active="false" data-cat="{{ cat }}" onclick="setCat('{{ cat }}',this)">{{ cat }}</button>
         {% endfor %}
-      </select>
+
+        <span class="text-[9px] text-gray-400 dark:text-slate-500 font-bold ml-1">Showing <span id="resCount">{{ resources|length }}</span></span>
     </div>
 
-    <!-- ➕ New Category -->
-    <input name="new_category"
-           id="modal-new-category"
-           placeholder="New Category"
-           class="w-full px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 border border-gray-300 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm" />
+    <!-- ── Main table ──────────────────────────────────────────────────────── -->
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm overflow-x-auto">
+        <table class="min-w-full text-left text-xs" id="resTable">
+            <thead class="bg-gray-50 dark:bg-slate-800/60 border-b border-gray-100 dark:border-slate-800 sticky top-0 z-10">
+                <tr>
+                    <th class="px-4 py-3 font-bold uppercase text-gray-400 dark:text-slate-400 w-8">#</th>
+                    <th class="px-4 py-3 font-bold uppercase text-gray-400 dark:text-slate-400">Title</th>
+                    <th class="px-4 py-3 font-bold uppercase text-gray-400 dark:text-slate-400">Category</th>
+                    <th class="px-4 py-3 font-bold uppercase text-gray-400 dark:text-slate-400">Note</th>
+                    <th class="px-4 py-3 font-bold uppercase text-gray-400 dark:text-slate-400 text-center">📌</th>
+                    <th class="px-4 py-3 font-bold uppercase text-gray-400 dark:text-slate-400">Last Accessed</th>
+                    <th class="px-4 py-3 font-bold uppercase text-gray-400 dark:text-slate-400 text-right">Actions</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-50 dark:divide-slate-800">
+                {% for r in resources %}
+                {% set cat_colors = ['bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300',
+                                     'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300',
+                                     'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300',
+                                     'bg-purple-50 text-purple-700 dark:bg-purple-500/10 dark:text-purple-300',
+                                     'bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300',
+                                     'bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300'] %}
+                {% set ci = (loop.index0 % 6) %}
+                <tr class="hover:bg-indigo-50/30 dark:hover:bg-indigo-500/10 transition-colors"
+                    data-title="{{ r.title|lower }}"
+                    data-note="{{ (r.note or '')|lower }}"
+                    data-cat="{{ r.category or '' }}"
+                    data-pinned="{{ '1' if r.pinned else '0' }}">
 
-    <!-- 📝 Note -->
-    <textarea name="note"
-              id="modal-note"
-              placeholder="Note"
-              class="w-full px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 border border-gray-300 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"></textarea>
+                    <td class="px-4 py-3 text-gray-300 dark:text-slate-600 font-bold tabular-nums text-[10px]">{{ loop.index }}</td>
 
-    <!-- 📌 Pin Checkbox -->
-    <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-slate-300 font-semibold">
-      <input type="checkbox" name="pinned" id="modal-pinned" class="rounded text-indigo-600 dark:bg-slate-800 border-gray-300 dark:border-slate-700 focus:ring-indigo-500">
-      📌 Pin
-    </label>
+                    <td class="px-4 py-3">
+                        <div class="flex items-center gap-2">
+                            <img src="https://www.google.com/s2/favicons?domain={{ r.url }}" class="h-4 w-4 rounded shrink-0" loading="lazy">
+                            <a href="{{ url_for('resources.access_resource', id=r.id) }}"
+                               target="_blank" rel="noopener noreferrer"
+                               class="font-black text-indigo-700 dark:text-indigo-300 hover:text-indigo-500 dark:hover:text-indigo-200 hover:underline transition">
+                                {{ r.title }}
+                            </a>
+                        </div>
+                    </td>
 
-    <!-- ✅ Modal Actions -->
-    <div class="flex justify-end gap-4 pt-4">
-      <button type="submit"
-              class="px-5 py-2.5 bg-indigo-600 text-white rounded-xl text-xs font-bold uppercase hover:bg-indigo-700 transition shadow-md">
-        💾 Save
-      </button>
-      <button type="button"
-              onclick="closeModal()"
-              class="px-5 py-2.5 border border-gray-300 dark:border-slate-700 rounded-xl text-gray-700 dark:text-slate-300 text-xs font-bold uppercase hover:bg-gray-100 dark:hover:bg-slate-800 transition">
-        ✕ Cancel
-      </button>
+                    <td class="px-4 py-3">
+                        {% if r.category %}
+                        <span class="cat-badge {{ cat_colors[categories.index(r.category) % 6 if r.category in categories else 0] }}">
+                            {{ r.category }}
+                        </span>
+                        {% else %}
+                        <span class="text-gray-300 dark:text-slate-600 text-[9px]">—</span>
+                        {% endif %}
+                    </td>
+
+                    <td class="px-4 py-3 text-gray-500 dark:text-slate-400 note-cell" title="{{ r.note or '' }}">
+                        {{ r.note or '—' }}
+                    </td>
+
+                    <td class="px-4 py-3 text-center">
+                        {% if r.pinned %}<span class="text-base">📌</span>{% endif %}
+                    </td>
+
+                    <td class="px-4 py-3 text-gray-400 dark:text-slate-500 tabular-nums text-[10px] whitespace-nowrap">
+                        {{ r.last_accessed.strftime('%d-%b-%Y') if r.last_accessed else '—' }}
+                    </td>
+
+                    <td class="px-4 py-3 text-right">
+                        <div class="flex items-center justify-end gap-1.5">
+                            <!-- Edit -->
+                            <button type="button"
+                                    onclick="openEditModal({{ r.id }}, '{{ r.title|replace("'", "\\'") }}', '{{ r.url }}', '{{ r.category or '' }}', `{{ r.note|default('')|replace('`','\\`') }}`, {{ 'true' if r.pinned else 'false' }})"
+                                    class="px-2.5 py-1.5 bg-slate-600 text-white rounded-lg hover:bg-slate-700 text-[9px] font-black uppercase transition">
+                                ✏️
+                            </button>
+                            <!-- Delete -->
+                            <form method="POST" action="{{ url_for('resources.delete_resource', id=r.id) }}" class="m-0">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <button type="submit" onclick="return confirm('Delete {{ r.title|replace("'","\\'") }}?')"
+                                        class="px-2.5 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 text-[9px] font-black uppercase transition">
+                                    🗑️
+                                </button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="7" class="px-6 py-12 text-center text-gray-400 dark:text-slate-500 italic">
+                        No resources yet. Click ➕ Add Resource to get started.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
-  </form>
 </div>
 
-<!-- 🧠 Modal Logic -->
+<!-- ── Add / Edit Modal ────────────────────────────────────────────────────── -->
+<div id="res-modal"
+     class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 hidden items-center justify-center"
+     onclick="if(event.target===this)closeModal()">
+    <form method="POST" id="res-form"
+          class="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-2xl w-full max-w-lg space-y-3 mx-4">
+
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+        <h3 id="modal-heading" class="text-sm font-black uppercase text-gray-800 dark:text-slate-200 mb-1">Add Resource</h3>
+
+        <div class="grid grid-cols-2 gap-3">
+            <div class="col-span-2">
+                <label class="text-[9px] font-black uppercase text-gray-400 dark:text-slate-500 tracking-wider">Title *</label>
+                <input name="title" id="modal-title" placeholder="Resource title" required
+                       class="mt-1 w-full px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 border border-gray-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm">
+            </div>
+            <div class="col-span-2">
+                <label class="text-[9px] font-black uppercase text-gray-400 dark:text-slate-500 tracking-wider">URL *</label>
+                <input name="url" id="modal-url" placeholder="https://..." required
+                       class="mt-1 w-full px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 border border-gray-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm">
+            </div>
+            <div>
+                <label class="text-[9px] font-black uppercase text-gray-400 dark:text-slate-500 tracking-wider">Category</label>
+                <select name="category" id="modal-category"
+                        class="mt-1 w-full px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 border border-gray-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm">
+                    <option value="">— Select —</option>
+                    {% for cat in categories %}
+                    <option value="{{ cat }}">{{ cat }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="text-[9px] font-black uppercase text-gray-400 dark:text-slate-500 tracking-wider">New Category</label>
+                <input name="new_category" id="modal-new-cat" placeholder="Or type new…"
+                       class="mt-1 w-full px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 border border-gray-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm">
+            </div>
+            <div class="col-span-2">
+                <label class="text-[9px] font-black uppercase text-gray-400 dark:text-slate-500 tracking-wider">Note</label>
+                <textarea name="note" id="modal-note" placeholder="Short description…" rows="2"
+                          class="mt-1 w-full px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 border border-gray-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm resize-none"></textarea>
+            </div>
+        </div>
+
+        <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-slate-300 font-bold cursor-pointer select-none">
+            <input type="checkbox" name="pinned" id="modal-pinned"
+                   class="rounded text-indigo-600 dark:bg-slate-800 border-gray-300 focus:ring-indigo-500">
+            📌 Pin to top
+        </label>
+
+        <div class="flex justify-end gap-3 pt-2 border-t border-gray-100 dark:border-slate-800">
+            <button type="button" onclick="closeModal()"
+                    class="px-4 py-2 border border-gray-200 dark:border-slate-700 rounded-xl text-gray-600 dark:text-slate-300 text-[10px] font-black uppercase hover:bg-gray-50 dark:hover:bg-slate-800 transition">
+                Cancel
+            </button>
+            <button type="submit"
+                    class="px-5 py-2 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-indigo-700 transition shadow-md shadow-indigo-200 dark:shadow-indigo-950/40">
+                💾 Save
+            </button>
+        </div>
+    </form>
+</div>
+
 <script>
+// ── Modal ─────────────────────────────────────────────────────────────────────
 function openAddModal() {
-  const form = document.getElementById('resource-form');
-  form.action = "{{ url_for('resources.add_resource') }}";
-  form.reset();
-  document.getElementById('resource-modal').classList.remove('hidden');
+    document.getElementById('modal-heading').textContent = 'Add Resource';
+    document.getElementById('res-form').action = "{{ url_for('resources.add_resource') }}";
+    document.getElementById('res-form').reset();
+    document.getElementById('res-modal').classList.remove('hidden');
+    document.getElementById('res-modal').classList.add('flex');
 }
 
 function openEditModal(id, title, url, category, note, pinned) {
-  const form = document.getElementById('resource-form');
-  form.action = `/resources/edit/${id}`;
-  document.getElementById('modal-title').value = title;
-  document.getElementById('modal-url').value = url;
-  document.getElementById('modal-category').value = category;
-  document.getElementById('modal-note').value = note;
-  document.getElementById('modal-pinned').checked = pinned;
-  document.getElementById('resource-modal').classList.remove('hidden');
+    document.getElementById('modal-heading').textContent = 'Edit Resource';
+    document.getElementById('res-form').action = `/resources/edit/${id}`;
+    document.getElementById('modal-title').value   = title;
+    document.getElementById('modal-url').value     = url;
+    document.getElementById('modal-category').value = category;
+    document.getElementById('modal-new-cat').value = '';   // clear so existing category is used
+    document.getElementById('modal-note').value    = note;
+    document.getElementById('modal-pinned').checked = pinned;
+    document.getElementById('res-modal').classList.remove('hidden');
+    document.getElementById('res-modal').classList.add('flex');
 }
 
 function closeModal() {
-  document.getElementById('resource-modal').classList.add('hidden');
+    document.getElementById('res-modal').classList.add('hidden');
+    document.getElementById('res-modal').classList.remove('flex');
+}
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+// ── Filter + Search ───────────────────────────────────────────────────────────
+let activeCat = '';
+
+function setCat(cat, btn) {
+    activeCat = cat;
+    document.querySelectorAll('.filter-chip').forEach(c => c.dataset.active = 'false');
+    btn.dataset.active = 'true';
+    applyFilters();
+}
+
+function applyFilters() {
+    const q    = document.getElementById('resSearch').value.trim().toLowerCase();
+    const rows = document.querySelectorAll('#resTable tbody tr[data-title]');
+    let shown  = 0;
+    rows.forEach(row => {
+        const matchSearch = !q || row.dataset.title.includes(q) || row.dataset.note.includes(q);
+        const matchCat    = !activeCat || activeCat === '__pinned__'
+                            ? (activeCat === '__pinned__' ? row.dataset.pinned === '1' : true)
+                            : row.dataset.cat === activeCat;
+        const show = matchSearch && matchCat;
+        row.style.display = show ? '' : 'none';
+        if (show) shown++;
+    });
+    document.getElementById('resCount').textContent = shown;
 }
 </script>
-
 {% endblock %}

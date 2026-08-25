@@ -844,4 +844,4 @@ def view_strategy_us(name):
 
 @volar_us_bp.route("/view-strategy-us-default")
 def view_strategy_us_default():
-    return view_strategy_us('momentum')
+    return view_strategy_us('volar_stage_2')

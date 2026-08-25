@@ -66,7 +66,9 @@ def edit_resource(id):
         r.title = request.form['title']
         r.url = request.form['url']
         r.note = request.form.get('note')
-        r.category = request.form.get('category')
+        # new_category takes priority over the select dropdown (same logic as add)
+        new_cat = request.form.get('new_category', '').strip()
+        r.category = new_cat if new_cat else request.form.get('category')
         r.pinned = bool(request.form.get('pinned'))
         db.session.commit()
         flash("Resource updated successfully!", "success")
@@ -118,7 +120,8 @@ def export_resources():
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         df.to_excel(writer, index=False, sheet_name='Resources')
     output.seek(0)
-    return send_file(output, download_name='resources.xlsx', as_attachment=True)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return send_file(output, download_name=f'Resources_{ts}.xlsx', as_attachment=True)
 
 # ✅ Last Access Time of Resource (GET only — no CSRF needed)
 @resources_bp.route('/resources/access/<int:id>')
