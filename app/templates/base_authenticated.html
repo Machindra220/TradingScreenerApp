@@ -244,6 +244,7 @@
         </button>
 
         <div x-show="openSection === 'General' || !sidebarOpen" x-collapse class="space-y-1">
+        {{ navlink('vcp.vcp_view', 'VCP Screener', 'triangle-outline') }}
         {{ navlink('trendline_screener.trendline_scan_process', 'Trendline Breakouts', 'ruler') }}
         {{ navlink('chart_engine_combined.analytics-chart-combined', 'Combined Chart (NSE + US)', 'globe') }}
         {{ navlink('chart_carousel.carousel_dashboard', 'Chart carousel', 'carousel') }}
@@ -274,7 +275,6 @@
 			  {{ navlink('stage2_delivery.stage2_delivery_history', 'Stage 2 Delivery History', 'archive') }}
 			  {{ navlink('eps.eps_screener_history', 'EPS Surge History', 'document-text') }}
 			  {{ navlink('momentum.momentum_history', 'Momentum History', 'document-text') }}
-			  {{ navlink('vcp.vcp_view', 'VCP Screener', 'triangle-outline') }}
 			  {{ navlink('notes.notes_page', 'Notes', 'notebook') }}
 			  {{ navlink('stats.stats_dashboard', 'Stats', 'chart-box') }}
 			  {{ navlink('calendar.calendar_view', 'Calendar', 'calendar') }}

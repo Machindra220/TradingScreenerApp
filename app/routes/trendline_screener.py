@@ -1,237 +1,399 @@
+"""
+trendline_screener.py — Trendline Breakout & 52-Week High Screener
+
+Fixes vs original:
+  - Separate results/history JSON per market (US / INDIA never overwrite each other)
+  - __file__-anchored paths (not os.getcwd())
+  - ind_cache / us_cache bulk fetch (not per-symbol yf.Ticker().history())
+  - Background thread + progress polling (non-blocking)
+  - Last 5 snapshot history per market with restore
+  - Timestamped export filename
+  - nifty_500.csv / sp500.csv from data/ (not live URL download)
+  - Submit button defer via JS fetch (not synchronous onclick disable)
+"""
+
 import os
 import json
+import uuid
+import threading
 import numpy as np
 import pandas as pd
-import yfinance as yf
 from datetime import datetime
 from scipy.signal import find_peaks
-from flask import Blueprint, render_template, request, send_file
+from flask import Blueprint, render_template, request, redirect, url_for, jsonify, send_file
+
+from app.services.market_data_cache import ind_cache, us_cache, latest_bar_date
 
 trendline_bp = Blueprint("trendline_screener", __name__)
 
-UPLOAD_FOLDER = os.path.abspath(os.path.join(os.getcwd(), 'uploads', 'trendline'))
-RESULTS_JSON = os.path.join(UPLOAD_FOLDER, 'last_trendline_results.json')
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+# ── Paths ─────────────────────────────────────────────────────────────────────
+_PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+UPLOAD_FOLDER = os.path.join(_PROJECT_ROOT, 'uploads', 'trendline')
+SNAP_DIR      = os.path.join(UPLOAD_FOLDER, 'snapshots')
+os.makedirs(SNAP_DIR, exist_ok=True)
 
-def fetch_historical_matrix(symbol, period="1y"):
-    ticker = yf.Ticker(symbol)
-    return ticker.history(period=period, interval="1d")
+MARKET_CFG = {
+    "US": {
+        "results_json":  os.path.join(UPLOAD_FOLDER, 'trendline_us_results.json'),
+        "history_json":  os.path.join(UPLOAD_FOLDER, 'trendline_us_history.json'),
+        "default_csv":   os.path.join(_PROJECT_ROOT, 'data', 'sp500.csv'),
+        "default_label": "S&P 500 (sp500.csv)",
+        "cache":         None,   # set at runtime — us_cache
+        "suffix":        "",
+        "currency":      "$",
+    },
+    "INDIA": {
+        "results_json":  os.path.join(UPLOAD_FOLDER, 'trendline_india_results.json'),
+        "history_json":  os.path.join(UPLOAD_FOLDER, 'trendline_india_history.json'),
+        "default_csv":   os.path.join(_PROJECT_ROOT, 'data', 'nifty_500.csv'),
+        "default_label": "Nifty 500 (nifty_500.csv)",
+        "cache":         None,   # set at runtime — ind_cache
+        "suffix":        ".NS",
+        "currency":      "₹",
+    },
+}
+HISTORY_LIMIT = 5
+
+# ── Progress (shared; market field disambiguates) ─────────────────────────────
+_lock = threading.Lock()
+_PROG = {"active": False, "market": "", "processed": 0,
+          "total": 0, "stage": "idle", "error": None}
+
+def _set(**kw):
+    with _lock: _PROG.update(kw)
+
+def _get():
+    with _lock: return dict(_PROG)
+
+
+# ── Indicator helpers ──────────────────────────────────────────────────────────
 
 def calculate_rsi(prices, period=14):
-    """Calculates high-fidelity 14-Day RSI from raw price arrays."""
     if len(prices) < period + 1:
         return 50.0
-    delta = np.diff(prices)
-    gain = np.where(delta > 0, delta, 0.0)
-    loss = np.where(delta < 0, -delta, 0.0)
-    
+    delta    = np.diff(prices)
+    gain     = np.where(delta > 0, delta, 0.0)
+    loss     = np.where(delta < 0, -delta, 0.0)
     avg_gain = np.mean(gain[:period])
     avg_loss = np.mean(loss[:period])
-    
     for i in range(period, len(delta)):
         avg_gain = (avg_gain * (period - 1) + gain[i]) / period
         avg_loss = (avg_loss * (period - 1) + loss[i]) / period
-        
     if avg_loss == 0:
         return 100.0
     rs = avg_gain / avg_loss
     return round(100.0 - (100.0 / (1.0 + rs)), 2)
 
-def detect_high_confidence_breakout(df):
+
+def detect_trendline_breakout(df):
     """
-    Fits a linear resistance trendline, analyzes volume footprint against 
-    prior technical peak volumes, and tracks RSI momentum parameters.
+    Fits a linear resistance trendline through recent swing highs.
+    Returns (is_breakout, trendline_val, slope, vol_ratio, rsi, high_confidence).
     """
     if len(df) < 60:
         return False, 0.0, 0.0, 1.0, 50.0, False
-        
-    highs = df['High'].values
-    closes = df['Close'].values
+
+    highs   = df['High'].values
+    closes  = df['Close'].values
     volumes = df['Volume'].values
     x_ticks = np.arange(len(df))
-    
-    # 1. Structural Peak Extraction
+
     peaks, _ = find_peaks(highs, distance=12, prominence=highs.mean() * 0.01)
     recent_peaks = [p for p in peaks if (len(df) - p) <= 180]
-    
     if len(recent_peaks) < 2:
         return False, 0.0, 0.0, 1.0, 50.0, False
-        
+
     peak_x = x_ticks[recent_peaks]
     peak_y = highs[recent_peaks]
-    
-    # 2. Geometry Fit (Linear Polynomial Regression)
     slope, intercept = np.polyfit(peak_x, peak_y, 1)
     if slope >= 0:
         return False, 0.0, 0.0, 1.0, 50.0, False
-        
-    today_idx = len(df) - 1
+
+    today_idx     = len(df) - 1
     yesterday_idx = len(df) - 2
-    
-    trendline_today = (slope * today_idx) + intercept
-    trendline_yesterday = (slope * yesterday_idx) + intercept
-    
-    # Core Geometric Cross Verification
-    is_price_breakout = (closes[yesterday_idx] <= trendline_yesterday) and (closes[today_idx] > trendline_today)
-    
-    if not is_price_breakout:
+    tl_today      = slope * today_idx + intercept
+    tl_yesterday  = slope * yesterday_idx + intercept
+
+    is_breakout = (closes[yesterday_idx] <= tl_yesterday and
+                   closes[today_idx] > tl_today)
+    if not is_breakout:
         return False, 0.0, 0.0, 1.0, 50.0, False
 
-    # 3. 🛡️ Quantitative Institutional Volume Analysis
-    today_volume = volumes[-1]
-    avg_20d_volume = volumes[-21:-1].mean() if volumes[-21:-1].mean() > 0 else 1.0
-    
-    # Extract the volume recorded at previous false peak resistance turns
-    historical_peak_volumes = volumes[recent_peaks]
-    mean_peak_volume = historical_peak_volumes.mean() if len(historical_peak_volumes) > 0 else avg_20d_volume
-    
-    # Confirm volume expands past both normal trendlines AND previous peak limits
-    is_volume_confirmed = (today_volume > avg_20d_volume * 1.5) and (today_volume >= mean_peak_volume * 0.9)
-    volume_ratio = round(today_volume / avg_20d_volume, 2)
-    
-    # 4. Momentum Verification
-    current_rsi = calculate_rsi(closes, period=14)
-    is_momentum_confirmed = 55 <= current_rsi <= 72
-    
-    is_high_confidence = is_volume_confirmed and is_momentum_confirmed
-    
-    return True, round(trendline_today, 2), round(slope, 4), volume_ratio, current_rsi, is_high_confidence
+    today_vol    = volumes[-1]
+    avg_20d_vol  = volumes[-21:-1].mean() if len(volumes) >= 21 else volumes.mean()
+    avg_20d_vol  = max(avg_20d_vol, 1.0)
+    peak_vol_avg = volumes[recent_peaks].mean() if len(recent_peaks) else avg_20d_vol
 
-def check_52w_high_breakout(df):
+    vol_confirmed     = (today_vol > avg_20d_vol * 1.5 and
+                         today_vol >= peak_vol_avg * 0.9)
+    vol_ratio         = round(today_vol / avg_20d_vol, 2)
+    rsi               = calculate_rsi(closes, period=14)
+    momentum_ok       = 55 <= rsi <= 72
+    high_confidence   = vol_confirmed and momentum_ok
+
+    return True, round(tl_today, 2), round(slope, 4), vol_ratio, rsi, high_confidence
+
+
+def check_52w_breakout(df):
     if len(df) < 252:
         return False, 0.0
-    closes = df['Close'].values
-    highs = df['High'].values
-    current_close = closes[-1]
-    past_52w_high = highs[-252:-1].max()
-    
-    is_52w_breakout = current_close >= (past_52w_high * 0.985)
-    return is_52w_breakout, round(past_52w_high, 2)
+    closes   = df['Close'].values
+    highs    = df['High'].values
+    curr     = closes[-1]
+    hi52     = highs[-252:-1].max()
+    return curr >= hi52 * 0.985, round(hi52, 2)
 
-def execute_algorithmic_scan(symbols, market_type="US"):
-    results = []
-    for sym in symbols:
-        sym_clean = str(sym).strip().upper()
-        if market_type == "INDIA" and not sym_clean.endswith((".NS", ".BO")):
-            sym_clean = f"{sym_clean}.NS"
-            
+
+# ── Per-symbol analysis ────────────────────────────────────────────────────────
+
+def _analyse(yf_sym: str, df: pd.DataFrame, suffix: str) -> dict | None:
+    """Run both checks on a single normalised DataFrame."""
+    if df is None or df.empty or len(df) < 100:
+        return None
+    if not {'Open','High','Low','Close','Volume'}.issubset(df.columns):
+        return None
+
+    # Normalise tz
+    if getattr(df.index, 'tz', None) is not None:
+        df = df.copy()
+        df.index = df.index.tz_localize(None)
+
+    curr_price = float(df['Close'].iloc[-1])
+    has_tl, tl_val, tl_slope, vol_ratio, rsi, high_conf = detect_trendline_breakout(df)
+    has_52w, past_high = check_52w_breakout(df)
+
+    if not has_tl and not has_52w:
+        return None
+
+    return {
+        "symbol":             yf_sym.replace(suffix, ""),
+        "price":              round(curr_price, 2),
+        "has_trendline_break": has_tl,
+        "trendline_value":    tl_val,
+        "trendline_slope":    tl_slope,
+        "volume_ratio":       vol_ratio,
+        "rsi":                rsi,
+        "high_confidence":    high_conf,
+        "has_52w_break":      has_52w,
+        "past_52w_high":      past_high,
+    }
+
+
+# ── Background scan ────────────────────────────────────────────────────────────
+
+def _load_symbols(market: str) -> list[str]:
+    cfg  = MARKET_CFG[market]
+    path = cfg["default_csv"]
+    if not os.path.exists(path):
+        return []
+    try:
+        df   = pd.read_csv(path)
+        cols = {c.lower().strip(): c for c in df.columns}
+        col  = next((cols[k] for k in ('symbol','ticker','symbols') if k in cols), None)
+        if not col: return []
+        out = []
+        for s in df[col].dropna().unique():
+            raw = str(s).strip().upper().replace('.','-')
+            if raw and not raw.startswith('$') and raw not in ('SYMBOL','TICKER'):
+                out.append(f"{raw}{cfg['suffix']}")
+        return out
+    except Exception as e:
+        print(f"[Trendline] load_symbols error: {e}")
+        return []
+
+
+def _format_section(rows: list) -> list:
+    if not rows: return []
+    df = pd.DataFrame(rows)
+    df.sort_values(["high_confidence","volume_ratio"], ascending=[False,False], inplace=True)
+    df.reset_index(drop=True, inplace=True)
+    df["rank"] = df.index + 1
+    return df.to_dict(orient="records")
+
+
+def run_scan(market: str, source_name: str):
+    cfg   = MARKET_CFG[market]
+    cache = us_cache if market == "US" else ind_cache
+    suffix = cfg["suffix"]
+
+    _set(active=True, market=market, processed=0, total=0, stage="loading", error=None)
+
+    yf_symbols = _load_symbols(market)
+    if not yf_symbols:
+        _set(active=False, stage="error", error=f"Could not load symbols for {market}")
+        return
+
+    _set(total=len(yf_symbols), stage="fetching")
+
+    price_data, fetch_report = cache.get_price_history_bulk(
+        yf_symbols, interval="1d", lookback_days=400,
+        progress_callback=lambda i, t, s: _set(processed=i, total=t)
+    )
+    price_data_asof = latest_bar_date(price_data)
+    _ch, _yf = fetch_report["from_cache"], fetch_report["fetched"]
+    print(f"[Trendline/{market}] {len(yf_symbols)} syms | Cache:{_ch} | YF:{_yf}")
+
+    _set(stage="screening", processed=0)
+    both, tl_only, hi52_only = [], [], []
+
+    for i, yf_sym in enumerate(yf_symbols):
+        _set(processed=i)
+        res = _analyse(yf_sym, price_data.get(yf_sym), suffix)
+        if not res: continue
+        if res["has_trendline_break"] and res["has_52w_break"]:
+            both.append(res)
+        elif res["has_trendline_break"]:
+            tl_only.append(res)
+        else:
+            hi52_only.append(res)
+
+    sections = {
+        "both":         _format_section(both),
+        "tl_only":      _format_section(tl_only),
+        "high_52w_only": _format_section(hi52_only),
+    }
+    last_time = datetime.now().strftime("%d-%b-%Y %H:%M:%S")
+    snap_file = f"trendline_{market.lower()}_{uuid.uuid4().hex}.json"
+
+    payload = {
+        "sections":        sections,
+        "time":            last_time,
+        "market":          market,
+        "source":          source_name,
+        "scanned_count":   len(yf_symbols),
+        "passed_count":    len(both) + len(tl_only) + len(hi52_only),
+        "price_data_asof": price_data_asof,
+        "cache_hits":      _ch,
+        "yf_fetches":      _yf,
+    }
+
+    with open(os.path.join(SNAP_DIR, snap_file), 'w') as f:
+        json.dump(payload, f)
+    with open(cfg["results_json"], 'w') as f:
+        json.dump(payload, f)
+
+    # History (last 5 per market)
+    history = _load_history(market)
+    history.insert(0, {
+        "time":            last_time,
+        "source":          source_name,
+        "count":           payload["passed_count"],
+        "scanned_count":   len(yf_symbols),
+        "price_data_asof": price_data_asof,
+        "snapshot_file":   snap_file,
+    })
+    history = history[:HISTORY_LIMIT]
+    keep = {h["snapshot_file"] for h in history if h.get("snapshot_file")}
+    for f in os.listdir(SNAP_DIR):
+        if f.startswith(f"trendline_{market.lower()}_") and f not in keep:
+            try: os.remove(os.path.join(SNAP_DIR, f))
+            except OSError: pass
+    with open(cfg["history_json"], 'w') as f:
+        json.dump(history, f)
+
+    _set(active=False, stage="done")
+
+
+# ── Helpers ────────────────────────────────────────────────────────────────────
+
+def _load_results(market):
+    path = MARKET_CFG[market]["results_json"]
+    if os.path.exists(path):
         try:
-            df = fetch_historical_matrix(sym_clean, period="1y")
-            if df.empty or len(df) < 100:
-                continue
-                
-            current_price = df['Close'].iloc[-1]
-            has_tl_break, tl_val, tl_slope, vol_ratio, rsi_val, is_high_conf = detect_high_confidence_breakout(df)
-            has_52w_break, past_high = check_52w_high_breakout(df)
-            
-            if not has_tl_break and not has_52w_break:
-                continue
-                
-            results.append({
-                "symbol": sym_clean.replace(".NS", ""),
-                "price": round(current_price, 2),
-                "has_trendline_break": has_tl_break,
-                "trendline_value": tl_val,
-                "trendline_slope": tl_slope,
-                "volume_ratio": vol_ratio,
-                "rsi": rsi_val,
-                "high_confidence": is_high_conf,
-                "has_52w_break": has_52w_break,
-                "past_52w_high": past_high
-            })
-        except Exception:
-            continue
-            
-    if not results:
-        return [], [], []
-        
-    df_res = pd.DataFrame(results)
-    df_both = df_res[df_res['has_trendline_break'] & df_res['has_52w_break']].copy()
-    df_tl_only = df_res[df_res['has_trendline_break'] & ~df_res['has_52w_break']].copy()
-    df_52w_only = df_res[df_res['has_52w_break'] & ~df_res['has_trendline_break']].copy()
-    
-    def format_records(target_df):
-        if target_df.empty: return []
-        # Sort by high confidence profile markers first
-        target_df.sort_values(by=["high_confidence", "volume_ratio"], ascending=[False, False], inplace=True)
-        target_df.reset_index(drop=True, inplace=True)
-        target_df["rank"] = target_df.index + 1
-        return target_df.to_dict(orient="records")
-        
-    return format_records(df_both), format_records(df_tl_only), format_records(df_52w_only)
+            with open(path) as f: return json.load(f)
+        except (json.JSONDecodeError, OSError): pass
+    return {}
 
-# --- FLASK APP INTERACTION ROUTERS ---
+def _load_history(market):
+    path = MARKET_CFG[market]["history_json"]
+    if os.path.exists(path):
+        try:
+            with open(path) as f: return json.load(f)
+        except (json.JSONDecodeError, OSError): pass
+    return []
+
+
+# ── Routes ─────────────────────────────────────────────────────────────────────
 
 @trendline_bp.route("/trendline-scan", methods=["GET", "POST"])
 def trendline_scan_process():
-    sections = {"both": [], "tl_only": [], "high_52w_only": []}
-    last_processed_time = None
-    source_name = "None"
-    market = request.args.get('market', 'US').upper()
-    
-    if os.path.exists(RESULTS_JSON):
-        with open(RESULTS_JSON, 'r') as f:
-            cache = json.load(f)
-            if cache.get('market') == market:
-                sections = cache.get('sections', sections)
-                last_processed_time = cache.get('time')
-                source_name = cache.get('source', 'Cached Scan')
+    market = request.args.get("market", "US").upper()
+    if market not in MARKET_CFG: market = "US"
 
     if request.method == "POST":
-        file = request.files.get('file')
-        if file and file.filename != '':
-            from werkzeug.utils import secure_filename
-            filename = secure_filename(file.filename)
-            filepath = os.path.join(UPLOAD_FOLDER, filename)
-            file.save(filepath)
-            source_name = filename
-            
-            df_input = pd.read_csv(filepath)
-            col_name = 'Symbol' if 'Symbol' in df_input.columns else 'symbol'
-            symbols = [str(s).strip().upper() for s in df_input[col_name].dropna().unique()]
-        else:
-            if market == "INDIA":
-                source_name = "Nifty 500 Live List"
-                url = "https://archives.nseindia.com/content/indices/ind_nifty500list.csv"
-                symbols = pd.read_csv(url)['Symbol'].dropna().tolist()
-            else:
-                source_name = "S&P 500 Default"
-                filepath = os.path.abspath(os.path.join(os.getcwd(), 'data', 'snp500.csv'))
-                df_input = pd.read_csv(filepath)
-                col_name = 'Symbol' if 'Symbol' in df_input.columns else 'symbol'
-                symbols = df_input[col_name].dropna().tolist()
+        market      = request.form.get("market", "US").upper()
+        source_name = MARKET_CFG[market]["default_label"]
+        prog        = _get()
+        if not prog["active"]:
+            t = threading.Thread(target=run_scan, args=(market, source_name), daemon=True)
+            t.start()
+        return redirect(url_for("trendline_screener.trendline_scan_process",
+                                market=market, scanning=1))
 
-        both, tl, h52w = execute_algorithmic_scan(symbols, market_type=market)
-        sections = {"both": both, "tl_only": tl, "high_52w_only": h52w}
-        last_processed_time = datetime.now().strftime("%d-%b-%Y %H:%M:%S")
-        
-        with open(RESULTS_JSON, 'w') as f:
-            json.dump({'sections': sections, 'time': last_processed_time, 'source': source_name, 'market': market}, f)
+    data     = _load_results(market)
+    sections = data.get("sections", {"both": [], "tl_only": [], "high_52w_only": []})
+    history  = _load_history(market)
+    prog     = _get()
+    is_scan  = prog["active"] and prog["market"] == market
 
-    return render_template("trendline_screener.html", 
-                           both_stocks=sections["both"],
-                           tl_stocks=sections["tl_only"],
-                           high_52w_stocks=sections["high_52w_only"],
-                           last_processed_time=last_processed_time, 
-                           source_name=source_name, market=market)
+    return render_template(
+        "trendline_screener.html",
+        both_stocks       = sections.get("both", []),
+        tl_stocks         = sections.get("tl_only", []),
+        high_52w_stocks   = sections.get("high_52w_only", []),
+        last_processed_time = data.get("time"),
+        source_name       = data.get("source", ""),
+        scanned_count     = data.get("scanned_count", 0),
+        passed_count      = data.get("passed_count", 0),
+        price_data_asof   = data.get("price_data_asof"),
+        cache_hits        = data.get("cache_hits", 0),
+        yf_fetches        = data.get("yf_fetches", 0),
+        market            = market,
+        history           = history,
+        is_scanning       = is_scan,
+        scan_error        = prog.get("error") if not prog["active"] else None,
+        restored          = request.args.get("restored") == "1",
+        currency          = MARKET_CFG[market]["currency"],
+    )
+
+
+@trendline_bp.route("/trendline-scan/progress")
+def trendline_progress():
+    return jsonify(_get())
+
+
+@trendline_bp.route("/trendline-scan/restore/<snapshot_file>", methods=["POST"])
+def trendline_restore(snapshot_file):
+    market    = request.form.get("market", "US").upper()
+    safe      = os.path.basename(snapshot_file)
+    snap_path = os.path.join(SNAP_DIR, safe)
+    if not os.path.exists(snap_path):
+        return redirect(url_for("trendline_screener.trendline_scan_process", market=market))
+    try:
+        with open(snap_path) as f: payload = json.load(f)
+        with open(MARKET_CFG[market]["results_json"], 'w') as f: json.dump(payload, f)
+    except Exception:
+        pass
+    return redirect(url_for("trendline_screener.trendline_scan_process",
+                            market=market, restored=1))
+
 
 @trendline_bp.route("/export-trendline-csv")
 def export_trendline_csv():
-    market = request.args.get('market', 'US').upper()
-    if os.path.exists(RESULTS_JSON):
-        with open(RESULTS_JSON, 'r') as f:
-            data = json.load(f)
-        if data.get('market') == market:
-            sections = data.get('sections', {})
-            all_records = []
-            for label, items in sections.items():
-                for item in items:
-                    record = item.copy()
-                    record["category_profile"] = label.upper()
-                    all_records.append(record)
-            if all_records:
-                df = pd.DataFrame(all_records)
-                export_path = os.path.join(UPLOAD_FOLDER, 'temp_trendline_export.csv')
-                df.to_csv(export_path, index=False)
-                return send_file(export_path, as_attachment=True, download_name=f"{market}_High_Confidence_Breakouts.csv")
-    return "No active data layer", 404
+    market = request.args.get("market", "US").upper()
+    data   = _load_results(market)
+    if not data:
+        return "No data.", 404
+    all_records = []
+    for label, items in data.get("sections", {}).items():
+        for item in items:
+            rec = item.copy()
+            rec["category"] = label.upper()
+            all_records.append(rec)
+    if not all_records:
+        return "No records.", 404
+    ts   = datetime.now().strftime("%Y%m%d_%H%M%S")
+    tmp  = os.path.join(UPLOAD_FOLDER, f"tmp_trendline_{market}.csv")
+    pd.DataFrame(all_records).to_csv(tmp, index=False)
+    return send_file(tmp, as_attachment=True,
+                     download_name=f"Trendline_{market}_{ts}.csv")

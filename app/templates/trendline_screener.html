@@ -24,6 +24,16 @@
         <a href="{{ url_for('trendline_screener.trendline_scan_process', market='INDIA') }}" class="px-4 py-2 rounded-xl text-xs font-black uppercase transition border {% if market == 'INDIA' %}bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-200 dark:shadow-indigo-950/40{% else %}bg-white dark:bg-slate-900 text-gray-600 dark:text-slate-400 border-gray-100 dark:border-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800/60{% endif %}">🇮🇳 India Nifty 500</a>
     </div>
 
+    <!-- Stats + banners -->
+    <p class="text-[10px] font-bold text-gray-400 dark:text-slate-500 uppercase flex flex-wrap gap-x-2 gap-y-1 mb-4">
+        {% if last_processed_time %}<span>Last Run: <span class="text-blue-500">{{ last_processed_time }}</span></span>{% endif %}
+        {% if price_data_asof %}<span class="text-gray-300 dark:text-slate-700">|</span><span>Data: <span class="text-emerald-500">{{ price_data_asof }}</span></span>{% endif %}
+        {% if cache_hits is not none and (cache_hits or yf_fetches) %}<span class="text-gray-300 dark:text-slate-700">|</span><span>&#128190; <span class="text-emerald-500">{{ cache_hits }} hits</span> <span class="{{ 'text-amber-500' if yf_fetches else 'text-gray-400' }}">&#183; {{ yf_fetches }} fetched</span></span>{% endif %}
+        {% if scanned_count %}<span class="text-gray-300 dark:text-slate-700">|</span><span>Scanned {{ scanned_count }} to <span class="font-black text-emerald-500">{{ passed_count }} hits</span></span>{% endif %}
+    </p>
+    {% if scan_error %}<div class="mb-4 px-4 py-3 rounded-xl bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-900 text-[10px] font-bold text-red-600 uppercase">Warning {{ scan_error }}</div>{% endif %}
+    {% if restored %}<div class="mb-4 px-4 py-3 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-900 text-[10px] font-bold text-emerald-600 uppercase">Snapshot restored.</div>{% endif %}
+
     <div class="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm dark:shadow-none mb-8">
         <form method="POST" enctype="multipart/form-data" class="flex flex-col md:flex-row items-end gap-6">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -31,9 +41,9 @@
                 <label class="block text-[10px] font-bold uppercase text-gray-400 dark:text-slate-500 mb-2 tracking-widest">Custom Ticker CSV File (Optional)</label>
                 <input type="file" name="file" accept=".csv" class="w-full text-gray-500 dark:text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-[10px] file:font-bold file:bg-blue-50 dark:file:bg-blue-500/10 file:text-blue-700 dark:file:text-blue-300">
             </div>
-            <button type="submit" onclick="document.getElementById('spinner').classList.remove('hidden')" class="bg-indigo-600 text-white px-8 py-3 rounded-xl font-black text-xs uppercase hover:bg-indigo-700 transition flex items-center gap-2 shadow-lg shadow-indigo-200 dark:shadow-indigo-950/40">
-                <span>🚀 Run Verification Scan</span>
-                <span id="spinner" class="hidden animate-spin">⏳</span>
+            <button id="scanBtn" type="submit" class="bg-indigo-600 text-white px-8 py-3 rounded-xl font-black text-xs uppercase hover:bg-indigo-700 transition flex items-center gap-2 shadow-lg shadow-indigo-200 dark:shadow-indigo-950/40 relative overflow-hidden">
+                <span id="scanFill" class="absolute inset-0 w-0 bg-black/20 transition-all duration-300"></span>
+                <span id="scanLabel" class="relative z-10">🚀 Run Verification Scan</span>
             </button>
         </form>
     </div>
@@ -118,5 +128,56 @@
     {{ render_breakout_table('tableTL', tl_stocks, 'Section 2: High Confidence Trendline Reversals', 'bg-emerald-500') }}
     {{ render_breakout_table('table52w', high_52w_stocks, 'Section 3: Standard Momentum Continuations (52W Breakouts)', 'bg-blue-500') }}
 
+
+    <!-- Scan History -->
+    <div class="bg-white dark:bg-slate-900 rounded-xl border border-gray-100 dark:border-slate-800 shadow-sm mt-8">
+        <p class="px-4 py-2.5 text-[9px] font-black text-gray-400 dark:text-slate-500 uppercase tracking-widest border-b border-gray-50 dark:border-slate-800">🕒 Last 5 {{ market }} Scans</p>
+        <div class="divide-y divide-gray-50 dark:divide-slate-800">
+            {% for h in history %}
+            <div class="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2.5 text-[10px]">
+                <span class="font-black text-blue-500 dark:text-blue-400 uppercase whitespace-nowrap">{{ h.time }}</span>
+                <span class="font-black text-gray-800 dark:text-slate-200 whitespace-nowrap">{{ h.count }} hits of {{ h.scanned_count }}</span>
+                {% if h.price_data_asof %}<span class="text-[9px] text-gray-400 dark:text-slate-500">Data: {{ h.price_data_asof }}</span>{% endif %}
+                {% if h.snapshot_file %}
+                <form method="POST" action="{{ url_for('trendline_screener.trendline_restore', snapshot_file=h.snapshot_file) }}" class="ml-auto shrink-0">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="hidden" name="market" value="{{ market }}">
+                    <button type="submit" onclick="return confirm('Restore?');"
+                            class="text-[9px] font-black uppercase text-indigo-500 hover:text-white hover:bg-indigo-600 px-2.5 py-1 rounded-full border border-indigo-200 dark:border-indigo-500/30 transition">↺ Restore</button>
+                </form>
+                {% endif %}
+            </div>
+            {% else %}
+            <p class="px-4 py-3 text-[10px] text-gray-400 dark:text-slate-500 italic">No scans yet.</p>
+            {% endfor %}
+        </div>
+    </div>
 </div>
+
+<script>
+const PROG_URL  = "{{ url_for('trendline_screener.trendline_progress') }}";
+const scanBtn   = document.getElementById('scanBtn');
+const scanFill  = document.getElementById('scanFill');
+const scanLabel = document.getElementById('scanLabel');
+function updateProg(pct, label) { scanFill.style.width = pct + '%'; scanLabel.textContent = label; }
+function pollProgress() {
+    fetch(PROG_URL).then(r => r.json()).then(d => {
+        const pct = d.total > 0 ? Math.round(d.processed / d.total * 100) : 0;
+        if      (d.stage === 'loading')   updateProg(5,  'Loading symbols...');
+        else if (d.stage === 'fetching')  updateProg(Math.max(pct,10), 'Fetching prices... '+pct+'%');
+        else if (d.stage === 'screening') updateProg(Math.max(pct,80), 'Scanning... '+pct+'%');
+        else if (d.stage === 'error')     { updateProg(0,'Failed'); setTimeout(()=>location.reload(),1200); return; }
+        else if (!d.active)               { updateProg(100,'Done'); setTimeout(()=>location.reload(),500); return; }
+        setTimeout(pollProgress, 800);
+    }).catch(()=>setTimeout(pollProgress,1500));
+}
+document.querySelector('form[method="POST"]').addEventListener('submit', function(e) {
+    e.preventDefault();
+    setTimeout(()=>{ scanBtn.disabled=true; }, 0);
+    updateProg(2,'Starting...');
+    fetch(this.action, {method:'POST', body:new FormData(this)})
+        .then(()=>pollProgress()).catch(()=>pollProgress());
+});
+{% if is_scanning %}scanBtn.disabled=true; pollProgress();{% endif %}
+</script>
 {% endblock %}
