@@ -26,17 +26,22 @@
 
     <!-- Stats + banners -->
     <p class="text-[10px] font-bold text-gray-400 dark:text-slate-500 uppercase flex flex-wrap gap-x-2 gap-y-1 mb-4">
-        {% if last_processed_time %}<span>Last Run: <span class="text-blue-500">{{ last_processed_time }}</span></span>{% endif %}
-        {% if price_data_asof %}<span class="text-gray-300 dark:text-slate-700">|</span><span>Data: <span class="text-emerald-500">{{ price_data_asof }}</span></span>{% endif %}
-        {% if cache_hits is not none and (cache_hits or yf_fetches) %}<span class="text-gray-300 dark:text-slate-700">|</span><span>&#128190; <span class="text-emerald-500">{{ cache_hits }} hits</span> <span class="{{ 'text-amber-500' if yf_fetches else 'text-gray-400' }}">&#183; {{ yf_fetches }} fetched</span></span>{% endif %}
-        {% if scanned_count %}<span class="text-gray-300 dark:text-slate-700">|</span><span>Scanned {{ scanned_count }} to <span class="font-black text-emerald-500">{{ passed_count }} hits</span></span>{% endif %}
+        <span>Last Run: <span class="text-blue-500">{{ last_processed_time or 'Never' }}</span></span>
+        {% if source_name %}<span class="text-gray-300 dark:text-slate-700">|</span><span>{{ source_name }}</span>{% endif %}
+        {% if price_data_asof %}<span class="text-gray-300 dark:text-slate-700">|</span><span>Data As Of: <span class="text-emerald-500">{{ price_data_asof }}</span></span>{% endif %}
+        <span class="text-gray-300 dark:text-slate-700">|</span>
+        <span>Cache: <span class="text-emerald-500">{{ cache_hits|default(0) }} hits</span>
+        <span class="{{ 'text-amber-500' if yf_fetches else 'text-gray-400' }}"> · {{ yf_fetches|default(0) }} fetched</span></span>
+        {% if scanned_count %}<span class="text-gray-300 dark:text-slate-700">|</span>
+        <span>Scanned {{ scanned_count }} &rarr; <span class="font-black text-emerald-500">{{ passed_count }} hits</span></span>{% endif %}
     </p>
-    {% if scan_error %}<div class="mb-4 px-4 py-3 rounded-xl bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-900 text-[10px] font-bold text-red-600 uppercase">Warning {{ scan_error }}</div>{% endif %}
-    {% if restored %}<div class="mb-4 px-4 py-3 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-900 text-[10px] font-bold text-emerald-600 uppercase">Snapshot restored.</div>{% endif %}
+    {% if scan_error %}<div class="mb-4 px-4 py-3 rounded-xl bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-900 text-[10px] font-bold text-red-600 uppercase">&#9888;&#65039; {{ scan_error }}</div>{% endif %}
+    {% if restored %}<div class="mb-4 px-4 py-3 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-900 text-[10px] font-bold text-emerald-600 uppercase">&#10003; Snapshot restored.</div>{% endif %}
 
     <div class="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm dark:shadow-none mb-8">
         <form method="POST" enctype="multipart/form-data" class="flex flex-col md:flex-row items-end gap-6">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="market" value="{{ market }}">
             <div class="flex-1 w-full text-xs">
                 <label class="block text-[10px] font-bold uppercase text-gray-400 dark:text-slate-500 mb-2 tracking-widest">Custom Ticker CSV File (Optional)</label>
                 <input type="file" name="file" accept=".csv" class="w-full text-gray-500 dark:text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-[10px] file:font-bold file:bg-blue-50 dark:file:bg-blue-500/10 file:text-blue-700 dark:file:text-blue-300">

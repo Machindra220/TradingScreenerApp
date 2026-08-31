@@ -66,6 +66,40 @@ def _get():
     with _lock: return dict(_PROG)
 
 
+# ── DataFrame normaliser (handles MultiIndex from us_cache bulk fetch) ──────────
+
+def _normalise_df(df: pd.DataFrame, symbol: str) -> pd.DataFrame | None:
+    """
+    Flatten MultiIndex columns that us_cache bulk-fetch may return.
+    Memory note: direct df['Close'] on a MultiIndex crashes silently.
+    """
+    if df is None or df.empty:
+        return None
+    try:
+        if isinstance(df.columns, pd.MultiIndex):
+            # Try (Price, Ticker) layout
+            if symbol in df.columns.get_level_values(1):
+                df = df.xs(symbol, axis=1, level=1)
+            elif symbol in df.columns.get_level_values(0):
+                df = df.xs(symbol, axis=1, level=0)
+            else:
+                # Flatten by taking first level
+                df = df.droplevel(1, axis=1)
+        # Ensure expected columns exist
+        if 'Close' not in df.columns:
+            return None
+        # Fill missing OHLV from Close if needed
+        for col in ['Open', 'High', 'Low']:
+            if col not in df.columns:
+                df[col] = df['Close']
+        if 'Volume' not in df.columns:
+            df['Volume'] = 0
+        return df.copy()
+    except Exception as e:
+        print(f"[trendline] _normalise_df error for {symbol}: {e}")
+        return None
+
+
 # ── Indicator helpers ──────────────────────────────────────────────────────────
 
 def calculate_rsi(prices, period=14):
@@ -106,7 +140,11 @@ def detect_trendline_breakout(df):
     peak_x = x_ticks[recent_peaks]
     peak_y = highs[recent_peaks]
     slope, intercept = np.polyfit(peak_x, peak_y, 1)
-    if slope >= 0:
+    # Allow flat (≈0) and slightly declining resistance lines.
+    # Only reject strongly RISING slopes — those are support lines, not resistance.
+    # Threshold: slope > 0.05% of mean high per bar = clearly ascending, not resistance.
+    slope_threshold = highs.mean() * 0.0005
+    if slope > slope_threshold:
         return False, 0.0, 0.0, 1.0, 50.0, False
 
     today_idx     = len(df) - 1
@@ -135,22 +173,69 @@ def detect_trendline_breakout(df):
 
 
 def check_52w_breakout(df):
-    if len(df) < 252:
+    closes = df['Close'].values
+    highs  = df['High'].values
+    curr   = closes[-1]
+    # Use up to 252 bars; if less data available use what we have (min 60)
+    lookback = min(252, len(highs) - 1)
+    if lookback < 60:
         return False, 0.0
-    closes   = df['Close'].values
-    highs    = df['High'].values
-    curr     = closes[-1]
-    hi52     = highs[-252:-1].max()
+    hi52 = highs[-lookback:-1].max()
+    # Within 1.5% of the prior high = near or at a new annual high
     return curr >= hi52 * 0.985, round(hi52, 2)
 
 
 # ── Per-symbol analysis ────────────────────────────────────────────────────────
 
-def _analyse(yf_sym: str, df: pd.DataFrame, suffix: str) -> dict | None:
+def highs_mean_proxy(df) -> float:
+    """Quick mean of highs for slope threshold calculation."""
+    try:
+        return float(df['High'].mean())
+    except Exception:
+        return float(df['Close'].mean())
+
+
+def check_horizontal_breakout(df):
+    """
+    Detect breakout above a horizontal resistance zone.
+    Resistance = highest close in the 20–60 bar window before today.
+    If today's close > that resistance AND volume is elevated, it's a breakout.
+    This catches stocks that test the same price level multiple times
+    (which don't show a descending trendline but are equally valid breakouts).
+    """
+    if len(df) < 30:
+        return False, 0.0, 1.0
+
+    closes  = df['Close'].values
+    volumes = df['Volume'].values
+
+    # Resistance = max close in the 20-60 bar lookback window (before today)
+    window_start = max(0, len(closes) - 61)
+    window_end   = len(closes) - 1   # exclude today
+    if window_end - window_start < 15:
+        return False, 0.0, 1.0
+
+    resistance = float(closes[window_start:window_end].max())
+    curr       = float(closes[-1])
+    prev       = float(closes[-2])
+
+    # Breakout: today's close exceeded the prior 60-bar high AND moved up today.
+    # We removed the "prev must be near resistance" gate — a stock can be
+    # well below resistance for weeks then gap above it in one session.
+    if not (curr > resistance and curr > prev):
+        return False, resistance, 1.0
+
+    avg_vol   = float(volumes[-21:-1].mean()) if len(volumes) >= 21 else float(volumes.mean())
+    avg_vol   = max(avg_vol, 1.0)
+    vol_ratio = round(float(volumes[-1]) / avg_vol, 2)
+    return True, round(resistance, 2), vol_ratio
+
+
+def _analyse(yf_sym: str, df: pd.DataFrame, suffix: str, market: str = "US") -> dict | None:
     """Run both checks on a single normalised DataFrame."""
-    if df is None or df.empty or len(df) < 100:
-        return None
-    if not {'Open','High','Low','Close','Volume'}.issubset(df.columns):
+    # Normalise MultiIndex columns (us_cache bulk fetch can return MultiIndex)
+    df = _normalise_df(df, yf_sym)
+    if df is None or len(df) < 100:
         return None
 
     # Normalise tz
@@ -159,23 +244,57 @@ def _analyse(yf_sym: str, df: pd.DataFrame, suffix: str) -> dict | None:
         df.index = df.index.tz_localize(None)
 
     curr_price = float(df['Close'].iloc[-1])
+
+    # Descending trendline breakout — useful for INDIA; for US most stocks are
+    # in uptrends so peaks have positive slope and this check always rejects them.
+    # For US, rely on horizontal breakout and 52W high instead.
     has_tl, tl_val, tl_slope, vol_ratio, rsi, high_conf = detect_trendline_breakout(df)
+    if market == "US" and has_tl:
+        # Only keep if it's genuinely a downtrend breakout for US
+        if tl_slope > -highs_mean_proxy(df) * 0.0002:
+            has_tl = False  # too flat to count as descending-TL for US
+
     has_52w, past_high = check_52w_breakout(df)
 
-    if not has_tl and not has_52w:
+    # Horizontal resistance breakout as supplementary / primary check for US
+    has_horiz, horiz_level, horiz_vol_ratio = check_horizontal_breakout(df)
+
+    # Near 52W high with positive momentum (within 3% of annual high, RSI > 50)
+    # Catches stocks that are strong leaders but haven't printed a NEW high today
+    closes_arr = df['Close'].values
+    highs_arr  = df['High'].values
+    hi52_all   = float(highs_arr[-252:-1].max()) if len(highs_arr) >= 252 else float(highs_arr[:-1].max())
+    curr_c     = float(closes_arr[-1])
+    near_52wh  = (curr_c >= hi52_all * 0.97 and curr_c > float(closes_arr[-2]))
+
+    # Accept if any breakout type triggers
+    if not has_tl and not has_52w and not has_horiz and not near_52wh:
         return None
 
+    # Use horizontal vol_ratio if descending trendline check didn't fire
+    if not has_tl and has_horiz:
+        vol_ratio = horiz_vol_ratio
+        tl_val    = horiz_level
+    if not rsi:  # rsi defaults to 50 when tl not triggered
+        closes = df['Close'].values
+        rsi = calculate_rsi(closes, period=14)
+
+    # Clean symbol display (strip exchange suffix)
+    display_sym = yf_sym
+    if suffix and display_sym.endswith(suffix):
+        display_sym = display_sym[:-len(suffix)]
+
     return {
-        "symbol":             yf_sym.replace(suffix, ""),
-        "price":              round(curr_price, 2),
-        "has_trendline_break": has_tl,
-        "trendline_value":    tl_val,
-        "trendline_slope":    tl_slope,
-        "volume_ratio":       vol_ratio,
-        "rsi":                rsi,
-        "high_confidence":    high_conf,
-        "has_52w_break":      has_52w,
-        "past_52w_high":      past_high,
+        "symbol":              display_sym,
+        "price":               round(curr_price, 2),
+        "has_trendline_break": has_tl or has_horiz,
+        "trendline_value":     tl_val,
+        "trendline_slope":     tl_slope,
+        "volume_ratio":        vol_ratio,
+        "rsi":                 rsi,
+        "high_confidence":     high_conf,
+        "has_52w_break":       has_52w or near_52wh,
+        "past_52w_high":       past_high if (has_52w or near_52wh) else (horiz_level if has_horiz else 0.0),
     }
 
 
@@ -193,8 +312,12 @@ def _load_symbols(market: str) -> list[str]:
         if not col: return []
         out = []
         for s in df[col].dropna().unique():
-            raw = str(s).strip().upper().replace('.','-')
-            if raw and not raw.startswith('$') and raw not in ('SYMBOL','TICKER'):
+            raw = str(s).strip().upper()
+            # Strip $ prefix (some CSVs store symbols as $AAPL)
+            raw = raw.lstrip('$')
+            # yfinance uses - not . for sub-classes (BRK.B -> BRK-B)
+            raw = raw.replace('.', '-')
+            if raw and raw not in ('SYMBOL', 'TICKER', 'N/A', ''):
                 out.append(f"{raw}{cfg['suffix']}")
         return out
     except Exception as e:
@@ -212,13 +335,25 @@ def _format_section(rows: list) -> list:
 
 
 def run_scan(market: str, source_name: str):
+    try:
+        _run_scan_inner(market, source_name)
+    except Exception as e:
+        import traceback
+        print(f"[Trendline/{market}] FATAL THREAD ERROR: {e}")
+        traceback.print_exc()
+        _set(active=False, stage="error", error=str(e)[:120])
+
+
+def _run_scan_inner(market: str, source_name: str):
     cfg   = MARKET_CFG[market]
     cache = us_cache if market == "US" else ind_cache
     suffix = cfg["suffix"]
 
     _set(active=True, market=market, processed=0, total=0, stage="loading", error=None)
+    print(f"[Trendline/{market}] Starting scan — market={market} suffix='{suffix}'")
 
     yf_symbols = _load_symbols(market)
+    print(f"[Trendline/{market}] Symbols loaded: {len(yf_symbols)}, first 3: {yf_symbols[:3]}")
     if not yf_symbols:
         _set(active=False, stage="error", error=f"Could not load symbols for {market}")
         return
@@ -236,16 +371,35 @@ def run_scan(market: str, source_name: str):
     _set(stage="screening", processed=0)
     both, tl_only, hi52_only = [], [], []
 
+    # Debug counters
+    _dbg = {"none_from_cache": 0, "too_short": 0, "no_breakout": 0, "passed": 0}
+
     for i, yf_sym in enumerate(yf_symbols):
         _set(processed=i)
-        res = _analyse(yf_sym, price_data.get(yf_sym), suffix)
-        if not res: continue
+        raw_df = price_data.get(yf_sym)
+        if raw_df is None:
+            _dbg["none_from_cache"] += 1
+            continue
+        if len(raw_df) < 100:
+            _dbg["too_short"] += 1
+            continue
+        res = _analyse(yf_sym, raw_df, suffix, market)
+        if not res:
+            _dbg["no_breakout"] += 1
+            continue
+        _dbg["passed"] += 1
         if res["has_trendline_break"] and res["has_52w_break"]:
             both.append(res)
         elif res["has_trendline_break"]:
             tl_only.append(res)
         else:
             hi52_only.append(res)
+
+    print(f"[Trendline/{market}] Screening debug: "
+          f"none_from_cache={_dbg['none_from_cache']} "
+          f"too_short={_dbg['too_short']} "
+          f"no_breakout={_dbg['no_breakout']} "
+          f"passed={_dbg['passed']}")
 
     sections = {
         "both":         _format_section(both),
