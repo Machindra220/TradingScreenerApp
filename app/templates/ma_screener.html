@@ -1,0 +1,369 @@
+{% extends "base_authenticated.html" %}
+{% block content %}
+<style>
+.tabular-nums{font-variant-numeric:tabular-nums}
+#scanBtn{position:relative;overflow:hidden}
+#scanFill{position:absolute;inset:0;width:0%;background:rgba(0,0,0,.2);transition:width .3s}
+#scanLabel{position:relative;z-index:1}
+.rule-row{transition:opacity .2s}
+.chip[data-active="true"]{background:#4f46e5!important;color:#fff!important;border-color:#4f46e5!important}
+</style>
+
+<div class="max-w-7xl mx-auto px-4 py-8 space-y-6">
+
+<!-- Header -->
+<div class="flex flex-wrap justify-between items-start gap-4">
+  <div>
+    <h2 class="text-2xl font-black text-indigo-900 dark:text-indigo-300 uppercase tracking-tight">📈 Moving Average Screener</h2>
+    <p class="text-[10px] font-bold text-gray-400 dark:text-slate-500 mt-1 uppercase flex flex-wrap gap-x-2">
+      <span>Last Run: <span class="text-blue-500">{{ last_time or 'Never' }}</span></span>
+      {% if scan_name %}<span class="text-gray-300 dark:text-slate-700">|</span><span>{{ scan_name }}</span>{% endif %}
+      {% if price_data_asof %}<span class="text-gray-300 dark:text-slate-700">|</span><span>Data: <span class="text-emerald-500">{{ price_data_asof }}</span></span>{% endif %}
+      <span class="text-gray-300 dark:text-slate-700">|</span>
+      <span>💾 <span class="text-emerald-500">{{ cache_hits|default(0) }} hits</span> · <span class="{{ 'text-amber-500' if yf_fetches else 'text-gray-400' }}">{{ yf_fetches|default(0) }} fetched</span></span>
+      {% if scanned_count %}<span class="text-gray-300 dark:text-slate-700">|</span><span>{{ scanned_count }} scanned → <span class="font-black text-emerald-500">{{ passed_count }} passed</span></span>{% endif %}
+    </p>
+  </div>
+  <div class="flex gap-2 shrink-0">
+    {% if stocks %}<a href="{{ url_for('ma_screener.ma_export', market=market) }}" class="px-4 py-2 bg-gray-900 dark:bg-slate-700 text-white rounded-xl text-[10px] font-black uppercase hover:bg-black transition">📥 Export CSV</a>{% endif %}
+    <a href="{{ url_for('ma_screener.ma_guide') }}" class="px-4 py-2 border border-gray-200 dark:border-slate-700 text-gray-600 dark:text-slate-300 rounded-xl text-[10px] font-black uppercase hover:bg-gray-50 dark:hover:bg-slate-800 transition">📖 Guide</a>
+  </div>
+</div>
+
+{% if error_flag == 'no_rules' %}<div class="px-4 py-3 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 text-[10px] font-bold text-amber-600 uppercase">⚠️ Add at least one rule before scanning.</div>{% endif %}
+{% if restored %}<div class="px-4 py-3 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 text-[10px] font-bold text-emerald-600 uppercase">✅ Snapshot restored.</div>{% endif %}
+
+<!-- Rule Builder -->
+<div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm p-5">
+  <div class="flex flex-wrap gap-3 items-center mb-4">
+    <!-- Market toggle -->
+    <div class="flex rounded-xl overflow-hidden border border-gray-200 dark:border-slate-700 text-[10px] font-black uppercase shrink-0">
+      <a href="{{ url_for('ma_screener.ma_screener_view', market='IND') }}" class="px-4 py-2 transition {% if market=='IND' %}bg-indigo-600 text-white{% else %}text-gray-500 hover:bg-gray-50 dark:hover:bg-slate-800{% endif %}">🇮🇳 NSE</a>
+      <a href="{{ url_for('ma_screener.ma_screener_view', market='US') }}" class="px-4 py-2 transition border-l border-gray-200 dark:border-slate-700 {% if market=='US' %}bg-indigo-600 text-white{% else %}text-gray-500 hover:bg-gray-50 dark:hover:bg-slate-800{% endif %}">🇺🇸 NYSE</a>
+    </div>
+
+    <!-- Predefined scans -->
+    <select id="presetSelect" onchange="loadPreset(this.value)" class="text-[10px] font-bold px-3 py-2 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-400">
+      <option value="">— Load Predefined Scan —</option>
+      {% for key, scan in predefined_scans.items() %}
+      <option value="{{ key }}">{{ scan.name }}</option>
+      {% endfor %}
+    </select>
+
+    <!-- Saved scans -->
+    {% if saved_scans %}
+    <select id="savedSelect" onchange="loadSaved(this.value)" class="text-[10px] font-bold px-3 py-2 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-400">
+      <option value="">— My Saved Scans —</option>
+      {% for key, scan in saved_scans.items() %}<option value="{{ key }}">{{ scan.name }}</option>{% endfor %}
+    </select>
+    {% endif %}
+
+    <button onclick="clearRules()" class="text-[10px] font-black uppercase px-3 py-2 rounded-xl border border-gray-200 dark:border-slate-700 text-gray-500 hover:bg-gray-50 dark:hover:bg-slate-800 transition">✕ Clear</button>
+  </div>
+
+  <!-- Scan name -->
+  <div class="mb-4">
+    <input id="scanNameInput" type="text" value="Custom Scan" placeholder="Scan name…"
+           class="w-full text-[11px] font-bold px-3 py-2 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-400">
+  </div>
+
+  <!-- Rules list -->
+  <div id="rulesList" class="space-y-2 mb-4"></div>
+
+  <div class="flex flex-wrap gap-2 items-center">
+    <button onclick="addRule()" class="text-[10px] font-black uppercase px-4 py-2 rounded-xl border border-dashed border-indigo-300 dark:border-indigo-700 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition">+ Add Rule</button>
+
+    <form id="scanForm" method="POST" action="{{ url_for('ma_screener.ma_screener_view') }}" class="flex gap-2 items-center flex-1 justify-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="market" value="{{ market }}">
+      <input type="hidden" id="rulesJsonInput" name="rules_json" value="[]">
+      <input type="hidden" id="scanNameHidden" name="scan_name" value="Custom Scan">
+      <button type="button" onclick="saveCurrentScan()" class="text-[10px] font-black uppercase px-4 py-2 rounded-xl border border-emerald-200 dark:border-emerald-800 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition">💾 Save Scan</button>
+      <button id="scanBtn" type="submit"
+              class="px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-black text-xs uppercase hover:bg-indigo-700 transition shadow-lg shadow-indigo-200 dark:shadow-indigo-950/40">
+        <span id="scanFill"></span>
+        <span id="scanLabel">🚀 Run Scan ({{ market }})</span>
+      </button>
+    </form>
+  </div>
+</div>
+
+<!-- Results -->
+{% if stocks %}
+<div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm overflow-x-auto">
+  <div class="px-5 py-3 border-b border-gray-50 dark:border-slate-800 flex items-center justify-between">
+    <span class="text-[10px] font-black uppercase text-gray-600 dark:text-slate-300">{{ passed_count }} stocks matched · {{ scan_name }}</span>
+    <input id="tableSearch" type="text" placeholder="🔎 Filter…" oninput="filterTable(this.value)"
+           class="text-[10px] px-3 py-1.5 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-400 w-36">
+  </div>
+  <table class="min-w-full text-left text-xs" id="resultsTable">
+    <thead class="bg-gray-50 dark:bg-slate-800/60 border-b border-gray-100 dark:border-slate-800 sticky top-0 z-10">
+      <tr>
+        <th class="px-4 py-3 font-bold uppercase text-gray-400 dark:text-slate-400 cursor-pointer hover:text-indigo-500 select-none" onclick="sortTable('sym','text')">Symbol <span class="sort-arr"></span></th>
+        <th class="px-4 py-3 font-bold uppercase text-gray-400 dark:text-slate-400 whitespace-nowrap">Sector</th>
+        <th class="px-4 py-3 font-bold uppercase text-gray-400 dark:text-slate-400 text-right cursor-pointer hover:text-indigo-500 select-none" onclick="sortTable('price','num')">Price <span class="sort-arr"></span></th>
+        <th class="px-4 py-3 font-bold uppercase text-gray-400 dark:text-slate-400">MA Values</th>
+        <th class="px-4 py-3 font-bold uppercase text-emerald-500">Why Passed</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-50 dark:divide-slate-800">
+      {% for s in stocks %}
+      <tr data-sym="{{ s.symbol|lower }}" data-price="{{ s.price }}"
+          class="hover:bg-indigo-50/30 dark:hover:bg-indigo-500/10 transition-colors group">
+        <td class="px-4 py-3">
+          <div class="flex items-center gap-1.5">
+            <span class="font-black text-indigo-700 dark:text-indigo-300 text-sm">{{ s.symbol }}</span>
+            <button onclick="navigator.clipboard.writeText('{{ s.symbol }}');this.classList.add('text-emerald-500');setTimeout(()=>this.classList.remove('text-emerald-500'),600)"
+                    class="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-indigo-600 rounded transition focus:opacity-100" title="Copy">
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0A2.25 2.25 0 0113.5 4.5h-3a2.25 2.25 0 01-2.166-1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.75c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 011.927-.184"></path></svg>
+            </button>
+          </div>
+        </td>
+        <td class="px-4 py-3 text-[9px] text-gray-500 dark:text-slate-400 font-bold uppercase whitespace-nowrap max-w-[120px]">
+          <span class="truncate block" title="{{ s.sector }}">{{ s.sector }}</span>
+        </td>
+        <td class="px-4 py-3 text-right font-black tabular-nums text-gray-900 dark:text-slate-100">{{ currency }}{{ "{:,.2f}".format(s.price) }}</td>
+        <td class="px-4 py-3">
+          <div class="flex flex-wrap gap-1">
+            {% for k, v in s.ma_values.items() %}
+            <span class="text-[8px] font-black px-1.5 py-0.5 rounded bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-slate-400 tabular-nums whitespace-nowrap">{{ k.replace('_',' ') }}: {{ v }}</span>
+            {% endfor %}
+          </div>
+        </td>
+        <td class="px-4 py-3">
+          <div class="space-y-0.5">
+            {% for line in s.explain %}
+            <div class="text-[9px] font-bold {% if '✅' in line %}text-emerald-600 dark:text-emerald-400{% else %}text-red-500 dark:text-red-400{% endif %}">{{ line }}</div>
+            {% endfor %}
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% elif not is_scanning and last_time %}
+<div class="py-10 text-center text-gray-400 dark:text-slate-500 italic text-sm">No stocks matched the rules in the last scan.</div>
+{% endif %}
+
+<!-- Scan history -->
+<div class="bg-white dark:bg-slate-900 rounded-xl border border-gray-100 dark:border-slate-800 shadow-sm">
+  <p class="px-4 py-2.5 text-[9px] font-black text-gray-400 dark:text-slate-500 uppercase tracking-widest border-b border-gray-50 dark:border-slate-800">🕒 Last 5 Scans</p>
+  <div class="divide-y divide-gray-50 dark:divide-slate-800">
+    {% for h in history %}
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2.5 text-[10px]">
+      <span class="font-black text-blue-500 dark:text-blue-400 uppercase whitespace-nowrap">{{ h.time }}</span>
+      <span class="text-gray-500 dark:text-slate-400">{{ h.market }}</span>
+      <span class="font-bold text-gray-700 dark:text-slate-300 truncate max-w-[180px]">{{ h.scan_name }}</span>
+      <span class="font-black text-emerald-600 dark:text-emerald-400 whitespace-nowrap">{{ h.count }} passed</span>
+      <span class="text-gray-400 dark:text-slate-500 whitespace-nowrap">of {{ h.scanned_count }}</span>
+      <span class="text-[9px] text-gray-400 whitespace-nowrap">{{ h.rules_count }} rules</span>
+      {% if h.snapshot_file %}
+      <form method="POST" action="{{ url_for('ma_screener.ma_restore', snapshot_file=h.snapshot_file) }}" class="ml-auto shrink-0">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="market" value="{{ h.market }}">
+        <button type="submit" onclick="return confirm('Restore?');" class="text-[9px] font-black uppercase text-indigo-500 hover:text-white hover:bg-indigo-600 px-2.5 py-1 rounded-full border border-indigo-200 dark:border-indigo-500/30 transition">↺ Restore</button>
+      </form>
+      {% endif %}
+    </div>
+    {% else %}<p class="px-4 py-3 text-[10px] text-gray-400 italic">No scans yet.</p>
+    {% endfor %}
+  </div>
+</div>
+</div>
+
+<script>
+const PROG_URL = "{{ url_for('ma_screener.ma_progress') }}";
+const scanBtn  = document.getElementById('scanBtn');
+const scanFill = document.getElementById('scanFill');
+const scanLabel= document.getElementById('scanLabel');
+const MARKET   = "{{ market }}";
+const CSRF     = "{{ csrf_token }}";
+const SAVE_URL = "{{ url_for('ma_screener.ma_save_scan') }}";
+
+function updateProg(pct, label){ scanFill.style.width=pct+'%'; scanLabel.textContent=label; }
+function setScanning(on){ scanBtn.disabled=on; }
+
+function pollProgress(){
+  fetch(PROG_URL).then(r=>r.json()).then(d=>{
+    const pct=d.total>0?Math.round(d.processed/d.total*100):0;
+    if     (d.stage==='loading')    updateProg(3,'Loading symbols…');
+    else if(d.stage==='fetching')   updateProg(Math.max(pct,8),'Fetching prices… '+pct+'%');
+    else if(d.stage==='screening')  updateProg(Math.max(pct,85),'Screening… '+pct+'%');
+    else if(d.stage==='error')      { updateProg(0,'⚠️ Failed'); setTimeout(()=>location.reload(),1200); return; }
+    else if(!d.active)              { updateProg(100,'✅ Done'); setTimeout(()=>location.reload(),500); return; }
+    setTimeout(pollProgress,700);
+  }).catch(()=>setTimeout(pollProgress,1500));
+}
+
+document.getElementById('scanForm').addEventListener('submit',function(e){
+  e.preventDefault();
+  const rules=collectRules();
+  if(!rules.length){ alert('Add at least one rule.'); return; }
+  document.getElementById('rulesJsonInput').value=JSON.stringify(rules);
+  document.getElementById('scanNameHidden').value=document.getElementById('scanNameInput').value.trim()||'Custom Scan';
+  setTimeout(()=>setScanning(true),0);
+  updateProg(2,'Starting…');
+  fetch(this.action,{method:'POST',body:new FormData(this)})
+    .then(()=>pollProgress()).catch(()=>pollProgress());
+});
+
+{% if is_scanning %}setScanning(true); pollProgress();{% endif %}
+
+// ── Rule builder ─────────────────────────────────────────────────────────────
+let ruleId = 0;
+const OPERATORS = ['CROSS_ABOVE','CROSS_BELOW','ABOVE','BELOW','RISING','FALLING'];
+const OP_LABELS = {'CROSS_ABOVE':'Crosses Above','CROSS_BELOW':'Crosses Below','ABOVE':'Is Above','BELOW':'Is Below','RISING':'Is Rising','FALLING':'Is Falling'};
+const MA_TYPES  = ['EMA','SMA','PRICE'];
+
+function maOptions(sel='EMA',per=20){
+  return MA_TYPES.map(t=>`<option value="${t}" ${t===sel?'selected':''}>${t}</option>`).join('');
+}
+
+function periodInput(per=20){
+  return `<input type="number" min="1" max="500" value="${per}" class="w-16 text-[10px] font-bold px-2 py-1.5 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-400 tabular-nums" onchange="renderPeriodVisibility(this.closest('.rule-row').dataset.id)">`;
+}
+
+function addRule(cfg={}){
+  const id = ++ruleId;
+  const op  = cfg.operator || 'CROSS_ABOVE';
+  const ll  = cfg.left  || {type:'EMA', period:10};
+  const rr  = cfg.right || {type:'EMA', period:20};
+  const lb  = cfg.lookback  || 5;
+  const sd  = cfg.slope_days|| 10;
+  const en  = cfg.enabled !== false;
+  const lg  = cfg.logic || 'AND';
+
+  const div = document.createElement('div');
+  div.className = 'rule-row flex flex-wrap items-center gap-2 p-3 rounded-xl border border-gray-100 dark:border-slate-800 bg-gray-50/50 dark:bg-slate-800/30';
+  div.dataset.id = id;
+  div.innerHTML = `
+    <input type="checkbox" class="rule-enabled rounded" ${en?'checked':''} title="Enable/disable">
+    <select class="rule-left-type text-[10px] font-bold px-2 py-1.5 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+            onchange="renderPeriodVisibility(${id})">${maOptions(ll.type)}</select>
+    <input type="number" min="1" max="500" value="${ll.period}" class="rule-left-period w-16 text-[10px] font-bold px-2 py-1.5 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 focus:outline-none tabular-nums">
+    <select class="rule-operator text-[10px] font-bold px-2 py-1.5 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+            onchange="renderPeriodVisibility(${id})">
+      ${OPERATORS.map(o=>`<option value="${o}" ${o===op?'selected':''}>${OP_LABELS[o]}</option>`).join('')}
+    </select>
+    <select class="rule-right-type text-[10px] font-bold px-2 py-1.5 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 focus:outline-none"
+            onchange="renderPeriodVisibility(${id})">${maOptions(rr.type,rr.period)}</select>
+    <input type="number" min="1" max="500" value="${rr.period}" class="rule-right-period w-16 text-[10px] font-bold px-2 py-1.5 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 focus:outline-none tabular-nums">
+    <span class="rule-lookback-wrap text-[10px] text-gray-400 flex items-center gap-1">within
+      <input type="number" min="1" max="60" value="${lb}" class="rule-lookback w-12 text-[10px] font-bold px-2 py-1.5 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 focus:outline-none tabular-nums"> days
+    </span>
+    <span class="rule-slope-wrap text-[10px] text-gray-400 flex items-center gap-1">over
+      <input type="number" min="1" max="60" value="${sd}" class="rule-slope w-12 text-[10px] font-bold px-2 py-1.5 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 focus:outline-none tabular-nums"> days
+    </span>
+    <select class="rule-logic text-[10px] font-bold px-2 py-1.5 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 focus:outline-none">
+      <option value="AND" ${lg==='AND'?'selected':''}>AND</option>
+      <option value="OR"  ${lg==='OR'?'selected':''}>OR</option>
+    </select>
+    <button onclick="this.closest('.rule-row').remove()" class="ml-auto text-red-400 hover:text-red-600 text-xs font-black px-2 py-1 rounded hover:bg-red-50 dark:hover:bg-red-500/10 transition">✕</button>
+  `;
+  document.getElementById('rulesList').appendChild(div);
+  renderPeriodVisibility(id);
+}
+
+function renderPeriodVisibility(id){
+  const row = document.querySelector(`.rule-row[data-id="${id}"]`);
+  if(!row) return;
+  const op = row.querySelector('.rule-operator').value;
+  const lt = row.querySelector('.rule-left-type').value;
+  const rt = row.querySelector('.rule-right-type').value;
+  const isCross   = op==='CROSS_ABOVE'||op==='CROSS_BELOW';
+  const isSlope   = op==='RISING'||op==='FALLING';
+  row.querySelector('.rule-left-period').style.display  = lt==='PRICE'?'none':'';
+  row.querySelector('.rule-right-period').style.display = isSlope||rt==='PRICE'?'none':'';
+  row.querySelector('.rule-right-type').parentElement.style.display = isSlope?'none':'';
+  row.querySelector('.rule-lookback-wrap').style.display = isCross?'':'none';
+  row.querySelector('.rule-slope-wrap').style.display    = isSlope?'':'none';
+}
+
+function collectRules(){
+  return Array.from(document.querySelectorAll('.rule-row')).map(row=>{
+    const op = row.querySelector('.rule-operator').value;
+    return {
+      left:      {type:row.querySelector('.rule-left-type').value,  period:parseInt(row.querySelector('.rule-left-period').value)||0},
+      operator:  op,
+      right:     {type:row.querySelector('.rule-right-type').value, period:parseInt(row.querySelector('.rule-right-period').value)||0},
+      lookback:  parseInt(row.querySelector('.rule-lookback').value)||5,
+      slope_days:parseInt(row.querySelector('.rule-slope').value)||10,
+      enabled:   row.querySelector('.rule-enabled').checked,
+      logic:     row.querySelector('.rule-logic').value,
+    };
+  });
+}
+
+function clearRules(){
+  document.getElementById('rulesList').innerHTML='';
+  ruleId=0;
+}
+
+// Predefined + saved scan loaders
+const PRESETS = {{ predefined_scans | tojson }};
+const SAVED   = {{ saved_scans | tojson }};
+
+function loadPreset(key){
+  if(!key) return;
+  const scan = PRESETS[key];
+  if(!scan) return;
+  clearRules();
+  scan.rules.forEach(r=>addRule(r));
+  document.getElementById('scanNameInput').value=scan.name;
+  document.getElementById('presetSelect').value='';
+}
+
+function loadSaved(key){
+  if(!key) return;
+  const scan = SAVED[key];
+  if(!scan) return;
+  clearRules();
+  scan.rules.forEach(r=>addRule(r));
+  document.getElementById('scanNameInput').value=scan.name;
+  document.getElementById('savedSelect').value='';
+}
+
+function saveCurrentScan(){
+  const rules=collectRules();
+  if(!rules.length){ alert('Add at least one rule first.'); return; }
+  const name=prompt('Save scan as:',document.getElementById('scanNameInput').value.trim()||'My Scan');
+  if(!name) return;
+  const fd=new FormData();
+  fd.append('csrf_token',CSRF);
+  fd.append('name',name);
+  fd.append('rules_json',JSON.stringify(rules));
+  fd.append('market',MARKET);
+  fetch(SAVE_URL,{method:'POST',body:fd}).then(r=>r.json()).then(d=>{
+    if(d.status==='ok') alert('Saved: '+name);
+    else alert('Error: '+d.message);
+  });
+}
+
+// Table filter + sort
+function filterTable(q){
+  q=q.toLowerCase();
+  document.querySelectorAll('#resultsTable tbody tr').forEach(r=>{
+    r.style.display=(!q||r.dataset.sym.includes(q))?'':'none';
+  });
+}
+
+let _sortKey=null, _sortDir=1;
+function sortTable(key,type){
+  _sortDir=(_sortKey===key)?-_sortDir:1; _sortKey=key;
+  const tbody=document.querySelector('#resultsTable tbody');
+  Array.from(tbody.querySelectorAll('tr')).sort((a,b)=>{
+    let va=a.dataset[key]??'',vb=b.dataset[key]??'';
+    if(type==='num'){va=parseFloat(va)||0;vb=parseFloat(vb)||0;}
+    else{va=va.toLowerCase();vb=vb.toLowerCase();}
+    return(va<vb?-1:va>vb?1:0)*_sortDir;
+  }).forEach(r=>tbody.appendChild(r));
+  document.querySelectorAll('.sort-arr').forEach(a=>a.textContent='');
+}
+
+// Init: add a default rule if nothing loaded
+if(!document.querySelector('.rule-row')){
+  addRule({left:{type:'EMA',period:10},operator:'CROSS_ABOVE',right:{type:'EMA',period:20},lookback:5,enabled:true,logic:'AND'});
+}
+</script>
+{% endblock %}

@@ -77,7 +77,9 @@ def create_app():
     from app.routes.trade_journal     import trade_journal_bp
     from app.routes.cache_admin import cache_admin_bp
     from app.routes.quant_screeners_us import quant_screeners_us_bp
+    from app.routes.ma_screener import ma_screener_bp
 
+    app.register_blueprint(ma_screener_bp)
     app.register_blueprint(quant_screeners_us_bp)
     app.register_blueprint(cache_admin_bp)
     app.register_blueprint(momentum_scan_bp)

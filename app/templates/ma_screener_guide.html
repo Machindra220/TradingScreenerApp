@@ -1,0 +1,146 @@
+{% extends "base_authenticated.html" %}
+{% block content %}
+<div class="max-w-4xl mx-auto px-4 py-8 space-y-8">
+
+<div class="flex justify-between items-center">
+  <h2 class="text-2xl font-black text-indigo-900 dark:text-indigo-300 uppercase tracking-tight">📖 Moving Average Screener — Guide</h2>
+  <a href="{{ url_for('ma_screener.ma_screener_view') }}" class="px-4 py-2 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-indigo-700 transition">Open Screener →</a>
+</div>
+
+<!-- EMA vs SMA -->
+<div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 p-6 shadow-sm">
+  <h3 class="text-sm font-black uppercase text-gray-800 dark:text-slate-200 mb-4">1. EMA vs SMA</h3>
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-gray-600 dark:text-slate-300">
+    <div class="space-y-2 p-4 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-900">
+      <div class="font-black text-indigo-700 dark:text-indigo-300 uppercase">EMA — Exponential Moving Average</div>
+      <ul class="space-y-1 list-disc list-inside">
+        <li>Gives more weight to <strong>recent prices</strong></li>
+        <li>Reacts faster to price changes</li>
+        <li>Better for <strong>momentum and short-term swing</strong> screening</li>
+        <li>Generates more signals — more noise too</li>
+        <li>Preferred for: EMA 10, 20, 50 in trend-following scans</li>
+      </ul>
+    </div>
+    <div class="space-y-2 p-4 rounded-xl bg-slate-50 dark:bg-slate-800 border border-gray-100 dark:border-slate-700">
+      <div class="font-black text-gray-700 dark:text-slate-200 uppercase">SMA — Simple Moving Average</div>
+      <ul class="space-y-1 list-disc list-inside">
+        <li>Weights all prices <strong>equally</strong></li>
+        <li>Smoother, less sensitive to short-term moves</li>
+        <li>Better for <strong>long-term trend</strong> identification</li>
+        <li>SMA 200 is widely watched by institutions</li>
+        <li>Preferred for: SMA 100, 200 as trend filters</li>
+      </ul>
+    </div>
+  </div>
+  <p class="mt-3 text-[10px] text-gray-400 dark:text-slate-500">Neither is universally better. A common approach: use EMA for shorter periods (10, 20, 50) and SMA for longer periods (100, 200).</p>
+</div>
+
+<!-- Crossover vs Alignment -->
+<div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 p-6 shadow-sm">
+  <h3 class="text-sm font-black uppercase text-gray-800 dark:text-slate-200 mb-4">2. Crossover vs Alignment — Different Signals</h3>
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs">
+    <div>
+      <div class="font-black text-emerald-600 dark:text-emerald-400 mb-2">CROSSOVER: EMA 10 Crosses Above EMA 20</div>
+      <div class="font-mono text-[10px] bg-gray-50 dark:bg-slate-800 rounded-xl p-3 space-y-1">
+        <div class="text-gray-500">Previous bar:</div>
+        <div>EMA10 <span class="text-red-500">≤</span> EMA20  ← below or equal</div>
+        <div class="text-gray-500 mt-1">Current bar:</div>
+        <div>EMA10 <span class="text-emerald-500">></span> EMA20  ← just crossed</div>
+      </div>
+      <p class="mt-2 text-gray-500 dark:text-slate-400">A <strong>fresh event</strong>. Identifies the exact moment of momentum shift. Use the "within N days" lookback to catch recent crossovers.</p>
+    </div>
+    <div>
+      <div class="font-black text-blue-600 dark:text-blue-400 mb-2">ALIGNMENT: EMA 10 Is Above EMA 20</div>
+      <div class="font-mono text-[10px] bg-gray-50 dark:bg-slate-800 rounded-xl p-3 space-y-1">
+        <div class="text-gray-500">Current bar:</div>
+        <div>EMA10 <span class="text-emerald-500">></span> EMA20  ← currently true</div>
+        <div class="text-gray-500 mt-2 text-[9px]">(may have crossed days/weeks ago)</div>
+      </div>
+      <p class="mt-2 text-gray-500 dark:text-slate-400">A <strong>current state</strong>. The EMA 10 is above EMA 20 right now — regardless of when it crossed. Use for trend-filter screens.</p>
+    </div>
+  </div>
+</div>
+
+<!-- Common Screens Table -->
+<div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 p-6 shadow-sm">
+  <h3 class="text-sm font-black uppercase text-gray-800 dark:text-slate-200 mb-4">3. Common Screener Examples</h3>
+  <div class="overflow-x-auto">
+    <table class="min-w-full text-xs">
+      <thead class="border-b border-gray-100 dark:border-slate-800 text-[10px] font-black uppercase text-gray-400 dark:text-slate-400">
+        <tr>
+          <th class="pb-2 text-left pr-4">Screen</th>
+          <th class="pb-2 text-left pr-4">Conditions</th>
+          <th class="pb-2 text-left">Intended Use</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-50 dark:divide-slate-800 text-gray-600 dark:text-slate-300">
+        {% for row in [
+          ['Bullish EMA Alignment','EMA10 > EMA20 > EMA50','Stocks in short-term uptrend'],
+          ['Strong Bullish Alignment','EMA10 > EMA20 > EMA50 > EMA100 > EMA200','Full bullish stack — long-only trend filter'],
+          ['Short-Term Crossover','EMA10 crosses above EMA20','Recent momentum shift, swing entry candidates'],
+          ['Medium-Term Crossover','EMA20 crosses above EMA50','Intermediate trend recovery'],
+          ['Triple Crossover','EMA10×EMA20 AND EMA20×EMA50 AND EMA50×EMA100','High-conviction momentum confirmation'],
+          ['Price Above Trend','Price > SMA200','Long-term trend filter — above 200-day average'],
+          ['Bearish Alignment','EMA10 < EMA20 < EMA50','Downtrending stocks — avoid on long-only strategy'],
+          ['Trend Recovery','EMA20 crosses above EMA50','Possible trend reversal from downtrend'],
+        ] %}
+        <tr class="hover:bg-gray-50 dark:hover:bg-slate-800 transition">
+          <td class="py-2 pr-4 font-bold whitespace-nowrap">{{ row[0] }}</td>
+          <td class="py-2 pr-4 font-mono text-[10px] text-gray-500 dark:text-slate-400">{{ row[1] }}</td>
+          <td class="py-2 text-gray-500 dark:text-slate-400">{{ row[2] }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Practical workflow -->
+<div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 p-6 shadow-sm">
+  <h3 class="text-sm font-black uppercase text-gray-800 dark:text-slate-200 mb-4">4. How to Use Effectively</h3>
+  <div class="grid grid-cols-2 md:grid-cols-5 gap-3 text-[10px]">
+    {% for n, title, detail in [
+      ('1','Market Regime','Determine if the broad market is in an uptrend, downtrend, or transition before acting on signals.'),
+      ('2','Choose Type','Use EMA for shorter periods and momentum screens. SMA for longer-term trend filters.'),
+      ('3','Build Rules','Select 2–4 conditions. More rules = fewer but higher-quality matches.'),
+      ('4','Run Scan','Review "Why Passed" for each stock. Each rule is shown as passed ✅ or failed ❌.'),
+      ('5','Validate','Review price action, volume, and relative strength before any trading decision.'),
+    ] %}
+    <div class="p-3 rounded-xl border border-gray-100 dark:border-slate-800 bg-gray-50 dark:bg-slate-800">
+      <div class="text-[8px] font-black uppercase text-indigo-500 mb-1">Step {{ n }}</div>
+      <div class="font-black text-gray-700 dark:text-slate-200 mb-1">{{ title }}</div>
+      <div class="text-gray-500 dark:text-slate-400 leading-relaxed">{{ detail }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- Crossover lookback -->
+<div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 p-6 shadow-sm">
+  <h3 class="text-sm font-black uppercase text-gray-800 dark:text-slate-200 mb-3">5. Crossover Lookback</h3>
+  <div class="text-xs text-gray-600 dark:text-slate-300 space-y-2">
+    <p>The <strong>"within N days"</strong> setting controls how recently the crossover must have occurred.</p>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
+      <div class="p-3 rounded-xl bg-gray-50 dark:bg-slate-800 border border-gray-100 dark:border-slate-700">
+        <div class="font-black text-gray-700 dark:text-slate-200 mb-1">Within 1 day</div>
+        <p class="text-gray-500 dark:text-slate-400">Crossover happened today only. Strictest filter — very few results on any given day.</p>
+      </div>
+      <div class="p-3 rounded-xl bg-gray-50 dark:bg-slate-800 border border-gray-100 dark:border-slate-700">
+        <div class="font-black text-gray-700 dark:text-slate-200 mb-1">Within 5 days</div>
+        <p class="text-gray-500 dark:text-slate-400">Crossover in the last week. Catches fresh momentum shifts — good default for swing screens.</p>
+      </div>
+      <div class="p-3 rounded-xl bg-gray-50 dark:bg-slate-800 border border-gray-100 dark:border-slate-700">
+        <div class="font-black text-gray-700 dark:text-slate-200 mb-1">Within 20 days</div>
+        <p class="text-gray-500 dark:text-slate-400">Crossover in the last month. Broader — more results. Useful for slower-moving MAs like 50/100.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Disclaimer -->
+<div class="px-5 py-4 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-800 text-[10px] text-amber-700 dark:text-amber-300 font-bold">
+  ⚠️ <strong>Educational Disclaimer:</strong> Technical indicators and screening rules identify historical and current price patterns. They do not predict future returns or guarantee profitable trades. Always validate signals with broader market conditions, price action, volume, fundamentals where relevant, and your own risk-management rules. This screener is a candidate-generation tool, not an automatic trading system.
+</div>
+
+</div>
+{% endblock %}
