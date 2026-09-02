@@ -1,0 +1,509 @@
+{% extends "base_authenticated.html" %}
+{% block content %}
+<style>
+.tabular-nums{font-variant-numeric:tabular-nums}
+#scanBtn{position:relative;overflow:hidden}
+#scanFill{position:absolute;inset:0;width:0%;background:rgba(0,0,0,.2);transition:width .3s}
+#scanLabel{position:relative;z-index:1}
+.filter-group{transition:all .2s}
+.ff-row input[type=checkbox]:checked ~ .ff-controls{display:flex!important}
+.chip[data-active="true"]{background:#4f46e5!important;color:#fff!important;border-color:#4f46e5!important}
+details>summary{cursor:pointer;user-select:none}
+details>summary::-webkit-details-marker{display:none}
+</style>
+
+<div class="max-w-7xl mx-auto px-4 py-8 space-y-5">
+
+<!-- Header -->
+<div class="flex flex-wrap justify-between items-start gap-4">
+  <div>
+    <h2 class="text-2xl font-black text-indigo-900 dark:text-indigo-300 uppercase tracking-tight">🔬 Universal Stock Screener</h2>
+    <p class="text-[10px] font-bold text-gray-400 dark:text-slate-500 mt-1 uppercase flex flex-wrap gap-x-2">
+      <span>Last Run: <span class="text-blue-500">{{ last_time or 'Never' }}</span></span>
+      {% if scan_name %}<span class="text-gray-300 dark:text-slate-700">|</span><span class="text-gray-600 dark:text-slate-300">{{ scan_name }}</span>{% endif %}
+      {% if price_data_asof %}<span class="text-gray-300 dark:text-slate-700">|</span><span>Data: <span class="text-emerald-500">{{ price_data_asof }}</span></span>{% endif %}
+      <span class="text-gray-300 dark:text-slate-700">|</span>
+      <span>💾 <span class="text-emerald-500">{{ cache_hits|default(0) }} hits</span> · <span class="{{ 'text-amber-500' if yf_fetches else 'text-gray-400' }}">{{ yf_fetches|default(0) }} fetched</span></span>
+      {% if scanned_count %}<span class="text-gray-300 dark:text-slate-700">|</span><span>{{ scanned_count }} scanned → <span class="font-black text-emerald-500">{{ passed_count }} passed</span></span>{% endif %}
+    </p>
+  </div>
+  <div class="flex gap-2 shrink-0">
+    {% if stocks %}<a href="{{ url_for('universal_screener.universal_export', market=market) }}" class="px-4 py-2 bg-gray-900 dark:bg-slate-700 text-white rounded-xl text-[10px] font-black uppercase hover:bg-black transition">📥 Export</a>{% endif %}
+    <a href="{{ url_for('universal_screener.universal_guide') }}" class="px-4 py-2 border border-gray-200 dark:border-slate-700 text-gray-600 dark:text-slate-300 rounded-xl text-[10px] font-black uppercase hover:bg-gray-50 dark:hover:bg-slate-800 transition">📖 Guide</a>
+  </div>
+</div>
+
+{% if scan_error %}<div class="px-4 py-3 rounded-xl bg-red-50 dark:bg-red-500/10 border border-red-200 text-[10px] font-bold text-red-600 uppercase">⚠️ {{ scan_error }}</div>{% endif %}
+{% if restored %}<div class="px-4 py-3 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 text-[10px] font-bold text-emerald-600 uppercase">✅ Snapshot restored.</div>{% endif %}
+
+<!-- Config Builder -->
+<form id="scanForm" method="POST" action="{{ url_for('universal_screener.universal_view') }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<input type="hidden" name="market" value="{{ market }}">
+<input type="hidden" id="maRulesJson" name="ma_rules_json" value="[]">
+
+<div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm p-5 space-y-5">
+
+  <!-- Top bar: market, name, presets -->
+  <div class="flex flex-wrap gap-3 items-center">
+    <!-- Market toggle -->
+    <div class="flex rounded-xl overflow-hidden border border-gray-200 dark:border-slate-700 text-[10px] font-black uppercase shrink-0">
+      <a href="{{ url_for('universal_screener.universal_view', market='IND') }}" class="px-4 py-2 transition {% if market=='IND' %}bg-indigo-600 text-white{% else %}text-gray-500 hover:bg-gray-50 dark:hover:bg-slate-800{% endif %}">🇮🇳 NSE</a>
+      <a href="{{ url_for('universal_screener.universal_view', market='US') }}" class="px-4 py-2 transition border-l border-gray-200 dark:border-slate-700 {% if market=='US' %}bg-indigo-600 text-white{% else %}text-gray-500 hover:bg-gray-50 dark:hover:bg-slate-800{% endif %}">🇺🇸 NYSE</a>
+    </div>
+
+    <input name="scan_name" id="scanNameInput" type="text" value="{{ scan_name or 'Custom Scan' }}" placeholder="Scan name…"
+           class="text-[11px] font-bold px-3 py-2 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-400 w-44">
+
+    <select id="presetSelect" name="preset_key" onchange="loadPreset(this.value)"
+            class="text-[10px] font-bold px-3 py-2 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-400">
+      <option value="">— Load Preset —</option>
+      {% for key, p in preset_configs.items() %}<option value="{{ key }}">{{ p.name }}</option>{% endfor %}
+    </select>
+
+    {% if saved_configs %}
+    <select onchange="loadSaved(this.value)" class="text-[10px] font-bold px-3 py-2 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-400">
+      <option value="">— Saved Configs —</option>
+      {% for k,cfg in saved_configs.items() %}<option value="{{ k }}">{{ cfg.name }}</option>{% endfor %}
+    </select>
+    {% endif %}
+
+    <button type="button" onclick="resetAll()" class="text-[10px] font-black uppercase px-3 py-2 rounded-xl border border-gray-200 dark:border-slate-700 text-gray-500 hover:bg-gray-50 dark:hover:bg-slate-800 transition">✕ Reset</button>
+  </div>
+
+  <!-- Filter groups by category -->
+  {% set categories = filter_catalogue.values()|map(attribute='category')|unique|list %}
+  {% for cat in categories %}
+  {% set cat_filters = filter_catalogue.items()|selectattr('1.category','eq',cat)|list %}
+  <details open class="border border-gray-100 dark:border-slate-800 rounded-xl overflow-hidden">
+    <summary class="flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-slate-800/60 text-[10px] font-black uppercase text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-800 transition select-none">
+      <span>{{ cat }}</span>
+      <span class="text-gray-400">▾</span>
+    </summary>
+    <div class="divide-y divide-gray-50 dark:divide-slate-800">
+      {% for key, spec in cat_filters %}
+      {% set last_val = last_config.get('fixed_filters', {}).get(key, {}) %}
+      {% set was_enabled = last_val.get('enabled', False) %}
+      <div class="ff-row px-4 py-3 flex flex-wrap items-center gap-3" data-key="{{ key }}">
+
+        <!-- Enable checkbox -->
+        <label class="flex items-center gap-2 cursor-pointer select-none shrink-0">
+          <input type="checkbox" name="ff_{{ key }}_enabled" value="1"
+                 id="ff_{{ key }}_cb" {% if was_enabled %}checked{% endif %}
+                 onchange="toggleFilter('{{ key }}')"
+                 class="rounded text-indigo-600 border-gray-300 focus:ring-indigo-400">
+          <span class="text-[11px] font-black text-gray-700 dark:text-slate-200">{{ spec.label }}</span>
+        </label>
+
+        <!-- Controls (shown only when checked) -->
+        <div id="ff_{{ key }}_ctrl" class="ff-controls {% if not was_enabled %}hidden{% endif %} items-center gap-2 flex-wrap">
+          {% if spec.type == 'threshold' %}
+          <select name="ff_{{ key }}_op" class="text-[10px] font-bold px-2 py-1.5 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 focus:outline-none">
+            {% for op in ['>=','<=','>','<'] %}
+            <option value="{{ op }}" {% if last_val.get('op', spec.get('default_op','>='))==op %}selected{% endif %}>{{ op }}</option>
+            {% endfor %}
+          </select>
+          <input type="number" name="ff_{{ key }}_val"
+                 value="{{ last_val.get('val', spec.get('default_val', 0)) }}"
+                 min="{{ spec.get('min', 0) }}" max="{{ spec.get('max', 999) }}"
+                 step="{{ '0.01' if spec.get('default_val',0) < 10 and '.' in (spec.get('default_val',0)|string) else '1' }}"
+                 class="w-20 text-[10px] font-bold px-2 py-1.5 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 focus:outline-none tabular-nums">
+
+          {% elif spec.type == 'choice' %}
+          <select name="ff_{{ key }}_val" class="text-[10px] font-bold px-2 py-1.5 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 focus:outline-none">
+            {% for ch in spec.choices %}
+            <option value="{{ ch }}" {% if last_val.get('val', spec.choices[0])==ch %}selected{% endif %}>{{ ch }}</option>
+            {% endfor %}
+          </select>
+
+          {% elif spec.type == 'range' %}
+          <span class="text-[10px] text-gray-400">Between</span>
+          <input type="number" name="ff_{{ key }}_min" value="{{ last_val.get('val_min', spec.get('default_min',0)) }}"
+                 class="w-16 text-[10px] font-bold px-2 py-1.5 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none tabular-nums">
+          <span class="text-[10px] text-gray-400">and</span>
+          <input type="number" name="ff_{{ key }}_max" value="{{ last_val.get('val_max', spec.get('default_max',100)) }}"
+                 class="w-16 text-[10px] font-bold px-2 py-1.5 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none tabular-nums">
+          {% endif %}
+        </div>
+
+        <!-- Description tooltip -->
+        <span class="text-[9px] text-gray-400 dark:text-slate-500 italic ml-auto hidden md:block truncate max-w-xs">{{ spec.description }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </details>
+  {% endfor %}
+
+  <!-- MA Rules section -->
+  <details open class="border border-gray-100 dark:border-slate-800 rounded-xl overflow-hidden">
+    <summary class="flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-slate-800/60 text-[10px] font-black uppercase text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-800 transition select-none">
+      <span>Moving Average Rules (AND logic with above filters)</span><span class="text-gray-400">▾</span>
+    </summary>
+    <div class="px-4 py-3 space-y-2">
+      <div id="maRulesList" class="space-y-2"></div>
+      <button type="button" onclick="addMARule()" class="text-[10px] font-black uppercase px-4 py-1.5 rounded-xl border border-dashed border-indigo-300 dark:border-indigo-700 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition">+ Add MA Rule</button>
+    </div>
+  </details>
+
+  <!-- Column visibility -->
+  <div>
+    <p class="text-[9px] font-black uppercase text-gray-400 dark:text-slate-500 tracking-wider mb-2">Columns to Show in Results</p>
+    <div class="flex flex-wrap gap-2">
+      {% set all_cols = [
+        ('price','Price'),('trend_score','Trend /6'),('rs_percentile','RS %tile'),
+        ('rs_trend','RS Trend'),('rs_at_52wh','★ RS 52WH'),('volar','VOLAR'),
+        ('r_squared','R²'),('retracement','52W Pull%'),('ma200_ext','MA200 Ext'),
+        ('n_contractions','VCP T='),('vcp_status','VCP Status'),('vol_dryup','Vol Dry-Up'),
+        ('near_pivot','Near Pivot'),('tl_breakout','TL Break'),('near_52wh','52W High'),
+        ('horiz_break','Horiz Break'),('vol_ratio','Vol Ratio'),('rsi','RSI'),
+      ] %}
+      {% set default_visible = ['price','rs_percentile','rs_trend','retracement','volar','trend_score'] %}
+      {% set last_visible = last_config.get('visible_columns', default_visible) %}
+      {% for col_key, col_label in all_cols %}
+      <label class="inline-flex items-center gap-1.5 text-[9px] font-black uppercase px-2.5 py-1.5 rounded-full border border-gray-200 dark:border-slate-700 cursor-pointer hover:border-indigo-300 transition select-none
+                    {% if col_key in last_visible %}bg-indigo-50 dark:bg-indigo-500/10 border-indigo-200 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300{% else %}text-gray-500 dark:text-slate-400{% endif %}"
+             id="col_label_{{ col_key }}">
+        <input type="checkbox" name="visible_cols" value="{{ col_key }}"
+               {% if col_key in last_visible %}checked{% endif %}
+               onchange="toggleColLabel(this,'{{ col_key }}')" class="sr-only">
+        {{ col_label }}
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Action bar -->
+  <div class="flex flex-wrap gap-2 items-center justify-between border-t border-gray-50 dark:border-slate-800 pt-4">
+    <button type="button" onclick="saveConfig()" class="text-[10px] font-black uppercase px-4 py-2 rounded-xl border border-emerald-200 dark:border-emerald-800 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 transition">💾 Save Config</button>
+    <button id="scanBtn" type="submit"
+            class="px-8 py-2.5 bg-indigo-600 text-white rounded-xl font-black text-xs uppercase hover:bg-indigo-700 transition shadow-lg shadow-indigo-200 dark:shadow-indigo-950/40 relative overflow-hidden">
+      <span id="scanFill"></span>
+      <span id="scanLabel">🚀 Run Universal Scan</span>
+    </button>
+  </div>
+</div>
+</form>
+
+<!-- Results -->
+{% if stocks %}
+{% set visible = last_config.get('visible_columns', ['price','rs_percentile','rs_trend','retracement','volar','trend_score']) %}
+<div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm overflow-x-auto">
+  <div class="px-5 py-3 border-b border-gray-50 dark:border-slate-800 flex items-center justify-between flex-wrap gap-2">
+    <span class="text-[10px] font-black uppercase text-gray-600 dark:text-slate-300">{{ passed_count }} stocks · {{ scan_name }}</span>
+    <input id="tableSearch" type="text" placeholder="🔎 Filter…" oninput="filterTable(this.value)"
+           class="text-[10px] px-3 py-1.5 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-400 w-36">
+  </div>
+  <table class="min-w-full text-left text-xs" id="resultsTable">
+    <thead class="bg-gray-50 dark:bg-slate-800/60 border-b border-gray-100 dark:border-slate-800 sticky top-0 z-10">
+      <tr>
+        <th class="px-4 py-3 font-bold uppercase text-gray-400 dark:text-slate-400 cursor-pointer hover:text-indigo-500 select-none" onclick=\"sortTable('sym','text',this)\">Symbol <span class="sort-arr"></span></th>
+        <th class="px-4 py-3 font-bold uppercase text-gray-400 dark:text-slate-400 whitespace-nowrap">Sector</th>
+        {% set col_defs = [
+          ('price','Price','num','text-right'),
+          ('trend_score','Trend /6','num','text-right'),
+          ('rs_percentile','RS %tile','num','text-center'),
+          ('rs_trend','RS Trend','text','text-center'),
+          ('rs_at_52wh','★ 52WH','text','text-center'),
+          ('volar','VOLAR','num','text-right'),
+          ('r_squared','R²','num','text-right'),
+          ('retracement','52W Pull%','num','text-right'),
+          ('ma200_ext','MA200×','num','text-right'),
+          ('n_contractions','VCP T','num','text-center'),
+          ('vcp_status','VCP','text','text-center'),
+          ('vol_dryup','Vol DU','text','text-center'),
+          ('near_pivot','Pivot','text','text-center'),
+          ('tl_breakout','TL Brk','text','text-center'),
+          ('near_52wh','52W Hi','text','text-center'),
+          ('horiz_break','H Brk','text','text-center'),
+          ('vol_ratio','Vol×','num','text-right'),
+          ('rsi','RSI','num','text-right'),
+        ] %}
+        {% for ckey, clabel, ctype, align in col_defs %}
+        {% if ckey in visible %}
+        <th class="px-4 py-3 font-bold uppercase text-gray-400 dark:text-slate-400 {{ align }} cursor-pointer hover:text-indigo-500 select-none whitespace-nowrap"
+            onclick="sortTable('{{ ckey }}','{{ ctype }}')">{{ clabel }} <span class="sort-arr"></span></th>
+        {% endif %}
+        {% endfor %}
+        <th class="px-4 py-3 font-bold uppercase text-emerald-500">Why Passed</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-50 dark:divide-slate-800">
+      {% for s in stocks %}
+      <tr data-sym="{{ s.symbol|lower }}"
+          {% for ckey,_,ctype,_ in col_defs %}data-{{ ckey }}="{{ s.get(ckey, '') }}"{% endfor %}
+          class="hover:bg-indigo-50/30 dark:hover:bg-indigo-500/10 transition-colors group">
+
+        <td class="px-4 py-3">
+          <div class="flex items-center gap-1.5">
+            <span class="font-black text-indigo-700 dark:text-indigo-300 text-sm">{{ s.symbol }}</span>
+            <button onclick="navigator.clipboard.writeText('{{ s.symbol }}');this.classList.add('text-emerald-500');setTimeout(()=>this.classList.remove('text-emerald-500'),600)"
+                    class="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-indigo-600 rounded transition">
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0A2.25 2.25 0 0113.5 4.5h-3a2.25 2.25 0 01-2.166-1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.75c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 011.927-.184"></path></svg>
+            </button>
+          </div>
+        </td>
+
+        <td class="px-4 py-3 text-[9px] font-bold uppercase text-gray-500 dark:text-slate-400 whitespace-nowrap max-w-[120px]">
+          <span class="truncate block" title="{{ s.sector }}">{{ s.sector }}</span>
+        </td>
+
+        {% for ckey, clabel, ctype, align in col_defs %}
+        {% if ckey in visible %}
+        <td class="px-4 py-3 {{ align }} tabular-nums font-bold">
+          {% set v = s.get(ckey) %}
+          {% if v is none or v == '' %}
+            <span class="text-gray-300 dark:text-slate-600 text-[9px]">—</span>
+          {% elif ckey == 'price' %}
+            <span class="text-gray-900 dark:text-slate-100">{{ currency }}{{ "{:,.2f}".format(v|float) }}</span>
+          {% elif ckey == 'rs_percentile' %}
+            <span class="inline-block px-2.5 py-0.5 rounded-full text-[10px]
+                  {% if v|int >= 90 %}bg-indigo-600 text-white
+                  {% elif v|int >= 70 %}bg-indigo-100 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300
+                  {% else %}bg-gray-100 dark:bg-slate-800 text-gray-500{% endif %}">{{ v }}</span>
+          {% elif ckey == 'trend_score' %}
+            <span class="inline-block px-2 py-0.5 rounded text-[9px]
+                  {% if v|int == 6 %}bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300
+                  {% else %}bg-gray-100 text-gray-500 dark:bg-slate-800 dark:text-slate-400{% endif %}">{{ v }}/6</span>
+          {% elif ckey == 'rs_trend' %}
+            <span class="text-[9px] px-1.5 py-0.5 rounded font-black
+                  {% if 'Accel' in (v|string) %}bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300
+                  {% elif 'Fading' in (v|string) %}bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300
+                  {% else %}bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300{% endif %}">{{ v }}</span>
+          {% elif ckey in ('rs_at_52wh','vol_dryup','near_pivot','tl_breakout','near_52wh','horiz_break','above_ema200','ma200_rising') %}
+            {% if v %}✅{% else %}<span class="text-gray-300">—</span>{% endif %}
+          {% elif ckey == 'retracement' %}
+            <span class="{% if v|float <= 10 %}text-emerald-600 dark:text-emerald-400{% elif v|float <= 15 %}text-gray-600 dark:text-slate-300{% else %}text-amber-600 dark:text-amber-400{% endif %}">-{{ v }}%</span>
+          {% elif ckey == 'volar' %}
+            <span class="{% if v|float >= 2 %}text-purple-600 dark:text-purple-400{% elif v|float >= 1 %}text-indigo-600 dark:text-indigo-300{% else %}text-gray-500{% endif %}">{{ v }}</span>
+          {% elif ckey == 'vcp_status' %}
+            <span class="text-[9px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300">{{ v }}</span>
+          {% else %}
+            {{ v }}
+          {% endif %}
+        </td>
+        {% endif %}
+        {% endfor %}
+
+        <!-- Why passed (compact) -->
+        <td class="px-4 py-3 max-w-xs">
+          <div class="space-y-0.5">
+            {% for line in s.get('reasons', [])[:4] %}
+            <div class="text-[8px] font-bold {% if '✅' in line %}text-emerald-600 dark:text-emerald-400{% else %}text-red-500{% endif %} whitespace-nowrap">{{ line }}</div>
+            {% endfor %}
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% elif not is_scanning and last_time %}
+<div class="py-10 text-center text-gray-400 dark:text-slate-500 italic">No stocks matched the configured filters.</div>
+{% endif %}
+
+<!-- History -->
+<div class="bg-white dark:bg-slate-900 rounded-xl border border-gray-100 dark:border-slate-800 shadow-sm">
+  <p class="px-4 py-2.5 text-[9px] font-black text-gray-400 dark:text-slate-500 uppercase tracking-widest border-b border-gray-50 dark:border-slate-800">🕒 Last 5 Scans</p>
+  <div class="divide-y divide-gray-50 dark:divide-slate-800">
+    {% for h in history %}
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2.5 text-[10px]">
+      <span class="font-black text-blue-500 uppercase whitespace-nowrap">{{ h.time }}</span>
+      <span class="text-gray-500 dark:text-slate-400">{{ h.market }}</span>
+      <span class="font-bold text-gray-700 dark:text-slate-200 truncate max-w-[200px]">{{ h.scan_name }}</span>
+      <span class="font-black text-emerald-600 whitespace-nowrap">{{ h.count }} passed</span>
+      <span class="text-gray-400 whitespace-nowrap">of {{ h.scanned_count }}</span>
+      <span class="text-[9px] text-gray-400 whitespace-nowrap">{{ h.filter_count }} filters · {{ h.ma_rule_count }} MA rules</span>
+      {% if h.snapshot_file %}
+      <form method="POST" action="{{ url_for('universal_screener.universal_restore', snap=h.snapshot_file) }}" class="ml-auto shrink-0">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="market" value="{{ h.market }}">
+        <button type="submit" onclick="return confirm('Restore?');" class="text-[9px] font-black uppercase text-indigo-500 hover:text-white hover:bg-indigo-600 px-2.5 py-1 rounded-full border border-indigo-200 dark:border-indigo-500/30 transition">↺ Restore</button>
+      </form>
+      {% endif %}
+    </div>
+    {% else %}<p class="px-4 py-3 text-[10px] text-gray-400 italic">No scans yet.</p>{% endfor %}
+  </div>
+</div>
+</div>
+
+<script>
+const PROG_URL = "{{ url_for('universal_screener.universal_progress') }}";
+const SAVE_URL = "{{ url_for('universal_screener.universal_save_config') }}";
+const CSRF     = "{{ csrf_token }}";
+const MARKET   = "{{ market }}";
+const PRESETS  = {{ preset_configs | tojson }};
+const SAVED    = {{ saved_configs | tojson }};
+
+// ── Progress ──────────────────────────────────────────────────────────────────
+const scanBtn  = document.getElementById('scanBtn');
+const scanFill = document.getElementById('scanFill');
+const scanLabel= document.getElementById('scanLabel');
+function updateProg(pct, label){ scanFill.style.width=pct+'%'; scanLabel.textContent=label; }
+function pollProgress(){
+  fetch(PROG_URL).then(r=>r.json()).then(d=>{
+    const pct=d.total>0?Math.round(d.processed/d.total*100):0;
+    if     (d.stage==='loading')    updateProg(3,'Loading symbols…');
+    else if(d.stage==='benchmark')  updateProg(6,'Fetching benchmark…');
+    else if(d.stage==='fetching')   updateProg(Math.max(pct,10),'Fetching prices… '+pct+'%');
+    else if(d.stage==='screening')  updateProg(Math.max(pct,85),'Screening… '+pct+'%');
+    else if(d.stage==='error')      { updateProg(0,'⚠️ Failed'); setTimeout(()=>location.reload(),1200); return; }
+    else if(!d.active)              { updateProg(100,'✅ Done'); setTimeout(()=>location.reload(),500); return; }
+    setTimeout(pollProgress,700);
+  }).catch(()=>setTimeout(pollProgress,1500));
+}
+document.getElementById('scanForm').addEventListener('submit',function(e){
+  e.preventDefault();
+  document.getElementById('maRulesJson').value=JSON.stringify(collectMARules());
+  setTimeout(()=>{ scanBtn.disabled=true; },0);
+  updateProg(2,'Starting…');
+  fetch(this.action,{method:'POST',body:new FormData(this)})
+    .then(()=>pollProgress()).catch(()=>pollProgress());
+});
+{% if is_scanning %}scanBtn.disabled=true; pollProgress();{% endif %}
+
+// ── Filter visibility ─────────────────────────────────────────────────────────
+function toggleFilter(key){
+  const cb = document.getElementById('ff_'+key+'_cb');
+  const ctrl = document.getElementById('ff_'+key+'_ctrl');
+  if(ctrl) { if(cb.checked) ctrl.classList.remove('hidden'); else ctrl.classList.add('hidden'); }
+}
+
+// ── Column toggle ─────────────────────────────────────────────────────────────
+function toggleColLabel(cb, key){
+  const label = document.getElementById('col_label_'+key);
+  if(cb.checked){ label.classList.add('bg-indigo-50','dark:bg-indigo-500/10','border-indigo-200','dark:border-indigo-700','text-indigo-700','dark:text-indigo-300'); label.classList.remove('text-gray-500','dark:text-slate-400'); }
+  else{ label.classList.remove('bg-indigo-50','dark:bg-indigo-500/10','border-indigo-200','dark:border-indigo-700','text-indigo-700','dark:text-indigo-300'); label.classList.add('text-gray-500','dark:text-slate-400'); }
+}
+
+// ── Preset loader ─────────────────────────────────────────────────────────────
+function loadPreset(key){
+  if(!key) return;
+  const p=PRESETS[key]; if(!p) return;
+  // Submit form with preset_key (server handles config rebuilding)
+  const form=document.getElementById('scanForm');
+  // Clear existing FF checkboxes
+  document.querySelectorAll('[name^="ff_"][name$="_enabled"]').forEach(cb=>{ cb.checked=false; toggleFilter(cb.name.replace('ff_','').replace('_enabled','')); });
+  // Set preset values from JS side (simpler: just submit and let server load preset)
+  document.getElementById('scanNameInput').value=p.name;
+  // Submit with the preset key
+  const fd=new FormData(form);
+  fd.set('preset_key',key);
+  fd.set('ma_rules_json',JSON.stringify(p.ma_rules||[]));
+  setTimeout(()=>{ scanBtn.disabled=true; },0);
+  updateProg(2,'Loading preset…');
+  fetch(form.action,{method:'POST',body:fd}).then(()=>location.reload());
+}
+
+function loadSaved(key){
+  if(!key) return;
+  const cfg=SAVED[key]; if(!cfg) return;
+  document.getElementById('scanNameInput').value=cfg.name||key;
+  // Let server rebuild from saved config via form submit
+  const fd=new FormData(document.getElementById('scanForm'));
+  fd.set('preset_key','');
+  fd.set('ma_rules_json',JSON.stringify(cfg.ma_rules||[]));
+  setTimeout(()=>{ scanBtn.disabled=true; },0);
+  updateProg(2,'Loading config…');
+  fetch(document.getElementById('scanForm').action,{method:'POST',body:fd}).then(()=>location.reload());
+}
+
+function resetAll(){
+  document.querySelectorAll('[name^="ff_"][name$="_enabled"]').forEach(cb=>{ cb.checked=false; toggleFilter(cb.name.replace('ff_','').replace('_enabled','')); });
+  document.getElementById('maRulesList').innerHTML='';
+}
+
+// ── MA Rule builder ──────────────────────────────────────────────────────────
+let rId=0;
+const OPS=['CROSS_ABOVE','CROSS_BELOW','ABOVE','BELOW','RISING','FALLING'];
+const OP_LBL={'CROSS_ABOVE':'Crosses Above','CROSS_BELOW':'Crosses Below','ABOVE':'Is Above','BELOW':'Is Below','RISING':'Is Rising','FALLING':'Is Falling'};
+
+function addMARule(cfg={}){
+  const id=++rId;
+  const op=cfg.operator||'ABOVE';
+  const ll=cfg.left||{type:'EMA',period:20};
+  const rr=cfg.right||{type:'EMA',period:50};
+  const div=document.createElement('div');
+  div.dataset.id=id;
+  div.className='flex flex-wrap items-center gap-2 p-2 rounded-xl border border-gray-100 dark:border-slate-800 bg-gray-50/50 dark:bg-slate-800/30';
+  div.innerHTML=`
+    <select class="r-lt text-[10px] font-bold px-2 py-1.5 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 focus:outline-none" onchange="updateMARule(${id})"><option value="EMA" ${ll.type=='EMA'?'selected':''}>EMA</option><option value="SMA" ${ll.type=='SMA'?'selected':''}>SMA</option><option value="PRICE" ${ll.type=='PRICE'?'selected':''}>Price</option></select>
+    <input type="number" class="r-lp w-16 text-[10px] font-bold px-2 py-1.5 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 focus:outline-none tabular-nums" value="${ll.period||20}" min="1" max="500" ${ll.type=='PRICE'?'style="display:none"':''}>
+    <select class="r-op text-[10px] font-bold px-2 py-1.5 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 focus:outline-none" onchange="updateMARule(${id})">${OPS.map(o=>`<option value="${o}" ${o==op?'selected':''}>${OP_LBL[o]}</option>`).join('')}</select>
+    <select class="r-rt text-[10px] font-bold px-2 py-1.5 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 focus:outline-none" onchange="updateMARule(${id})" ${['RISING','FALLING'].includes(op)?'style="display:none"':''}><option value="EMA" ${rr.type=='EMA'?'selected':''}>EMA</option><option value="SMA" ${rr.type=='SMA'?'selected':''}>SMA</option><option value="PRICE" ${rr.type=='PRICE'?'selected':''}>Price</option></select>
+    <input type="number" class="r-rp w-16 text-[10px] font-bold px-2 py-1.5 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 focus:outline-none tabular-nums" value="${rr.period||50}" min="1" max="500" ${['RISING','FALLING'].includes(op)||rr.type=='PRICE'?'style="display:none"':''}>
+    <select class="r-lg text-[10px] font-bold px-2 py-1.5 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 focus:outline-none"><option value="AND" ${(cfg.logic||'AND')=='AND'?'selected':''}>AND</option><option value="OR" ${cfg.logic=='OR'?'selected':''}>OR</option></select>
+    <button onclick="this.closest('[data-id]').remove()" class="text-red-400 hover:text-red-600 font-black text-xs px-2 py-1 rounded hover:bg-red-50 transition">✕</button>
+  `;
+  document.getElementById('maRulesList').appendChild(div);
+}
+
+function updateMARule(id){
+  const row=document.querySelector(`[data-id="${id}"]`);
+  if(!row) return;
+  const op=row.querySelector('.r-op').value;
+  const lt=row.querySelector('.r-lt').value;
+  const isSlope=['RISING','FALLING'].includes(op);
+  row.querySelector('.r-lp').style.display=lt=='PRICE'?'none':'';
+  row.querySelector('.r-rt').style.display=isSlope?'none':'';
+  row.querySelector('.r-rp').style.display=(isSlope||row.querySelector('.r-rt').value=='PRICE')?'none':'';
+}
+
+function collectMARules(){
+  return Array.from(document.querySelectorAll('#maRulesList [data-id]')).map(row=>({
+    left:    {type:row.querySelector('.r-lt').value, period:parseInt(row.querySelector('.r-lp').value)||0},
+    operator:row.querySelector('.r-op').value,
+    right:   {type:row.querySelector('.r-rt').value, period:parseInt(row.querySelector('.r-rp').value)||0},
+    lookback:5, slope_days:10, enabled:true,
+    logic:   row.querySelector('.r-lg').value,
+  }));
+}
+
+// ── Save config ───────────────────────────────────────────────────────────────
+function saveConfig(){
+  const name=prompt('Save config as:',document.getElementById('scanNameInput').value||'My Config');
+  if(!name) return;
+  const ffData={};
+  document.querySelectorAll('[name^="ff_"][name$="_enabled"]:checked').forEach(cb=>{
+    const k=cb.name.replace('ff_','').replace('_enabled','');
+    const entry={enabled:true};
+    const op=document.querySelector(`[name="ff_${k}_op"]`);
+    const val=document.querySelector(`[name="ff_${k}_val"]`);
+    const vmin=document.querySelector(`[name="ff_${k}_min"]`);
+    const vmax=document.querySelector(`[name="ff_${k}_max"]`);
+    if(op) entry.op=op.value;
+    if(val) entry.val=parseFloat(val.value);
+    if(vmin) entry.val_min=parseFloat(vmin.value);
+    if(vmax) entry.val_max=parseFloat(vmax.value);
+    ffData[k]=entry;
+  });
+  const fd=new FormData();
+  fd.append('csrf_token',CSRF);
+  fd.append('name',name);
+  fd.append('config_json',JSON.stringify({fixed_filters:ffData, ma_rules:collectMARules(), market:MARKET}));
+  fetch(SAVE_URL,{method:'POST',body:fd}).then(r=>r.json()).then(d=>{
+    if(d.status==='ok') alert('Saved: '+name);
+    else alert('Error: '+d.message);
+  });
+}
+
+// ── Sort + filter table ───────────────────────────────────────────────────────
+function filterTable(q){
+  q=q.toLowerCase();
+  document.querySelectorAll('#resultsTable tbody tr').forEach(r=>{ r.style.display=(!q||r.dataset.sym.includes(q))?'':'none'; });
+}
+let _sk=null,_sd=1;
+function sortTable(key,type,th){
+  _sd=(_sk===key)?-_sd:1; _sk=key;
+  const tbody=document.querySelector('#resultsTable tbody');
+  if(!tbody) return;
+  Array.from(tbody.querySelectorAll('tr')).sort((a,b)=>{
+    let va=a.dataset[key]??'',vb=b.dataset[key]??'';
+    if(type==='num'){va=parseFloat(va)||0;vb=parseFloat(vb)||0;}
+    else{va=va.toLowerCase();vb=vb.toLowerCase();}
+    return(va<vb?-1:va>vb?1:0)*_sd;
+  }).forEach(r=>tbody.appendChild(r));
+  document.querySelectorAll('.sort-arr').forEach(a=>a.textContent='');
+  if(th) th.querySelector('.sort-arr').textContent=_sd===1?'▲':'▼';
+}
+</script>
+{% endblock %}

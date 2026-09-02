@@ -1,0 +1,362 @@
+{% extends "base_authenticated.html" %}
+{% block content %}
+<style>
+  .guide-badge { display:inline-block; padding:1px 8px; border-radius:9999px; font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; }
+  .section-rule { border-top:1px solid; }
+  details > summary { cursor:pointer; list-style:none; }
+  details > summary::-webkit-details-marker { display:none; }
+  details > summary::after { content:'▾'; margin-left:6px; }
+  details[open] > summary::after { content:'▴'; }
+</style>
+
+<div class="max-w-4xl mx-auto px-4 py-8 space-y-8">
+
+  <!-- ── Page Header ──────────────────────────────────────────────────────── -->
+  <div class="flex flex-wrap justify-between items-start gap-4">
+    <div>
+      <h2 class="text-2xl font-black text-indigo-900 dark:text-indigo-300 uppercase tracking-tight">🔬 Universal Screener — Guide</h2>
+      <p class="text-[10px] font-bold text-gray-400 dark:text-slate-500 uppercase mt-1 tracking-widest">All filters explained · How to build scans · Practical workflows</p>
+    </div>
+    <a href="{{ url_for('universal_screener.universal_view') }}"
+       class="shrink-0 px-4 py-2 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-indigo-700 transition shadow-lg shadow-indigo-200 dark:shadow-indigo-950/40">
+      Open Screener →
+    </a>
+  </div>
+
+  <!-- ── 1. What Is This Screener ─────────────────────────────────────────── -->
+  <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm p-6">
+    <h3 class="text-sm font-black uppercase text-gray-800 dark:text-slate-200 mb-3">1. What Is the Universal Screener?</h3>
+    <p class="text-xs text-gray-600 dark:text-slate-300 leading-relaxed">
+      The Universal Screener is a <strong>configurable multi-filter pipeline</strong> that combines every metric computed across all screeners in this app into a single unified interface.
+      Instead of running five separate screeners and manually cross-referencing results, you configure a set of filters once — enable the ones relevant to your strategy, set thresholds, add optional MA rules — and run a single scan that applies all conditions simultaneously.
+    </p>
+    <div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3 text-[10px]">
+      {% for icon, title, body in [
+        ('🔧','Configure once','Enable any combination of 19 filters across Stage 2, RS, VOLAR, VCP, Breakout, Volume, and Momentum categories.'),
+        ('⚡','Scan once','One background job runs all enabled compute functions against every stock in the universe. Only enabled filters are computed — unused ones are skipped for speed.'),
+        ('📋','Explain every result','Each passing stock shows exactly which conditions it met, with the actual value vs the threshold — no black-box outputs.'),
+      ] %}
+      <div class="p-3 rounded-xl bg-gray-50 dark:bg-slate-800 border border-gray-100 dark:border-slate-700">
+        <div class="text-base mb-1">{{ icon }}</div>
+        <div class="font-black text-gray-700 dark:text-slate-200 mb-1">{{ title }}</div>
+        <div class="text-gray-500 dark:text-slate-400 leading-relaxed">{{ body }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="mt-4 p-3 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-800 text-[10px] text-amber-700 dark:text-amber-300 font-bold">
+      ⚠️ <strong>Disclaimer:</strong> This screener identifies stocks that match historical and current price patterns. It does not predict future returns or guarantee profitable trades. Always validate results with price action, volume context, broader market conditions, and your own risk management rules before making any trading decision.
+    </div>
+  </div>
+
+  <!-- ── 2. How the Pipeline Works ─────────────────────────────────────────── -->
+  <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm p-6">
+    <h3 class="text-sm font-black uppercase text-gray-800 dark:text-slate-200 mb-4">2. How the Pipeline Works</h3>
+    <div class="flex flex-col md:flex-row items-start gap-2 text-[10px] font-bold">
+      {% for step, label, desc, color in [
+        ('1','Load Universe','Nifty 500 (NSE) or S&P 500 (US) from CSV','indigo'),
+        ('2','Fetch Prices','Bulk pull from shared cache — 0 network calls if already cached','blue'),
+        ('3','Benchmark','Fetch ^CRSLDX (IND) or ^GSPC (US) once, shared across all stocks','purple'),
+        ('4','Compute Metrics','Run only the functions needed for enabled filters per stock','emerald'),
+        ('5','Apply Filters','ALL enabled conditions must pass (AND logic)','amber'),
+        ('6','Rank by RS','Pass list sorted by RS percentile within the result set','rose'),
+      ] %}
+      <div class="flex items-start gap-2 md:flex-col md:items-center md:text-center flex-1 min-w-0">
+        <div class="shrink-0 w-7 h-7 rounded-full bg-{{ color }}-100 dark:bg-{{ color }}-500/15 text-{{ color }}-700 dark:text-{{ color }}-300 flex items-center justify-center font-black text-[10px]">{{ step }}</div>
+        <div>
+          <div class="text-gray-800 dark:text-slate-200 font-black">{{ label }}</div>
+          <div class="text-gray-500 dark:text-slate-400 font-normal leading-tight mt-0.5">{{ desc }}</div>
+        </div>
+      </div>
+      {% if not loop.last %}
+      <div class="text-gray-300 dark:text-slate-700 font-normal self-center hidden md:block">→</div>
+      {% endif %}
+      {% endfor %}
+    </div>
+    <p class="mt-4 text-[10px] text-gray-500 dark:text-slate-400">
+      All conditions use <strong>AND logic</strong> — a stock must pass every enabled filter to appear in results.
+      MA rules (if any) are also ANDed with the fixed filters.
+      There is no silent failure: if a metric can't be computed (e.g. insufficient data), the stock is excluded and counted in the "scanned" total but not the "passed" total.
+    </p>
+  </div>
+
+  <!-- ── 3. Filter Reference ───────────────────────────────────────────────── -->
+  <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm overflow-hidden">
+    <div class="px-6 py-4 border-b border-gray-100 dark:border-slate-800">
+      <h3 class="text-sm font-black uppercase text-gray-800 dark:text-slate-200">3. Filter Reference</h3>
+      <p class="text-[10px] text-gray-400 dark:text-slate-500 mt-1">Every available filter explained — what it measures, when to use it, and what to set.</p>
+    </div>
+
+    {% for cat, color, filters in [
+      ('Stage 2', 'indigo', [
+        ('Stage 2 Trend Template','threshold','Counts how many of Minervini\'s 6 conditions pass: (1) price>MA150 & price>MA200, (2) MA150>MA200, (3) MA200 rising over 20 days, (4) MA50>MA150 & MA50>MA200, (5) price ≥ 52W_low × 1.30, (6) price ≥ 52W_high × 0.75. A score of 5–6 = genuine Stage 2. A score of 4 may be transitioning.','Set to ≥5 for strict Stage 2. Use ≥4 for a broader universe during sector rotations.'),
+        ('Price Above EMA 200','boolean','Price is above its 200-day exponential moving average — the most basic long-term trend filter used by institutional investors.','Enable as a mandatory baseline for any long-only scan. Stocks below EMA200 are in structural downtrends.'),
+        ('MA200 Rising','boolean','The 200-day MA today is higher than it was 20 sessions ago. A rising MA200 confirms the trend is not just a dead-cat bounce.','Combine with Stage 2 score for higher confidence. A stock can be above MA200 while MA200 is still falling (early recovery, higher risk).'),
+        ('MA200 Extension','threshold','Price divided by MA200. A ratio of 1.0 means price equals MA200; 1.2 means 20% above. Very high extension (>1.5) can indicate an overextended stock prone to mean reversion.','Use ≥1.05 to exclude stocks still hugging their MA200. Cap at ≤1.40 if you want to avoid chasing extended breakouts.'),
+        ('52W Pullback %','threshold','(52-Week High − Current Price) / 52-Week High × 100. A value of 10 means price is 10% below its annual high — in the base/consolidation zone.','Use ≤15% for stocks near highs. ≤25% is more permissive. Avoid >35% unless specifically scanning for recovery setups.'),
+      ]),
+      ('Relative Strength', 'purple', [
+        ('RS Percentile','threshold','Ranks each stock\'s raw RS ratio (stock return vs benchmark return) within the scanned universe, expressed as 1–99. A score of 80 means the stock outperformed 80% of all scanned stocks over 3 months. Note: percentile is computed within the PASSING list only, so it reflects leadership within your filtered universe — not the full market.','Set ≥70 for leaders. ≥80 for top-tier momentum. ≥90 for highest-RS names (fewer results, higher quality signal).'),
+        ('RS Trend','choice','Direction of the RS ratio change over the last 20 sessions, measured in percentage points. Accelerating = RS improved by >3pp. Steady = RS flat to +3pp. Fading = RS declined.','Use "Accelerating" for stocks where relative strength is actively improving — these tend to lead the next leg up. "Steady" is acceptable in a range-bound market. Avoid "Fading" for momentum plays.'),
+        ('RS at 52-Week High','boolean','The stock\'s RS ratio (not price) is at or within 0.5% of its highest RS reading over the past 252 sessions. This means the stock is outperforming the benchmark by the most it has all year — a very strong leadership signal used in Minervini and IBD methodologies.','Enable this as a high-conviction filter when you want only the strongest RS leaders. Combining with Stage 2 ≥5 produces a very short, high-quality list.'),
+      ]),
+      ('VOLAR', 'emerald', [
+        ('VOLAR (3M)','threshold','Volatility-Adjusted Return over 3 months: |3M return| / std(daily returns). Measures how much of the stock\'s move was signal vs noise. A VOLAR of 2.0 means the 3M return was 2 standard deviations above the daily volatility — an orderly, trending advance. A VOLAR of 0.3 means the stock moved around a lot but went nowhere.','Set ≥0.8 for a minimal smoothness filter. ≥1.5 for genuinely orderly movers. Very high VOLAR (>3) is rare and often indicates a short, sharp move rather than a sustained trend.'),
+        ('Trend R² (Smoothness)','threshold','R-squared of the price series vs a linear regression line over the base window. R²=1.0 means price moved in a perfectly straight channel; R²=0.5 means half the price movement is explained by a linear trend. Stocks with high R² tend to be easier to hold — fewer shakeouts and cleaner chart structure.','Set ≥0.50 for a basic smoothness gate. ≥0.65 for genuinely trending stocks. ≥0.80 for the cleanest movers. Combine with VOLAR ≥1.0 for a comprehensive trend-quality filter.'),
+      ]),
+      ('VCP', 'blue', [
+        ('VCP Pattern Active','boolean','The stock has detected at least 2 valid tightening contractions (Volatility Contraction Pattern as described by Mark Minervini). The contractions are measured as peak-to-trough price drops that decrease in magnitude over time.','Enable this as the VCP entry gate. On its own it will match any VCP structure including early-stage ones. Combine with other VCP filters to narrow to actionable setups.'),
+        ('VCP Contractions (T value)','threshold','Number of valid tightening contractions detected (T value in Minervini\'s notation). T=2 is the minimum for a valid VCP. T=3 or T=4 is a higher-quality, more mature base. Each contraction must be shallower than the previous.','Set ≥2 for any VCP. Set ≥3 for higher-quality bases. T=4+ bases are rare but very high conviction when they appear.'),
+        ('VCP Volume Dry-Up','boolean','Volume at each successive trough is lower than the previous trough. This confirms institutional accumulation — sellers are exhausted, volume is shrinking as the stock tightens. Without volume dry-up, the contraction may be a distribution pattern rather than a base.','Always enable alongside VCP Active. A VCP without volume dry-up has significantly lower reliability.'),
+        ('VCP Near Pivot','boolean','Price is within 10% of the VCP pivot point (the high of the last/tightest contraction). This is the actionable zone — the stock is approaching its potential entry trigger.','Enable this for actionable setups. Disable it (keep VCP Active only) if you want to build a watchlist of forming bases that you\'ll monitor over time.'),
+      ]),
+      ('Breakout', 'rose', [
+        ('Trendline Breakout','boolean','Price crossed above a descending resistance trendline fitted through the last 2+ swing highs within 180 bars. Volume must be ≥1.5× the 20-day average at the breakout. RSI must be 55–72 (momentum but not yet overbought). This is a "high confidence" breakout signal.','Use for stocks breaking out of falling wedge or descending channel patterns. Often produces small lists — a single scan result here is worth investigating.'),
+        ('Near 52-Week High','boolean','Price is within 3% of its 52-week high. The stock is in leadership territory — trading near the top of its annual range. Not a breakout, but a strength filter.','Use as a trend filter rather than an entry signal. Combined with RS ≥70 this produces the strongest-trending stocks in the universe.'),
+        ('Horizontal Breakout','boolean','Price closed above the highest close of the prior 60 sessions with positive momentum (today > yesterday). This catches the most common type of breakout — stocks consolidating at a resistance level and then clearing it.','Most reliable breakout filter in the suite. Use with Volume Surge ≥1.5 to confirm institutional participation.'),
+      ]),
+      ('Volume & Momentum', 'amber', [
+        ('Volume Surge','threshold','Today\'s volume divided by the 50-day average volume. A ratio of 1.5 means today\'s volume was 50% above normal — potential institutional activity. A ratio of 3.0 means extreme volume — often marks a breakout or news event.','Set ≥1.3 for elevated activity. ≥1.5 for a meaningful surge. ≥2.0 for high-conviction volume events. Avoid setting too high (>3.0) as extreme volume can also mark reversals.'),
+        ('RSI (14)','range','14-day Relative Strength Index. Measures the speed and magnitude of recent price changes on a 0–100 scale. RSI>70 is traditionally considered overbought (but strong stocks in uptrends can stay overbought for extended periods). RSI<30 is oversold.','For momentum screens: set 50–75 (positive momentum, not yet extreme). For breakout screens: 55–72 (rising momentum with room to run). Avoid RSI<40 for trend-following setups.'),
+      ]),
+    ] %}
+    <details open class="border-b border-gray-50 dark:border-slate-800">
+      <summary class="px-6 py-3 bg-gray-50 dark:bg-slate-800/60 flex items-center gap-2 text-[10px] font-black uppercase text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-800 transition">
+        <span class="w-2 h-2 rounded-full bg-{{ color }}-400"></span>{{ cat }} Filters
+      </summary>
+      <div class="divide-y divide-gray-50 dark:divide-slate-800">
+        {% for fname, ftype, what, when in filters %}
+        <div class="px-6 py-4 grid grid-cols-1 md:grid-cols-5 gap-3">
+          <div class="md:col-span-1">
+            <div class="font-black text-[11px] text-gray-800 dark:text-slate-200">{{ fname }}</div>
+            <span class="guide-badge mt-1 bg-{{ color }}-50 dark:bg-{{ color }}-500/10 text-{{ color }}-700 dark:text-{{ color }}-300">{{ ftype }}</span>
+          </div>
+          <div class="md:col-span-2 text-[10px] text-gray-600 dark:text-slate-300 leading-relaxed">
+            <strong class="text-gray-500 dark:text-slate-400 text-[9px] uppercase font-black block mb-0.5">What it measures</strong>
+            {{ what }}
+          </div>
+          <div class="md:col-span-2 text-[10px] text-gray-600 dark:text-slate-300 leading-relaxed">
+            <strong class="text-gray-500 dark:text-slate-400 text-[9px] uppercase font-black block mb-0.5">When &amp; how to set it</strong>
+            {{ when }}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </details>
+    {% endfor %}
+  </div>
+
+  <!-- ── 4. MA Rules ───────────────────────────────────────────────────────── -->
+  <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm p-6">
+    <h3 class="text-sm font-black uppercase text-gray-800 dark:text-slate-200 mb-4">4. Moving Average Rules</h3>
+    <p class="text-[10px] text-gray-600 dark:text-slate-300 mb-4 leading-relaxed">
+      In addition to the fixed filters, you can add any number of custom MA conditions using the rule builder at the bottom of the filter panel.
+      These use the same engine as the dedicated MA Screener and are combined with AND logic against the fixed filters.
+    </p>
+    <div class="overflow-x-auto">
+      <table class="min-w-full text-xs">
+        <thead class="border-b border-gray-100 dark:border-slate-800 text-[9px] font-black uppercase text-gray-400 dark:text-slate-400">
+          <tr>
+            <th class="pb-2 text-left pr-6">Operator</th>
+            <th class="pb-2 text-left pr-6">Meaning</th>
+            <th class="pb-2 text-left pr-6">No Look-Ahead?</th>
+            <th class="pb-2 text-left">Typical use</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-50 dark:divide-slate-800 text-gray-600 dark:text-slate-300">
+          {% for op, meaning, nla, use in [
+            ('CROSS ABOVE','Previous bar: left ≤ right. Current bar: left > right.','✅ Only reads today + yesterday','Fresh bullish signal — momentum shift'),
+            ('CROSS BELOW','Previous bar: left ≥ right. Current bar: left < right.','✅ Only reads today + yesterday','Fresh bearish signal — trend breakdown'),
+            ('IS ABOVE','left > right at today\'s close.','✅ Only reads today','Trend alignment — stock in uptrend structure'),
+            ('IS BELOW','left < right at today\'s close.','✅ Only reads today','Bearish alignment — avoid for long-only'),
+            ('IS RISING','MA[today] > MA[N days ago].','✅ Only reads historical values','Slope confirmation — MA pointing up'),
+            ('IS FALLING','MA[today] < MA[N days ago].','✅ Only reads historical values','Bearish slope — MA pointing down'),
+          ] %}
+          <tr class="hover:bg-gray-50 dark:hover:bg-slate-800 transition">
+            <td class="py-2 pr-6 font-black text-indigo-700 dark:text-indigo-300 whitespace-nowrap">{{ op }}</td>
+            <td class="py-2 pr-6 font-mono text-[9px] text-gray-500 dark:text-slate-400">{{ meaning }}</td>
+            <td class="py-2 pr-6 text-center">{{ nla }}</td>
+            <td class="py-2 text-gray-500 dark:text-slate-400">{{ use }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="mt-4 p-3 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-900 text-[10px] text-indigo-700 dark:text-indigo-300">
+      <strong>Crossover vs Alignment:</strong> "EMA 10 CROSSED ABOVE EMA 20" and "EMA 10 IS ABOVE EMA 20" are different signals.
+      The crossover is a <em>fresh event</em> — it happened recently (within the lookback window).
+      The alignment is a <em>current state</em> — EMA 10 is above EMA 20 right now, regardless of when it crossed.
+      Both are valid depending on your strategy; choose based on whether you want to catch the moment of change or confirm an established trend.
+    </div>
+  </div>
+
+  <!-- ── 5. Preset Configs ─────────────────────────────────────────────────── -->
+  <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm p-6">
+    <h3 class="text-sm font-black uppercase text-gray-800 dark:text-slate-200 mb-4">5. Built-In Preset Configs</h3>
+    <div class="space-y-4">
+      {% for key, color, name, desc, filters_desc, when_to_use in [
+        ('stage2_leaders','indigo',
+         'Stage 2 Leaders',
+         'Minervini Stage 2 template (≥5/6) + RS Percentile ≥70 + Accelerating RS + within 15% of 52W high.',
+         'stage2_trend_score ≥5 · rs_percentile ≥70 · rs_trend = Accelerating · retracement ≤15%',
+         'Use during a confirmed market uptrend. This finds the strongest institutional-quality leaders — stocks with proper trend structure AND improving relative strength. Expect 10–30 results in a bull market, fewer in choppy conditions.'),
+        ('vcp_setup','blue',
+         'VCP Near Breakout',
+         'Stage 2 + active VCP with ≥2 contractions + volume dry-up + price near pivot.',
+         'stage2_trend_score ≥5 · vcp_active · vcp_n_contractions ≥2 · vcp_vol_dryup · vcp_near_pivot',
+         'Use when you want a watchlist of stocks in tight bases approaching a potential breakout trigger. These are actionable setups — check price and volume daily. Expect 0–10 results; a long list here is a red flag (market may be too extended or the criteria too loose).'),
+        ('ma_momentum','purple',
+         'EMA Momentum Stack',
+         'EMA 10 > EMA 20 > EMA 50 (short-term bullish alignment) + RS Percentile ≥60 + within 20% of 52W high.',
+         'EMA10 > EMA20 (MA rule) · EMA20 > EMA50 (MA rule) · rs_percentile ≥60 · retracement ≤20%',
+         'Use as a broad momentum filter — stocks in short-term uptrend structure with decent relative strength. Returns more stocks than Stage 2 Leaders. Good for building a broader watchlist to then narrow with chart review.'),
+        ('smooth_breakout','emerald',
+         'Smooth Breakout Leaders',
+         'Horizontal resistance breakout + RS Percentile ≥70 + VOLAR ≥0.8 + R² ≥0.50.',
+         'rs_percentile ≥70 · volar ≥0.8 · r_squared ≥0.50 · horiz_breakout',
+         'Use on or just after a breakout day. This finds stocks that are breaking above prior resistance with orderly price action — no wild zigzag movers. Best used with real-time or end-of-day data. Volume Surge filter can be added for extra confirmation.'),
+        ('rs_52wh','rose',
+         'RS New High Leaders',
+         'RS line at 52-week high + Stage 2 ≥5 + Volume Surge ≥1.3.',
+         'stage2_trend_score ≥5 · rs_at_52wh · vol_surge ≥1.3',
+         'The most focused leadership scan. A stock whose RS ratio is at a new annual high while it is also in a valid Stage 2 structure with elevated volume is exhibiting exactly what institutional sponsorship looks like on a chart. Produces very few results — that is by design.'),
+      ] %}
+      <div class="border border-gray-100 dark:border-slate-800 rounded-xl overflow-hidden">
+        <div class="px-4 py-3 bg-{{ color }}-50 dark:bg-{{ color }}-500/10 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <span class="font-black text-[11px] text-{{ color }}-800 dark:text-{{ color }}-200">{{ name }}</span>
+            <p class="text-[9px] text-{{ color }}-600 dark:text-{{ color }}-400 mt-0.5">{{ desc }}</p>
+          </div>
+        </div>
+        <div class="px-4 py-3 grid grid-cols-1 md:grid-cols-2 gap-4 text-[10px]">
+          <div>
+            <div class="text-[9px] font-black uppercase text-gray-400 dark:text-slate-500 mb-1">Active Filters</div>
+            <div class="font-mono text-gray-600 dark:text-slate-300 leading-relaxed">{{ filters_desc }}</div>
+          </div>
+          <div>
+            <div class="text-[9px] font-black uppercase text-gray-400 dark:text-slate-500 mb-1">When to Use</div>
+            <div class="text-gray-600 dark:text-slate-300 leading-relaxed">{{ when_to_use }}</div>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- ── 6. How to Build a Scan ────────────────────────────────────────────── -->
+  <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm p-6">
+    <h3 class="text-sm font-black uppercase text-gray-800 dark:text-slate-200 mb-4">6. How to Build a Scan — Step by Step</h3>
+    <div class="space-y-3 text-[10px]">
+      {% for n, title, detail in [
+        ('1','Choose Market','Select NSE (India) or NYSE (US) using the market toggle. Both use their respective cached price databases and benchmarks — ^CRSLDX for India, ^GSPC for US.'),
+        ('2','Start with a Preset or Blank','Load a preset config if one matches your strategy, or start blank. Presets are a good starting point — you can modify them after loading.'),
+        ('3','Enable Stage 2 (Recommended Baseline)','For most long-side scans, enable Stage 2 Trend Template ≥5 and Price Above EMA 200. These two filters alone eliminate most weak stocks and ensure you are working within a structurally sound universe.'),
+        ('4','Add Your Primary Signal Filter','Choose one primary signal: VCP Near Pivot for base setups, Horizontal Breakout for breakout plays, RS at 52WH for leadership screens, or an MA crossover rule for trend-following. Do not stack multiple primary signals — pick one per scan.'),
+        ('5','Add Supporting Filters','Add 1–2 confirming filters: RS Percentile for strength, VOLAR for trend quality, Volume Surge for participation, RSI range for momentum state. Each filter added will reduce the result count — if you get 0 results, loosen one filter at a time.'),
+        ('6','Select Columns to Show','Toggle on the columns relevant to your filters. If you are running a VCP scan, show N Contractions, VCP Status, Near Pivot. If you are running an RS scan, show RS Percentile and RS Trend. This keeps the results table readable.'),
+        ('7','Name and Save Your Config','Give the scan a name in the "Scan name" field and click 💾 Save Config before running. Saved configs can be loaded instantly from the "My Saved Configs" dropdown in future sessions.'),
+        ('8','Run the Scan','Click 🚀 Run Universal Scan. Progress shows on the button. Results load automatically when complete. Previous results stay visible during the scan.'),
+        ('9','Review Why Passed','Every stock shows which conditions it met and the exact values. Use this to validate that each result is genuinely matching your intent — not a technical artifact.'),
+        ('10','Validate Before Acting','Review the chart, recent volume profile, and broader market conditions for each passing stock. The screener is a candidate-generation tool — it does not account for news, earnings, sector dynamics, or position sizing.'),
+      ] %}
+      <div class="flex gap-3 p-3 rounded-xl bg-gray-50 dark:bg-slate-800/50 border border-gray-100 dark:border-slate-800">
+        <div class="shrink-0 w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 flex items-center justify-center font-black text-[9px]">{{ n }}</div>
+        <div>
+          <div class="font-black text-gray-800 dark:text-slate-200 mb-0.5">{{ title }}</div>
+          <div class="text-gray-500 dark:text-slate-400 leading-relaxed">{{ detail }}</div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- ── 7. Interpreting Results ───────────────────────────────────────────── -->
+  <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm p-6">
+    <h3 class="text-sm font-black uppercase text-gray-800 dark:text-slate-200 mb-4">7. Interpreting Results</h3>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-[10px] text-gray-600 dark:text-slate-300">
+      <div>
+        <div class="font-black text-gray-700 dark:text-slate-200 mb-2">Result count guide</div>
+        <table class="min-w-full">
+          <tbody class="divide-y divide-gray-50 dark:divide-slate-800">
+            {% for count, meaning in [
+              ('0 results','All filters are too strict, or market is not in the right condition for this scan. Loosen one filter at a time to diagnose.'),
+              ('1–10','Highly focused list. Each result warrants careful chart review.'),
+              ('10–30','Healthy scan size for most strategies. Sort by RS Percentile and work from the top.'),
+              ('30–80','Broad scan — either market conditions are strong or filters are loose. Consider tightening one filter.'),
+              ('>80','Filters are too loose. The signal-to-noise ratio is low. Add one more confirming filter.'),
+            ] %}
+            <tr class="hover:bg-gray-50 dark:hover:bg-slate-800">
+              <td class="py-1.5 pr-4 font-black text-indigo-700 dark:text-indigo-300 whitespace-nowrap">{{ count }}</td>
+              <td class="py-1.5 text-gray-500 dark:text-slate-400">{{ meaning }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div>
+        <div class="font-black text-gray-700 dark:text-slate-200 mb-2">Column colour guide</div>
+        <div class="space-y-2">
+          {% for col, colors, meaning in [
+            ('RS Percentile','Purple ≥90 · Blue 70–89 · Grey <70','Purple = top-tier momentum leaders'),
+            ('RS Trend','Green Accel · Blue Steady · Amber Fading','Green = improving strength — highest priority'),
+            ('Trend Score /6','Green 6/6 · Grey ≤5','6/6 = full Minervini template satisfied'),
+            ('52W Pullback %','Green ≤10% · Grey ≤15% · Amber >15%','Darker green = closer to highs, tighter base'),
+            ('VOLAR','Purple ≥2 · Blue ≥1 · Grey <1','Higher VOLAR = more orderly advance'),
+          ] %}
+          <div class="p-2 rounded-lg bg-gray-50 dark:bg-slate-800 border border-gray-100 dark:border-slate-700">
+            <div class="font-black text-gray-700 dark:text-slate-200 text-[9px]">{{ col }}</div>
+            <div class="font-mono text-[8px] text-gray-500 dark:text-slate-400 mt-0.5">{{ colors }}</div>
+            <div class="text-[9px] text-gray-500 dark:text-slate-400 mt-0.5">{{ meaning }}</div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 8. Tips and Common Mistakes ──────────────────────────────────────── -->
+  <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm p-6">
+    <h3 class="text-sm font-black uppercase text-gray-800 dark:text-slate-200 mb-4">8. Tips and Common Mistakes</h3>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-[10px]">
+      <div>
+        <div class="font-black text-emerald-600 dark:text-emerald-400 mb-2 uppercase text-[9px]">✅ Do</div>
+        <ul class="space-y-2 text-gray-600 dark:text-slate-300">
+          {% for tip in [
+            'Start with 2–3 filters and add more if the result list is too large.',
+            'Use Stage 2 or Price Above EMA200 as a mandatory baseline for long-only scans.',
+            'Save configs you use regularly — reloading a saved config takes one click.',
+            'Run scans after market close when the day\'s data is fully settled in cache.',
+            'Use the Restore button in scan history to compare today\'s results with last week\'s.',
+            'Combine horizontal breakout + volume surge for the most actionable intraday watchlist.',
+          ] %}
+          <li class="flex gap-2"><span class="text-emerald-500 shrink-0">→</span>{{ tip }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+      <div>
+        <div class="font-black text-red-500 dark:text-red-400 mb-2 uppercase text-[9px]">❌ Avoid</div>
+        <ul class="space-y-2 text-gray-600 dark:text-slate-300">
+          {% for tip in [
+            'Don\'t stack 8+ filters expecting high-quality results — you will get 0 results or over-fitted false precision.',
+            'Don\'t use VCP Near Pivot without VCP Active and VCP Volume Dry-Up — you miss the key validation.',
+            'Don\'t ignore the RS Trend column — an RS Percentile of 85 that is Fading is far less useful than 70 that is Accelerating.',
+            'Don\'t use Trendline Breakout without also reviewing the chart — the algorithm can occasionally flag false positives on choppy data.',
+            'Don\'t run the Universal Screener and the individual screeners simultaneously — they share the same cache and background thread lock.',
+            'Don\'t treat a scan result as a trade signal — always validate price action and risk/reward before acting.',
+          ] %}
+          <li class="flex gap-2"><span class="text-red-400 shrink-0">→</span>{{ tip }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Footer CTA ─────────────────────────────────────────────────────────── -->
+  <div class="flex justify-center pt-2">
+    <a href="{{ url_for('universal_screener.universal_view') }}"
+       class="px-8 py-3 bg-indigo-600 text-white rounded-2xl font-black text-sm uppercase hover:bg-indigo-700 transition shadow-xl shadow-indigo-200 dark:shadow-indigo-950/40">
+      🚀 Open Universal Screener
+    </a>
+  </div>
+
+</div>
+{% endblock %}
