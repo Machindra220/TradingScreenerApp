@@ -79,7 +79,10 @@ def create_app():
     from app.routes.quant_screeners_us import quant_screeners_us_bp
     from app.routes.ma_screener import ma_screener_bp
     from app.routes.universal_screener import universal_bp
+    from app.routes.scan_suite import scan_suite_bp, init_scheduler
 
+    app.register_blueprint(scan_suite_bp)
+    init_scheduler(app)
     app.register_blueprint(universal_bp)
     app.register_blueprint(ma_screener_bp)
     app.register_blueprint(quant_screeners_us_bp)
