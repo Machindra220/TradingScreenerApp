@@ -12,6 +12,36 @@ from app.services.market_data_cache import us_cache, latest_bar_date  # shared U
 
 rs_roc_us_bp = Blueprint("rs_roc_us", __name__)
 
+
+def _normalise_df(df, sym=None):
+    """Handle simple-string and MultiIndex/tuple column formats from the cache."""
+    if df is None or df.empty:
+        return None
+    cols = df.columns
+    if isinstance(cols, pd.MultiIndex) or (len(cols) > 0 and isinstance(cols[0], tuple)):
+        if sym is not None:
+            for cand in [sym, sym.replace('-', '.'), sym]:
+                try:
+                    sliced = df.xs(cand, axis=1, level=1)
+                    sliced.columns = [c.title() for c in sliced.columns]
+                    return sliced
+                except KeyError:
+                    pass
+        flat_cols = {}
+        for c in cols:
+            field = c[0] if isinstance(c, tuple) else c
+            if field.lower() in ('open', 'high', 'low', 'close', 'volume'):
+                flat_cols[c] = field.title()
+        if flat_cols:
+            df = df[list(flat_cols.keys())].copy()
+            df.columns = list(flat_cols.values())
+            return df
+        return None
+    df = df.copy()
+    df.columns = [c.title() if isinstance(c, str) and c.lower() in
+                  ('open', 'high', 'low', 'close', 'volume') else c for c in df.columns]
+    return df
+
 # Anchor all paths to __file__ so they resolve correctly regardless of where
 # Flask was started — os.getcwd() at module-import time is fragile because the
 # Werkzeug reloader can run in a different working directory (Memory #12).
@@ -165,7 +195,7 @@ def screen_rs_roc(stock_list, price_data, bench_close):
 
     for item in stock_list:
         sym = item['Symbol']
-        df  = price_data.get(sym)
+        df  = _normalise_df(price_data.get(sym), sym)
         if df is None or df.empty:
             continue
         try:
@@ -245,9 +275,11 @@ def run_scan():
     _set_progress(stage="fetching_benchmark", total=len(symbols))
 
     # Fetch benchmark ONCE via the shared cache (Memory #8 — never per-stock)
-    bench_data, _ = us_cache.get_price_history_bulk([US_BENCHMARK], interval='1d', lookback_days=500)
-    bench_df = bench_data.get(US_BENCHMARK)
-    if bench_df is None or bench_df.empty:
+    bench_data, _ = us_cache.get_price_history_bulk(
+        [US_BENCHMARK], interval='1d', lookback_days=500, progress_callback=lambda *a: None
+    )
+    bench_df = _normalise_df(bench_data.get(US_BENCHMARK), US_BENCHMARK)
+    if bench_df is None or bench_df.empty or 'Close' not in bench_df.columns:
         _set_progress(active=False, stage="error",
                       error=f"Could not fetch benchmark {US_BENCHMARK}. Scan aborted.")
         return

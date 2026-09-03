@@ -11,6 +11,36 @@ from app.services.market_data_cache import ind_cache, latest_bar_date  # shared 
 
 rs_roc_bp = Blueprint("rs_roc", __name__)
 
+
+def _normalise_df(df, sym=None):
+    """Handle simple-string and MultiIndex/tuple column formats from the cache."""
+    if df is None or df.empty:
+        return None
+    cols = df.columns
+    if isinstance(cols, pd.MultiIndex) or (len(cols) > 0 and isinstance(cols[0], tuple)):
+        if sym is not None:
+            for cand in [sym, sym.replace('.NS', ''), sym + '.NS']:
+                try:
+                    sliced = df.xs(cand, axis=1, level=1)
+                    sliced.columns = [c.title() for c in sliced.columns]
+                    return sliced
+                except KeyError:
+                    pass
+        flat_cols = {}
+        for c in cols:
+            field = c[0] if isinstance(c, tuple) else c
+            if field.lower() in ('open', 'high', 'low', 'close', 'volume'):
+                flat_cols[c] = field.title()
+        if flat_cols:
+            df = df[list(flat_cols.keys())].copy()
+            df.columns = list(flat_cols.values())
+            return df
+        return None
+    df = df.copy()
+    df.columns = [c.title() if isinstance(c, str) and c.lower() in
+                  ('open', 'high', 'low', 'close', 'volume') else c for c in df.columns]
+    return df
+
 # Anchor all paths to __file__ — os.getcwd() at module level breaks after
 # Werkzeug hot-reload because the reloader child process may have a different
 # working directory than the main Flask process (Memory #12).
@@ -176,9 +206,11 @@ def _prune_snapshots(keep_filenames):
 def _fetch_benchmark():
     """Try Nifty 500 first, fall back to Nifty 50. Returns (close_series, label)."""
     for ticker, label in (PRIMARY_BENCHMARK, FALLBACK_BENCHMARK):
-        data, _ = ind_cache.get_price_history_bulk([ticker], interval='1d', lookback_days=500)
-        df = data.get(ticker)
-        if df is not None and not df.empty and len(df) >= 200:
+        data, _ = ind_cache.get_price_history_bulk(
+            [ticker], interval='1d', lookback_days=500, progress_callback=lambda *a: None
+        )
+        df = _normalise_df(data.get(ticker), ticker)
+        if df is not None and 'Close' in df.columns and len(df) >= 200:
             return df['Close'].dropna(), f"{label} ({ticker})"
     return None, None
 
@@ -273,7 +305,7 @@ def run_scan(source_path, source_name):
     for i, yf_sym in enumerate(yf_symbols):
         _set_progress(processed=i, current_symbol=yf_sym)
         item = sym_to_item[yf_sym]
-        df   = price_data.get(yf_sym)
+        df = _normalise_df(price_data.get(yf_sym), yf_sym)
         if df is None or df.empty:
             continue
         try:

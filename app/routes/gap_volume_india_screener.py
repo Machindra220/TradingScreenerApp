@@ -10,6 +10,36 @@ from app.services.market_data_cache import ind_cache, latest_bar_date  # shared 
 
 gap_vol_india_bp = Blueprint("gap_volume_india", __name__)
 
+
+def _normalise_df(df, sym=None):
+    """Handle simple-string and MultiIndex/tuple column formats from the cache."""
+    if df is None or df.empty:
+        return None
+    cols = df.columns
+    if isinstance(cols, pd.MultiIndex) or (len(cols) > 0 and isinstance(cols[0], tuple)):
+        if sym is not None:
+            for cand in [sym, sym.replace('.NS', ''), sym + '.NS']:
+                try:
+                    sliced = df.xs(cand, axis=1, level=1)
+                    sliced.columns = [c.title() for c in sliced.columns]
+                    return sliced
+                except KeyError:
+                    pass
+        flat_cols = {}
+        for c in cols:
+            field = c[0] if isinstance(c, tuple) else c
+            if field.lower() in ('open', 'high', 'low', 'close', 'volume'):
+                flat_cols[c] = field.title()
+        if flat_cols:
+            df = df[list(flat_cols.keys())].copy()
+            df.columns = list(flat_cols.values())
+            return df
+        return None
+    df = df.copy()
+    df.columns = [c.title() if isinstance(c, str) and c.lower() in
+                  ('open', 'high', 'low', 'close', 'volume') else c for c in df.columns]
+    return df
+
 # Anchor all paths to __file__ (Memory #12 — os.getcwd() breaks after Werkzeug hot-reload)
 _PROJECT_ROOT     = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 UPLOAD_FOLDER     = os.path.join(_PROJECT_ROOT, 'uploads', 'gap_volume_india')
@@ -304,9 +334,12 @@ def run_scan(source_path, source_name):
     _set_progress(stage="fetching_benchmark", total=len(yf_symbols))
     bench_data = {}
     for ticker, label in (PRIMARY_BENCHMARK, FALLBACK_BENCHMARK):
-        result, _ = ind_cache.get_price_history_bulk([ticker], interval='1d', lookback_days=500)
-        df = result.get(ticker)
-        if df is not None and not df.empty and len(df) >= 200:
+        result, _ = ind_cache.get_price_history_bulk(
+            [ticker], interval='1d', lookback_days=500, progress_callback=lambda *a: None
+        )
+        df_raw = result.get(ticker)
+        df = _normalise_df(df_raw, ticker)
+        if df is not None and 'Close' in df.columns and len(df) >= 200:
             bench_data = {'close': df['Close'].dropna(), 'label': f"{label} ({ticker})"}
             break
     if not bench_data:
@@ -356,7 +389,8 @@ def run_scan(source_path, source_name):
     for i, yf_sym in enumerate(yf_symbols):
         _set_progress(processed=i, current_symbol=yf_sym)
         item = sym_to_item[yf_sym]
-        df   = price_data.get(yf_sym)
+        df_raw = price_data.get(yf_sym)
+        df     = _normalise_df(df_raw, yf_sym)
         if df is None or df.empty:
             continue
 

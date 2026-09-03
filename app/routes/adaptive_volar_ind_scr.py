@@ -5,7 +5,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 from flask import Blueprint, render_template, request, session, jsonify, redirect, url_for
 
-from app.services.market_data_cache import get_price_history_bulk, latest_bar_date  # shared cross-page price cache
+from app.services.market_data_cache import ind_cache, latest_bar_date  # shared IND SQLite cache
 
 volar_ind_adaptive_bp = Blueprint('volar_ind_adaptive_bp', __name__)
 
@@ -42,6 +42,42 @@ FALLBACK_INDEX = ("^NSEI", "Nifty 50")
 
 # Fields that must be valid numbers for a stock to be included in a scan.
 REQUIRED_NUMERIC_FIELDS = ['rs_3m', 'rs_6m', 'volar_3m', 'volar_6m']
+
+
+# ---------------------------------------------------------------------------
+# DataFrame column normaliser — handles both simple-string and MultiIndex
+# bulk-fetch formats returned by the shared cache.  Without this, symbols
+# whose DataFrames arrive as MultiIndex (the common case from yf.download)
+# crash silently on stock_df['Close'] and are skipped entirely.
+# ---------------------------------------------------------------------------
+
+def _normalise_df(df, sym=None):
+    if df is None or df.empty:
+        return None
+    cols = df.columns
+    if isinstance(cols, pd.MultiIndex) or (len(cols) > 0 and isinstance(cols[0], tuple)):
+        if sym is not None:
+            for cand in [sym, sym.replace('.NS', ''), sym + '.NS']:
+                try:
+                    sliced = df.xs(cand, axis=1, level=1)
+                    sliced.columns = [c.title() for c in sliced.columns]
+                    return sliced
+                except KeyError:
+                    pass
+        flat_cols = {}
+        for c in cols:
+            field = c[0] if isinstance(c, tuple) else c
+            if field.lower() in ('open', 'high', 'low', 'close', 'volume'):
+                flat_cols[c] = field.title()
+        if flat_cols:
+            df = df[list(flat_cols.keys())].copy()
+            df.columns = list(flat_cols.values())
+            return df
+        return None
+    df = df.copy()
+    df.columns = [c.title() if isinstance(c, str) and c.lower() in
+                  ('open', 'high', 'low', 'close', 'volume') else c for c in df.columns]
+    return df
 
 # ---------------------------------------------------------------------------
 # In-memory scan progress (single-process; fine for a personal-use tool).
@@ -100,8 +136,14 @@ def fetch_index_data():
     """
     for ticker_sym, label in (PRIMARY_INDEX, FALLBACK_INDEX):
         try:
-            idx_df = get_price_history_bulk([ticker_sym], interval='1d', lookback_days=LB_6M + 220)[0].get(ticker_sym)
-            if idx_df is not None and len(idx_df) >= LB_6M:
+            # get_price_history_bulk returns (dict, report) — unpack correctly.
+            idx_data, _ = ind_cache.get_price_history_bulk(
+                [ticker_sym], interval='1d', lookback_days=LB_6M + 220,
+                progress_callback=lambda *a: None,
+            )
+            idx_df_raw = idx_data.get(ticker_sym)
+            idx_df = _normalise_df(idx_df_raw, ticker_sym)
+            if idx_df is not None and 'Close' in idx_df.columns and len(idx_df) >= LB_6M:
                 return idx_df['Close'].dropna(), f"{label} ({ticker_sym})"
         except Exception as e:
             print(f"  Benchmark fetch failed for {ticker_sym}: {e}")
@@ -117,7 +159,11 @@ def is_volar_adaptive_ind(symbol, idx_close, stock_df):
     the stock fails the EMA200 filter or lacks clean data.
     """
     try:
-        if stock_df is None or stock_df.empty or len(stock_df) < LB_6M:
+        if stock_df is None or stock_df.empty:
+            return None
+        # Normalise before column access — cache may return MultiIndex format
+        stock_df = _normalise_df(stock_df, symbol if symbol.endswith('.NS') else f"{symbol}.NS")
+        if stock_df is None or stock_df.empty or 'Close' not in stock_df.columns or len(stock_df) < LB_6M:
             return None
 
         close = stock_df['Close'].dropna()
@@ -247,7 +293,7 @@ def run_scan(symbols, source_name):
     def _fetch_progress(i, total, sym):
         _set_progress(processed=i, total=total, current_symbol=sym)
 
-    price_data, fetch_report = get_price_history_bulk(
+    price_data, fetch_report = ind_cache.get_price_history_bulk(
         ticker_symbols, interval='1d', lookback_days=LB_6M + 220, progress_callback=_fetch_progress
     )
     price_data_asof = latest_bar_date(price_data)

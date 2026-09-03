@@ -10,6 +10,36 @@ from app.services.market_data_cache import us_cache, latest_bar_date  # shared U
 
 gap_vol_bp = Blueprint("gap_volume", __name__)
 
+
+def _normalise_df(df, sym=None):
+    """Handle simple-string and MultiIndex/tuple column formats from the cache."""
+    if df is None or df.empty:
+        return None
+    cols = df.columns
+    if isinstance(cols, pd.MultiIndex) or (len(cols) > 0 and isinstance(cols[0], tuple)):
+        if sym is not None:
+            for cand in [sym, sym.replace('-', '.'), sym]:
+                try:
+                    sliced = df.xs(cand, axis=1, level=1)
+                    sliced.columns = [c.title() for c in sliced.columns]
+                    return sliced
+                except KeyError:
+                    pass
+        flat_cols = {}
+        for c in cols:
+            field = c[0] if isinstance(c, tuple) else c
+            if field.lower() in ('open', 'high', 'low', 'close', 'volume'):
+                flat_cols[c] = field.title()
+        if flat_cols:
+            df = df[list(flat_cols.keys())].copy()
+            df.columns = list(flat_cols.values())
+            return df
+        return None
+    df = df.copy()
+    df.columns = [c.title() if isinstance(c, str) and c.lower() in
+                  ('open', 'high', 'low', 'close', 'volume') else c for c in df.columns]
+    return df
+
 # Anchor all paths to __file__ — os.getcwd() at module level is unreliable
 # after Werkzeug hot-reload (Memory #12).
 _PROJECT_ROOT   = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -183,10 +213,11 @@ def run_scan(source_path, source_name):
 
     # Fetch benchmark ONCE via shared cache (Memory #8 — never per-stock)
     bench_data, _ = us_cache.get_price_history_bulk(
-        [US_BENCHMARK[0]], interval='1d', lookback_days=500
+        [US_BENCHMARK[0]], interval='1d', lookback_days=500,
+        progress_callback=lambda *a: None,
     )
-    bench_df = bench_data.get(US_BENCHMARK[0])
-    if bench_df is None or bench_df.empty or len(bench_df) < 200:
+    bench_df = _normalise_df(bench_data.get(US_BENCHMARK[0]), US_BENCHMARK[0])
+    if bench_df is None or bench_df.empty or 'Close' not in bench_df.columns or len(bench_df) < 200:
         _set_progress(active=False, stage="error",
                       error=f"Could not fetch benchmark {US_BENCHMARK[0]}.")
         return
@@ -231,7 +262,7 @@ def run_scan(source_path, source_name):
     raw_results = []
     for i, sym in enumerate(symbols):
         _set_progress(processed=i, current_symbol=sym)
-        df = price_data.get(sym)
+        df = _normalise_df(price_data.get(sym), sym)
         if df is None or df.empty:
             continue
         try:

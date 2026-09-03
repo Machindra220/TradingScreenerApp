@@ -406,39 +406,49 @@ async function runJob(job, gap, hasNext) {
   fd.append('csrf_token', CSRF);
   Object.entries(job.form || {}).forEach(([k,v]) => fd.append(k, v));
 
-  // POST to start
+  // POST to start (sync screeners block here; async screeners return immediately)
   try {
-    await fetch(job.post_url, { method:'POST', body: fd });
+    setJobState(job.id, 'running', 'Starting…', 3, '');
+    const postResp = await fetch(job.post_url, { method:'POST', body: fd });
+    if (!job.progress_url) {
+      // Synchronous screener — POST completed = scan done
+      setJobState(job.id, 'done', '✅ Complete', 100, '✅');
+    }
   } catch(e) {
     setJobState(job.id, 'error', 'POST failed: ' + e, 100, '❌');
     return;
   }
 
-  // Poll progress
-  const t0 = Date.now();
-  const maxMs = 900_000;
-  while (Date.now() - t0 < maxMs) {
-    if (_stop) return;
-    await sleep(2000);
-    try {
-      const resp = await fetch(job.progress_url);
-      const d    = await resp.json();
-      const pct  = d.total > 0 ? Math.round(d.processed / d.total * 100) : 0;
-      const stg  = d.stage || '';
-      const lbl  = stg === 'fetching'   ? `Fetching… ${pct}%`
-                 : stg === 'screening'  ? `Screening… ${pct}%`
-                 : stg === 'loading'    ? 'Loading symbols…'
-                 : stg === 'benchmark' ? 'Fetching benchmark…'
-                 : stg === 'error'      ? ('Error: ' + (d.error||''))
-                 : stg;
-      setJobState(job.id, 'running', lbl, Math.max(pct, 5), '');
-      if (!d.active) {
-        const ok = d.stage !== 'error';
-        setJobState(job.id, ok ? 'done' : 'error', ok ? '✅ Complete' : '❌ ' + (d.error||'Failed'), 100, ok ? '✅' : '❌');
-        break;
-      }
-    } catch(e) { /* progress endpoint hiccup — keep polling */ }
-  }
+  // Poll progress for async screeners only
+  if (job.progress_url) {
+    const runningKey = job.running_key || 'active';
+    const t0 = Date.now();
+    const maxMs = 900_000;
+    while (Date.now() - t0 < maxMs) {
+      if (_stop) return;
+      await sleep(2000);
+      try {
+        const resp = await fetch(job.progress_url);
+        const d    = await resp.json();
+        const pct  = d.total > 0 ? Math.round(d.processed / d.total * 100) : (d.pct || 0);
+        const stg  = d.stage || d.msg || '';
+        const lbl  = stg === 'fetching'   ? `Fetching… ${pct}%`
+                   : stg === 'screening'  ? `Screening… ${pct}%`
+                   : stg === 'loading'    ? 'Loading symbols…'
+                   : stg === 'benchmark'  ? 'Fetching benchmark…'
+                   : stg === 'error'      ? ('Error: ' + (d.error||''))
+                   : stg || `Running… ${pct}%`;
+        setJobState(job.id, 'running', lbl, Math.max(pct, 5), '');
+        const isDone = !d[runningKey];
+        if (isDone) {
+          const ok = d.stage !== 'error';
+          setJobState(job.id, ok ? 'done' : 'error',
+            ok ? '✅ Complete' : '❌ ' + (d.error||'Failed'), 100, ok ? '✅' : '❌');
+          break;
+        }
+      } catch(e) { /* progress endpoint hiccup — keep polling */ }
+    }
+  } // end if (job.progress_url)
 
   // Gap countdown
   if (hasNext && !_stop) {
