@@ -80,7 +80,9 @@ def create_app():
     from app.routes.ma_screener import ma_screener_bp
     from app.routes.universal_screener import universal_bp
     from app.routes.scan_suite import scan_suite_bp, init_scheduler
+    from app.routes.staircase_screener import staircase_bp
 
+    app.register_blueprint(staircase_bp)
     app.register_blueprint(scan_suite_bp)
     init_scheduler(app)
     app.register_blueprint(universal_bp)
@@ -92,7 +94,6 @@ def create_app():
     app.register_blueprint(trade_journal_bp)
     app.register_blueprint(quant_screeners_bp)
     app.register_blueprint(us_vol_surge_bp, url_prefix="/us-vol")
-    app.register_blueprint(delivery_surge_bp, url_prefix="/delivery")
     app.register_blueprint(minervini_bp)
     app.register_blueprint(ipo_screener_bp)
     app.register_blueprint(hh_hl_us_bp)
@@ -112,6 +113,7 @@ def create_app():
     app.register_blueprint(eps_bp, url_prefix="/eps")
     app.register_blueprint(stage2_delivery_bp)
     app.register_blueprint(momentum_bp)
+    app.register_blueprint(delivery_surge_bp)
     app.register_blueprint(screener_bp, url_prefix="/screener")
     app.register_blueprint(risk_bp, url_prefix='/tools')
     app.register_blueprint(calendar_bp)

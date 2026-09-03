@@ -10,8 +10,7 @@
     #runScanBtn { position: relative; overflow: hidden; }
     #runScanBtnFill { position: absolute; inset: 0; width: 0%; background: rgba(0,0,0,0.22); transition: width .3s ease-out; }
     #runScanBtnLabel { position: relative; z-index: 1; }
-    .tab-btn.active { background: white; color: #4338ca; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-    .dark .tab-btn.active { background: #1e293b; color: #818cf8; }
+
 </style>
 
 <div class="max-w-7xl mx-auto px-4 py-8">
@@ -117,13 +116,7 @@
         </form>
     </div>
 
-    <!-- Tab switcher: Screener / History -->
-    <div class="flex gap-1 bg-gray-100 dark:bg-slate-800 p-1 rounded-xl mb-4 w-fit">
-        <button class="tab-btn active px-4 py-2 rounded-lg text-[10px] font-black uppercase transition" onclick="switchTab('screener',this)">📈 Screener ({{ stocks|length }})</button>
-        <button class="tab-btn px-4 py-2 rounded-lg text-[10px] font-black uppercase text-gray-500 dark:text-slate-400 transition" onclick="switchTab('history',this)">🕒 Scan History ({{ history|length }})</button>
-    </div>
-
-    <!-- ═══════════ SCREENER TAB ═══════════ -->
+    <!-- ═══════════ SCREENER ═══════════ -->
     <div id="tab-screener">
         <!-- Filter chips + search -->
         <div class="flex flex-wrap items-center justify-between gap-4 mb-4">
@@ -232,8 +225,12 @@
                         <!-- Delivery Spike: badge + per-segment history bars (Memory #6) -->
                         <td class="px-6 py-4 text-center">
                             <div class="inline-flex items-center gap-1">
-                                {% if stock.high_vol_alert %}
-                                <span class="text-[8px] px-1.5 py-0.5 bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 rounded font-black uppercase border border-red-100 dark:border-red-900/30 animate-pulse whitespace-nowrap">🔥 Surge</span>
+                                {% if stock.delivery_spike >= 6 %}
+                                <span class="text-[8px] px-1.5 py-0.5 bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 rounded font-black uppercase border border-red-100 dark:border-red-900/30 animate-pulse whitespace-nowrap">🔥 Extreme</span>
+                                {% elif stock.delivery_spike >= 4 %}
+                                <span class="text-[8px] px-1.5 py-0.5 bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 rounded font-black uppercase border border-amber-100 dark:border-amber-900/30 whitespace-nowrap">🔥 Strong</span>
+                                {% elif stock.high_vol_alert %}
+                                <span class="text-[8px] px-1.5 py-0.5 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded font-black uppercase border border-indigo-100 dark:border-indigo-900/30 whitespace-nowrap">⚡ High</span>
                                 {% endif %}
                                 <span class="font-black text-[11px] {% if stock.delivery_spike >= 6 %}text-red-600 dark:text-red-400{% elif stock.delivery_spike >= 4 %}text-amber-600 dark:text-amber-300{% elif stock.delivery_spike >= 3 %}text-indigo-600 dark:text-indigo-300{% else %}text-gray-600 dark:text-slate-400{% endif %}">
                                     {{ stock.delivery_spike }}×
@@ -313,97 +310,44 @@
         </div>
     </div><!-- /tab-screener -->
 
-    <!-- ═══════════ HISTORY TAB ═══════════ -->
-    <div id="tab-history" class="hidden">
-        <!-- Scan history strip -->
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-gray-100 dark:border-slate-800 shadow-sm dark:shadow-none mb-6">
-            <p class="px-4 py-2.5 text-[9px] font-black text-gray-400 dark:text-slate-500 uppercase tracking-widest border-b border-gray-50 dark:border-slate-800">
-                🕒 Last 5 Delivery Surge Scans ({{ history|length }})
-            </p>
-            <div class="divide-y divide-gray-50 dark:divide-slate-800">
-                {% for entry in history %}
-                <div class="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2.5 text-[10px]">
-                    <span class="font-black text-blue-500 dark:text-blue-400 uppercase whitespace-nowrap w-[130px] shrink-0">{{ entry.time }}</span>
-                    {% if entry.source %}<span class="font-bold text-gray-600 dark:text-slate-400 truncate flex-1 min-w-[80px]">{{ entry.source }}</span>{% endif %}
-                    <span class="font-black text-gray-800 dark:text-slate-200 whitespace-nowrap">{{ entry.count }} stocks</span>
-                    {% if entry.leaders_rs90 %}
-                    <span class="text-[9px] font-bold text-yellow-600 dark:text-yellow-400 whitespace-nowrap" title="RS percentile ≥ 90">🏆 {{ entry.leaders_rs90|length }} RS90+</span>
-                    {% endif %}
-                    {% if entry.surge_strong %}
-                    <span class="text-[9px] font-bold text-amber-600 dark:text-amber-400 whitespace-nowrap" title="Delivery spike ≥ 4×">⚡ {{ entry.surge_strong|length }} Strong</span>
-                    {% endif %}
-                    {% if entry.benchmark_label %}
-                    <span class="text-[9px] text-gray-400 dark:text-slate-500 whitespace-nowrap">{{ entry.benchmark_label }}</span>
-                    {% endif %}
-                    {% if entry.price_data_asof %}
-                    <span class="text-[9px] text-gray-400 dark:text-slate-500 whitespace-nowrap">Data: {{ entry.price_data_asof }}</span>
-                    {% endif %}
-                    {% if entry.snapshot_file %}
-                    <form method="POST"
-                          action="{{ url_for('delivery_surge.restore_delivery_surge', snapshot_file=entry.snapshot_file) }}"
-                          class="ml-auto shrink-0">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                        <button type="submit"
-                                onclick="return confirm('Restore this scan? This replaces what is currently displayed.');"
-                                class="text-[9px] font-black uppercase text-indigo-500 hover:text-white hover:bg-indigo-600 px-2.5 py-1 rounded-full border border-indigo-200 dark:border-indigo-500/30 transition">
-                            ↺ Restore
-                        </button>
-                    </form>
-                    {% endif %}
-                </div>
-                {% endfor %}
-                {% if not history %}
-                <p class="px-4 py-3 text-[10px] text-gray-400 dark:text-slate-500 italic">No scans yet.</p>
+    <!-- ═══════════ LAST 5 SCANS — always visible at bottom ═══════════ -->
+    <div class="bg-white dark:bg-slate-900 rounded-xl border border-gray-100 dark:border-slate-800 shadow-sm dark:shadow-none mt-8">
+        <p class="px-4 py-2.5 text-[9px] font-black text-gray-400 dark:text-slate-500 uppercase tracking-widest border-b border-gray-50 dark:border-slate-800">
+            🕒 Last 5 Scans
+        </p>
+        <div class="divide-y divide-gray-50 dark:divide-slate-800">
+            {% for entry in history %}
+            <div class="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2.5 text-[10px]">
+                <span class="font-black text-blue-500 dark:text-blue-400 uppercase whitespace-nowrap">{{ entry.time }}</span>
+                {% if entry.source %}<span class="font-bold text-gray-500 dark:text-slate-400 truncate max-w-[180px]">{{ entry.source }}</span>{% endif %}
+                <span class="font-black text-gray-800 dark:text-slate-200 whitespace-nowrap">{{ entry.count }} surges</span>
+                {% if entry.leaders_rs90 %}
+                <span class="text-[9px] font-bold text-yellow-600 dark:text-yellow-400 whitespace-nowrap" title="RS percentile ≥ 90">🏆 {{ entry.leaders_rs90|length }} RS90+</span>
+                {% endif %}
+                {% if entry.surge_strong %}
+                <span class="text-[9px] font-bold text-amber-600 dark:text-amber-400 whitespace-nowrap" title="Delivery spike ≥ 4×">⚡ {{ entry.surge_strong|length }} Strong</span>
+                {% endif %}
+                {% if entry.price_data_asof %}
+                <span class="text-[9px] text-gray-400 dark:text-slate-500 whitespace-nowrap">Data: {{ entry.price_data_asof }}</span>
+                {% endif %}
+                {% if entry.snapshot_file %}
+                <form method="POST"
+                      action="{{ url_for('delivery_surge.restore_delivery_surge', snapshot_file=entry.snapshot_file) }}"
+                      class="ml-auto shrink-0">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button type="submit"
+                            onclick="return confirm('Restore this scan? This replaces what is currently displayed.');"
+                            class="text-[9px] font-black uppercase text-indigo-500 hover:text-white hover:bg-indigo-600 px-2.5 py-1 rounded-full border border-indigo-200 dark:border-indigo-500/30 transition">
+                        ↺ Restore
+                    </button>
+                </form>
                 {% endif %}
             </div>
+            {% else %}
+            <p class="px-4 py-3 text-[10px] text-gray-400 dark:text-slate-500 italic">No scans yet.</p>
+            {% endfor %}
         </div>
-
-        <!-- History stock list (current restored/loaded results grouped by scan date) -->
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-gray-100 dark:border-slate-800 shadow-sm dark:shadow-none overflow-x-auto">
-            <div class="px-4 py-2.5 border-b border-gray-50 dark:border-slate-800 text-[9px] font-black text-gray-400 dark:text-slate-500 uppercase">
-                Stocks from current / restored scan — sorted by Delivery Spike
-            </div>
-            <table class="min-w-full text-left text-xs">
-                <thead class="bg-gray-50/70 dark:bg-slate-800/40 border-b border-gray-100 dark:border-slate-800">
-                    <tr>
-                        <th class="px-4 py-3 font-bold uppercase text-gray-400 dark:text-slate-400">#</th>
-                        <th class="px-4 py-3 font-bold uppercase text-gray-400 dark:text-slate-400">Symbol</th>
-                        <th class="px-4 py-3 font-bold uppercase text-gray-400 dark:text-slate-400 text-right tabular-nums">Price (₹)</th>
-                        <th class="px-4 py-3 font-bold uppercase text-amber-400 text-center">Delivery Spike</th>
-                        <th class="px-4 py-3 font-bold uppercase text-indigo-400 dark:text-indigo-300 text-center">RS %tile</th>
-                        <th class="px-4 py-3 font-bold uppercase text-gray-400 dark:text-slate-400 text-right tabular-nums">ROC % 21D</th>
-                        <th class="px-4 py-3 font-bold uppercase text-gray-400 dark:text-slate-400 text-right">Tag</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-gray-50 dark:divide-slate-800">
-                    {% for stock in stocks %}
-                    <tr class="hover:bg-gray-50/50 dark:hover:bg-slate-800/40 transition-colors">
-                        <td class="px-4 py-3 text-gray-400 dark:text-slate-500 tabular-nums">{{ stock.rank }}</td>
-                        <td class="px-4 py-3 font-black text-indigo-700 dark:text-indigo-300">
-                            {{ stock.symbol_clean }}
-                            <button type="button" onclick="copyTicker(this,'{{ stock.symbol_clean }}')"
-                                    class="p-1 text-slate-400 hover:text-indigo-600 rounded transition-colors" title="Copy">
-                                <svg class="w-3 h-3 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0A2.25 2.25 0 0113.5 4.5h-3a2.25 2.25 0 01-2.166-1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.75c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 011.927-.184"></path></svg>
-                            </button>
-                        </td>
-                        <td class="px-4 py-3 font-bold text-gray-900 dark:text-slate-100 text-right tabular-nums">{{ "{:,.2f}".format(stock.price) }}</td>
-                        <td class="px-4 py-3 text-center font-black text-amber-600 dark:text-amber-300 tabular-nums">{{ stock.delivery_spike }}×</td>
-                        <td class="px-4 py-3 text-center">
-                            <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black
-                                 {% if stock.rs_percentile|default(0) >= 90 %}bg-indigo-600 text-white{% elif stock.rs_percentile|default(0) >= 70 %}bg-indigo-100 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300{% else %}bg-gray-100 dark:bg-slate-800 text-gray-500{% endif %}">
-                                {{ stock.rs_percentile|default('—') }}
-                            </span>
-                        </td>
-                        <td class="px-4 py-3 text-right tabular-nums font-bold {% if stock.roc_21d >= 10 %}text-green-600 dark:text-emerald-400{% elif stock.roc_21d < 0 %}text-red-500{% else %}text-gray-600 dark:text-slate-400{% endif %}">{{ stock.roc_21d }}</td>
-                        <td class="px-4 py-3 text-right"><span class="text-[8px] px-2 py-0.5 bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-300 rounded font-bold uppercase">{{ stock.tag }}</span></td>
-                    </tr>
-                    {% else %}
-                    <tr><td colspan="7" class="px-4 py-8 text-center text-gray-400 italic">Run the scan to see stocks here.</td></tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div><!-- /tab-history -->
+    </div>
 
 </div>
 
@@ -438,14 +382,6 @@ document.getElementById('scanForm').addEventListener('submit',function(e){
 });
 
 {% if is_scanning %}setButtonScanning(true);pollProgress();{% endif %}
-
-// Tab switching
-function switchTab(tab, btn){
-    document.getElementById('tab-screener').classList.toggle('hidden', tab!=='screener');
-    document.getElementById('tab-history').classList.toggle('hidden', tab!=='history');
-    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
-    btn.classList.add('active');
-}
 
 // Dropzone
 const fi=document.getElementById('csvFileInput'),dz=document.getElementById('dropzone');

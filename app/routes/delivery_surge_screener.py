@@ -43,6 +43,44 @@ DEFAULT_IND_LABEL = "Nifty 500 Default (nifty_500.csv)"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(SNAPSHOT_DIR,  exist_ok=True)
 
+
+# ---------------------------------------------------------------------------
+# DataFrame column normaliser — handles simple-string AND MultiIndex/tuple
+# column formats returned by the shared cache bulk fetch. Without this,
+# df['Close'] on a MultiIndex DataFrame crashes silently and skips symbols.
+# ---------------------------------------------------------------------------
+
+def _normalise_df(df, sym=None):
+    if df is None or df.empty:
+        return None
+    cols = df.columns
+    if isinstance(cols, pd.MultiIndex) or (len(cols) > 0 and isinstance(cols[0], tuple)):
+        if sym is not None:
+            for cand in [sym, sym.replace('.NS', ''), sym + '.NS']:
+                try:
+                    sliced = df.xs(cand, axis=1, level=1)
+                    sliced.columns = [c.title() for c in sliced.columns]
+                    return sliced
+                except KeyError:
+                    pass
+        flat = {}
+        for c in cols:
+            field = c[0] if isinstance(c, tuple) else c
+            if field.lower() in ('open', 'high', 'low', 'close', 'volume'):
+                flat[c] = field.title()
+        if flat:
+            df = df[list(flat.keys())].copy()
+            df.columns = list(flat.values())
+            return df
+        return None
+    df = df.copy()
+    df.columns = [
+        c.title() if isinstance(c, str) and c.lower() in
+        ('open', 'high', 'low', 'close', 'volume') else c
+        for c in df.columns
+    ]
+    return df
+
 HISTORY_LIMIT   = 5
 DELIVERY_THRESHOLD = 2.0    # vol_ratio ≥ 2× 20-day avg to qualify as a surge
 HIGH_VOL_BADGE  = 3.0       # vol_ratio ≥ 3× shown as "Surge 🔥"
@@ -203,9 +241,12 @@ def run_scan(source_path, source_name):
     # Fetch benchmark once via shared cache
     bench_close, benchmark_label = None, None
     for ticker, label in (PRIMARY_BENCHMARK, FALLBACK_BENCHMARK):
-        data, _ = ind_cache.get_price_history_bulk([ticker], interval='1d', lookback_days=300)
-        df = data.get(ticker)
-        if df is not None and not df.empty and len(df) >= ROC_WINDOW + 2:
+        data, _ = ind_cache.get_price_history_bulk(
+            [ticker], interval='1d', lookback_days=300,
+            progress_callback=lambda *a: None,
+        )
+        df = _normalise_df(data.get(ticker), ticker)
+        if df is not None and 'Close' in df.columns and len(df) >= ROC_WINDOW + 2:
             bench_close     = df['Close'].dropna()
             benchmark_label = f"{label} ({ticker})"
             break
@@ -249,7 +290,7 @@ def run_scan(source_path, source_name):
     raw_results = []
     for i, yf_sym in enumerate(yf_symbols):
         _set_progress(processed=i, current_symbol=yf_sym)
-        df = price_data.get(yf_sym)
+        df = _normalise_df(price_data.get(yf_sym), yf_sym)
         if df is None or df.empty:
             continue
         try:
@@ -400,7 +441,7 @@ def run_scan(source_path, source_name):
 def delivery_surge_process():
     if request.method == "POST":
         if _get_progress()["active"]:
-            return redirect(url_for('ind_delivery_surge.delivery_surge_process', scanning=1))
+            return redirect(url_for('delivery_surge.delivery_surge_process', scanning=1))
 
         file        = request.files.get('file')
         use_default = request.form.get('use_default') == '1'
@@ -423,11 +464,11 @@ def delivery_surge_process():
         if not source_path or not os.path.exists(source_path):
             err = f"Default file not found: {DEFAULT_IND_CSV}. Place nifty_500.csv in data/ or upload a file."
             _set_progress(active=False, stage="error", error=err)
-            return redirect(url_for('ind_delivery_surge.delivery_surge_process'))
+            return redirect(url_for('delivery_surge.delivery_surge_process'))
 
         thread = threading.Thread(target=run_scan, args=(source_path, source_name), daemon=True)
         thread.start()
-        return redirect(url_for('ind_delivery_surge.delivery_surge_process', scanning=1))
+        return redirect(url_for('delivery_surge.delivery_surge_process', scanning=1))
 
     # --- GET ---
     cache = _load_scan_results()
@@ -496,15 +537,15 @@ def restore_delivery_surge(snapshot_file):
     snapshot_path = os.path.join(SNAPSHOT_DIR, safe_name)
     valid = safe_name.startswith('snapshot_') and safe_name.endswith('.json') and os.path.exists(snapshot_path)
     if not valid:
-        return redirect(url_for('ind_delivery_surge.delivery_surge_process', restore_error=1))
+        return redirect(url_for('delivery_surge.delivery_surge_process', restore_error=1))
     try:
         with open(snapshot_path) as f:
             payload = json.load(f)
         with open(RESULTS_JSON, 'w') as f:
             json.dump(payload, f)
     except (json.JSONDecodeError, OSError):
-        return redirect(url_for('ind_delivery_surge.delivery_surge_process', restore_error=1))
-    return redirect(url_for('ind_delivery_surge.delivery_surge_process', restored=1))
+        return redirect(url_for('delivery_surge.delivery_surge_process', restore_error=1))
+    return redirect(url_for('delivery_surge.delivery_surge_process', restored=1))
 
 
 @delivery_surge_bp.route("/export-delivery-surge")
