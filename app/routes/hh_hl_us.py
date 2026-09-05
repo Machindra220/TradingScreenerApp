@@ -194,23 +194,33 @@ def _normalise_df(df, sym=None):
 def _analyse_us(symbol, df, sector, bench_close):
     """
     Filters:
-      1. Price within ±10% of 200-SMA (near-EMA zone — early entry)
-      2. Last swing-low > previous swing-low  (Higher Low)
-      3. Current price > last swing-low       (confirmation above HL)
-    Metrics: RS vs ^GSPC, 20D RS change, SL%, 52W retracement,
-             bars_since_pivot, hh_confirmed, ema_dist.
-    bench_close: pd.Series of ^GSPC Close aligned to same date range.
+      1. Price above 200-SMA
+      2. Higher Low  — min(last 20 bars) > min(prior 20 bars)
+      3. Price above the recent 20-bar low
+      4. Higher High — max(last 20 bars) > max(prior 20 bars) [informational]
+
+    Uses window-based min/max comparison instead of single-bar strict pivot.
+    Daily bars rarely satisfy "low < ALL prior 4 bars" strictly, causing
+    zero results. The 20-bar window approach reliably detects swing sequences.
     """
     try:
         if df is None or df.empty or len(df) < 200:
             return None
 
-        # _normalise_df handles simple-string, MultiIndex, and tuple columns
         df = _normalise_df(df, symbol)
         if df is None or df.empty:
             return None
 
-        close        = df['Close']
+        if not {'Close', 'High', 'Low'}.issubset(df.columns):
+            return None
+
+        close  = df['Close'].dropna()
+        high_s = df['High'].dropna()
+        low_s  = df['Low'].dropna()
+
+        if len(close) < 200:
+            return None
+
         curr_price   = float(close.iloc[-1])
         ma200_series = close.rolling(window=200).mean()
         ma200        = float(ma200_series.iloc[-1])
@@ -218,83 +228,78 @@ def _analyse_us(symbol, df, sector, bench_close):
         if pd.isna(ma200) or ma200 == 0:
             return None
 
-        # ── Filter 1: Price must be above 200-SMA ─────────────────────────
-        # HH-HL stocks in confirmed uptrends are typically 15-50% above
-        # MA200. The old ±10% band silently eliminated ~80% of valid setups.
+        # ── Filter 1: Price above 200-SMA ────────────────────────────────
         if curr_price <= ma200:
             return None
 
-        # ── Swing-low detection (5-bar pivot, past bars only) ─────────────
-        # shift(-1/-2) requires future bars → last 2 bars always NaN →
-        # most recent pivots never detected. Use only past-bar comparisons.
-        df['is_low'] = (
-            (df['Low'] <= df['Low'].shift(1)) &
-            (df['Low'] <= df['Low'].shift(2)) &
-            (df['Low'] <= df['Low'].shift(3)) &
-            (df['Low'] <= df['Low'].shift(4))
-        )
-        lows_df = df[df['is_low']]
-        if len(lows_df) < 2:
+        # ── Window-based HH-HL detection ─────────────────────────────────
+        # Compare most recent 20-bar window to prior 20-bar window.
+        W = 20
+        if len(low_s) < W * 2:
             return None
 
-        last_swing_low = float(lows_df['Low'].iloc[-1])
-        prev_swing_low = float(lows_df['Low'].iloc[-2])
+        recent_low  = float(low_s.iloc[-W:].min())
+        prior_low   = float(low_s.iloc[-W*2:-W].min())
+        recent_high = float(high_s.iloc[-W:].max())
+        prior_high  = float(high_s.iloc[-W*2:-W].max())
 
-        # bars since last pivot low
-        last_low_iloc    = df.index.get_loc(lows_df.index[-1])
-        bars_since_pivot = int((len(df) - 1) - last_low_iloc)
-
-        # ── Filter 2 & 3: Higher Low + price above it ──────────────────────
-        if not (last_swing_low > prev_swing_low and curr_price > last_swing_low):
+        # ── Filter 2: Higher Low ──────────────────────────────────────────
+        if recent_low <= prior_low:
             return None
 
-        # ── Swing-high check for HH confirmation (past bars only) ──────────
-        df['is_high'] = (
-            (df['High'] >= df['High'].shift(1)) &
-            (df['High'] >= df['High'].shift(2)) &
-            (df['High'] >= df['High'].shift(3)) &
-            (df['High'] >= df['High'].shift(4))
-        )
-        highs_df     = df[df['is_high']]
-        hh_confirmed = False
-        if len(highs_df) >= 2:
-            hh_confirmed = float(highs_df['High'].iloc[-1]) > float(highs_df['High'].iloc[-2])
+        # ── Filter 3: Price above recent swing low ────────────────────────
+        if curr_price <= recent_low:
+            return None
 
-        # ── Metrics ────────────────────────────────────────────────────────
-        high_52w    = float(df['High'].max())
-        retracement = round(((high_52w - curr_price) / high_52w) * 100, 2)
-        sl_percent  = round(((curr_price - last_swing_low) / curr_price) * 100, 2)
-        ema_dist    = round(((curr_price - ma200) / ma200) * 100, 2)
+        # ── HH confirmation (informational) ──────────────────────────────
+        hh_confirmed = recent_high > prior_high
 
-        # ── RS vs ^GSPC ────────────────────────────────────────────────────
-        # Correct formula: (1+stock_return)/(1+bench_return)-1
-        # rs_change: pp difference vs 20 sessions ago (not % change of ratio)
+        # ── bars_since_pivot ──────────────────────────────────────────────
+        low_window       = low_s.iloc[-W:]
+        min_idx          = int(low_window.values.argmin())
+        bars_since_pivot = W - 1 - min_idx
+
+        # ── Metrics ───────────────────────────────────────────────────────
+        high_52w       = float(high_s.tail(252).max()) if len(high_s) >= 60 else float(high_s.max())
+        retracement    = round((high_52w - curr_price) / high_52w * 100, 2) if high_52w > 0 else 0.0
+        sl_percent     = round((curr_price - recent_low) / curr_price * 100, 2)
+        ema_dist       = round((curr_price - ma200) / ma200 * 100, 2)
+        last_swing_low = recent_low
+
+        # ── RS vs ^GSPC (ratio-of-relatives, 63-day) ─────────────────────
         rs_score  = 0.0
         rs_change = 0.0
         if bench_close is not None and len(bench_close) > 0:
-            aligned = bench_close.reindex(df.index, method='ffill').dropna()
-            common  = close.reindex(aligned.index).dropna()
-            aligned = aligned.reindex(common.index)
-            if len(common) >= 63:
-                # Current RS (63-day return-based)
-                s_ret    = (float(common.iloc[-1])  / float(common.iloc[-63]))  - 1
-                b_ret    = (float(aligned.iloc[-1]) / float(aligned.iloc[-63])) - 1
-                rs_now   = ((1 + s_ret) / (1 + b_ret) - 1) if (1 + b_ret) != 0 else 0.0
+            try:
+                bc = bench_close.copy()
+                cl = close.copy()
+                if getattr(bc.index, 'tz', None) is not None:
+                    bc.index = bc.index.tz_localize(None)
+                if getattr(cl.index, 'tz', None) is not None:
+                    cl.index = cl.index.tz_localize(None)
+                aligned = bc.reindex(cl.index, method='ffill').dropna()
+                common  = cl.reindex(aligned.index).dropna()
+                aligned = aligned.reindex(common.index)
 
-                # RS 20 sessions ago (for trend direction)
-                if len(common) >= 83:
-                    s_ret20  = (float(common.iloc[-21])  / float(common.iloc[-84]))  - 1
-                    b_ret20  = (float(aligned.iloc[-21]) / float(aligned.iloc[-84])) - 1
-                    rs_20d   = ((1 + s_ret20) / (1 + b_ret20) - 1) if (1 + b_ret20) != 0 else 0.0
-                else:
-                    rs_20d   = rs_now
+                if len(common) >= 63:
+                    s_ret  = float(common.iloc[-1])  / float(common.iloc[-63])  - 1
+                    b_ret  = float(aligned.iloc[-1]) / float(aligned.iloc[-63]) - 1
+                    rs_now = ((1 + s_ret) / (1 + b_ret) - 1) if (1 + b_ret) != 0 else 0.0
 
-                rs_score  = round(rs_now * 100, 2)          # expressed as %
-                rs_change = round((rs_now - rs_20d) * 100, 2)  # pp change
+                    if len(common) >= 83:
+                        s20   = float(common.iloc[-21])  / float(common.iloc[-84])  - 1
+                        b20   = float(aligned.iloc[-21]) / float(aligned.iloc[-84]) - 1
+                        rs_20 = ((1 + s20) / (1 + b20) - 1) if (1 + b20) != 0 else 0.0
+                    else:
+                        rs_20 = rs_now
+
+                    rs_score  = round(rs_now * 100, 2)
+                    rs_change = round((rs_now - rs_20) * 100, 2)
+            except Exception as e:
+                print(f"[HHHL-US] RS error {symbol}: {e}")
         else:
-            # Fallback when no benchmark available
             if len(close) >= 63:
-                rs_score  = round((float(close.iloc[-1]) / float(close.iloc[-63]) - 1) * 100, 2)
+                rs_score = round((float(close.iloc[-1]) / float(close.iloc[-63]) - 1) * 100, 2)
                 if len(close) >= 83:
                     rs_20d    = round((float(close.iloc[-21]) / float(close.iloc[-84]) - 1) * 100, 2)
                     rs_change = round(rs_score - rs_20d, 2)
@@ -303,27 +308,28 @@ def _analyse_us(symbol, df, sector, bench_close):
                     else "Steady"  if rs_change >= 0
                     else "Fading")
 
-        is_fresh = bool(bars_since_pivot <= 10 and sl_percent <= 8.0)
+        is_fresh = bool(bars_since_pivot <= 5 and sl_percent <= 8.0)
 
         return {
-            "symbol":          symbol,
-            "sector":          str(sector),
-            "price":           round(curr_price, 2),
-            "ma200":           round(ma200, 2),
-            "ema_dist":        ema_dist,
-            "last_swing_low":  round(last_swing_low, 2),
-            "sl_percent":      sl_percent,
-            "retracement":     retracement,
-            "rs":              rs_score,
-            "rs_trend":        rs_trend,
-            "rs_change":       rs_change,
+            "symbol":           symbol,
+            "sector":           str(sector),
+            "price":            round(curr_price, 2),
+            "ma200":            round(ma200, 2),
+            "ema_dist":         ema_dist,
+            "last_swing_low":   round(last_swing_low, 2),
+            "sl_percent":       sl_percent,
+            "retracement":      retracement,
+            "rs":               rs_score,
+            "rs_trend":         rs_trend,
+            "rs_change":        rs_change,
             "bars_since_pivot": bars_since_pivot,
-            "hh_confirmed":    hh_confirmed,
-            "is_fresh":        is_fresh,
+            "hh_confirmed":     hh_confirmed,
+            "is_fresh":         is_fresh,
         }
     except Exception as e:
         print(f"[HHHL-US] _analyse error {symbol}: {e}")
         return None
+
 
 # ── Scan worker ───────────────────────────────────────────────────────────────
 def _run_scan(stock_items, source_name):
