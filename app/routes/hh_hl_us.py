@@ -218,16 +218,20 @@ def _analyse_us(symbol, df, sector, bench_close):
         if pd.isna(ma200) or ma200 == 0:
             return None
 
-        # ── Filter 1: ±10% of 200-SMA ─────────────────────────────────────
-        if curr_price < ma200 * 0.90 or curr_price > ma200 * 1.10:
+        # ── Filter 1: Price must be above 200-SMA ─────────────────────────
+        # HH-HL stocks in confirmed uptrends are typically 15-50% above
+        # MA200. The old ±10% band silently eliminated ~80% of valid setups.
+        if curr_price <= ma200:
             return None
 
-        # ── Swing-low detection (5-bar pivot) ──────────────────────────────
+        # ── Swing-low detection (5-bar pivot, past bars only) ─────────────
+        # shift(-1/-2) requires future bars → last 2 bars always NaN →
+        # most recent pivots never detected. Use only past-bar comparisons.
         df['is_low'] = (
-            (df['Low'] < df['Low'].shift(1)) &
-            (df['Low'] < df['Low'].shift(2)) &
-            (df['Low'] < df['Low'].shift(-1)) &
-            (df['Low'] < df['Low'].shift(-2))
+            (df['Low'] <= df['Low'].shift(1)) &
+            (df['Low'] <= df['Low'].shift(2)) &
+            (df['Low'] <= df['Low'].shift(3)) &
+            (df['Low'] <= df['Low'].shift(4))
         )
         lows_df = df[df['is_low']]
         if len(lows_df) < 2:
@@ -237,19 +241,19 @@ def _analyse_us(symbol, df, sector, bench_close):
         prev_swing_low = float(lows_df['Low'].iloc[-2])
 
         # bars since last pivot low
-        last_low_iloc   = df.index.get_loc(lows_df.index[-1])
+        last_low_iloc    = df.index.get_loc(lows_df.index[-1])
         bars_since_pivot = int((len(df) - 1) - last_low_iloc)
 
         # ── Filter 2 & 3: Higher Low + price above it ──────────────────────
         if not (last_swing_low > prev_swing_low and curr_price > last_swing_low):
             return None
 
-        # ── Swing-high check for HH confirmation ───────────────────────────
+        # ── Swing-high check for HH confirmation (past bars only) ──────────
         df['is_high'] = (
-            (df['High'] > df['High'].shift(1)) &
-            (df['High'] > df['High'].shift(2)) &
-            (df['High'] > df['High'].shift(-1)) &
-            (df['High'] > df['High'].shift(-2))
+            (df['High'] >= df['High'].shift(1)) &
+            (df['High'] >= df['High'].shift(2)) &
+            (df['High'] >= df['High'].shift(3)) &
+            (df['High'] >= df['High'].shift(4))
         )
         highs_df     = df[df['is_high']]
         hh_confirmed = False
@@ -263,23 +267,37 @@ def _analyse_us(symbol, df, sector, bench_close):
         ema_dist    = round(((curr_price - ma200) / ma200) * 100, 2)
 
         # ── RS vs ^GSPC ────────────────────────────────────────────────────
-        # Correct formula: (1+stock_return)/(1+bench_return)-1 gives true RS.
-        # We also expose a scaled ratio (×1000) matching the existing column.
+        # Correct formula: (1+stock_return)/(1+bench_return)-1
+        # rs_change: pp difference vs 20 sessions ago (not % change of ratio)
         rs_score  = 0.0
         rs_change = 0.0
         if bench_close is not None and len(bench_close) > 0:
             aligned = bench_close.reindex(df.index, method='ffill').dropna()
-            if len(aligned) >= 20:
-                rs_series = close.reindex(aligned.index) / aligned
-                rs_score  = float(round(float(rs_series.iloc[-1]) * 100, 2))
-                rs_20d    = float(rs_series.iloc[-20]) if len(rs_series) >= 20 else float(rs_series.iloc[0])
-                rs_change = round(((rs_score - rs_20d * 100) / (rs_20d * 100)) * 100, 1) if rs_20d else 0.0
+            common  = close.reindex(aligned.index).dropna()
+            aligned = aligned.reindex(common.index)
+            if len(common) >= 63:
+                # Current RS (63-day return-based)
+                s_ret    = (float(common.iloc[-1])  / float(common.iloc[-63]))  - 1
+                b_ret    = (float(aligned.iloc[-1]) / float(aligned.iloc[-63])) - 1
+                rs_now   = ((1 + s_ret) / (1 + b_ret) - 1) if (1 + b_ret) != 0 else 0.0
+
+                # RS 20 sessions ago (for trend direction)
+                if len(common) >= 83:
+                    s_ret20  = (float(common.iloc[-21])  / float(common.iloc[-84]))  - 1
+                    b_ret20  = (float(aligned.iloc[-21]) / float(aligned.iloc[-84])) - 1
+                    rs_20d   = ((1 + s_ret20) / (1 + b_ret20) - 1) if (1 + b_ret20) != 0 else 0.0
+                else:
+                    rs_20d   = rs_now
+
+                rs_score  = round(rs_now * 100, 2)          # expressed as %
+                rs_change = round((rs_now - rs_20d) * 100, 2)  # pp change
         else:
-            # Fallback to SMA-based RS
-            rs_score  = round(curr_price / ma200 * 100, 2)
-            if len(close) >= 20 and not pd.isna(ma200_series.iloc[-20]):
-                rs_20d    = float(close.iloc[-20]) / float(ma200_series.iloc[-20]) * 100
-                rs_change = round(((rs_score - rs_20d) / rs_20d) * 100, 1) if rs_20d else 0.0
+            # Fallback when no benchmark available
+            if len(close) >= 63:
+                rs_score  = round((float(close.iloc[-1]) / float(close.iloc[-63]) - 1) * 100, 2)
+                if len(close) >= 83:
+                    rs_20d    = round((float(close.iloc[-21]) / float(close.iloc[-84]) - 1) * 100, 2)
+                    rs_change = round(rs_score - rs_20d, 2)
 
         rs_trend = ("Accelerating" if rs_change > 3.0
                     else "Steady"  if rs_change >= 0
@@ -421,11 +439,20 @@ def _run_scan(stock_items, source_name):
 
     _save_sector_cache(sector_cache)
 
-    # ── Step 4: Sort + persist ───────────────────────────────────────────────
+    # ── Step 4: Sort + RS percentile ranking + persist ──────────────────────
     stocks.sort(key=lambda x: x['rs'], reverse=True)
-    last_run  = datetime.now().strftime("%d-%b-%Y %H:%M:%S")
-    ts_stamp  = datetime.now().strftime("%Y%m%d_%H%M%S")
-    rs90_count = sum(1 for s in stocks if s['rs'] >= 110.0)  # RS ratio×100 ≥ 110
+
+    # Assign RS percentile rank within the scanned universe
+    # RS percentile 90 means the stock outperformed 90% of the universe
+    n_stocks = len(stocks)
+    for rank, s in enumerate(stocks):
+        pct = int(((n_stocks - rank) / n_stocks) * 98) + 1 if n_stocks > 0 else 0
+        s['rs_percentile'] = min(99, max(1, pct))
+
+    # rs90_count: stocks with RS percentile >= 90 (top 10% of universe)
+    rs90_count = sum(1 for s in stocks if s.get('rs_percentile', 0) >= 90)
+    last_run   = datetime.now().strftime("%d-%b-%Y %H:%M:%S")
+    ts_stamp   = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     for s in stocks:
         sym   = s["symbol"]
@@ -588,6 +615,7 @@ def hh_hl_us_view():
         s.setdefault("sector",          "N/A")
         s.setdefault("bars_since_pivot", 0)
         s.setdefault("is_fresh",        False)
+        s.setdefault("rs_percentile",   0)
 
     # ── Sector breakdown ─────────────────────────────────────────────────────
     sector_counts = {}

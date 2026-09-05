@@ -36,9 +36,10 @@
             <div class="px-3 py-2 bg-[#002868] flex items-center gap-2">
               <span class="text-base">🇺🇸</span>
               <span class="text-[9px] font-black uppercase text-white tracking-wider">US Scans</span>
-              <button type="button" onclick="toggleGroup('US',true)"  class="ml-auto text-[8px] font-black text-blue-200 hover:text-white transition">All</button>
-              <span class="text-blue-300">·</span>
-              <button type="button" onclick="toggleGroup('US',false)" class="text-[8px] font-black text-blue-200 hover:text-white transition">None</button>
+              <button type="button" onclick="toggleGroup('US',true)"
+                      class="ml-auto text-[8px] font-black px-2 py-0.5 rounded-full bg-white/20 hover:bg-white/40 text-white transition">All</button>
+              <button type="button" onclick="toggleGroup('US',false)"
+                      class="text-[8px] font-black px-2 py-0.5 rounded-full bg-white/20 hover:bg-white/40 text-white transition">None</button>
             </div>
             <div class="divide-y divide-gray-50 dark:divide-slate-800">
               {% for job in jobs if job.market == 'US' %}
@@ -58,9 +59,10 @@
             <div class="px-3 py-2 bg-[#FF9933] flex items-center gap-2">
               <span class="text-base">🇮🇳</span>
               <span class="text-[9px] font-black uppercase text-white tracking-wider">India Scans</span>
-              <button type="button" onclick="toggleGroup('IND',true)"  class="ml-auto text-[8px] font-black text-white/80 hover:text-white transition">All</button>
-              <span class="text-white/50">·</span>
-              <button type="button" onclick="toggleGroup('IND',false)" class="text-[8px] font-black text-white/80 hover:text-white transition">None</button>
+              <button type="button" onclick="toggleGroup('IND',true)"
+                      class="ml-auto text-[8px] font-black px-2 py-0.5 rounded-full bg-white/20 hover:bg-white/40 text-white transition">All</button>
+              <button type="button" onclick="toggleGroup('IND',false)"
+                      class="text-[8px] font-black px-2 py-0.5 rounded-full bg-white/20 hover:bg-white/40 text-white transition">None</button>
             </div>
             <div class="divide-y divide-gray-50 dark:divide-slate-800">
               {% for job in jobs if job.market == 'IND' or job.market == 'INDIA' %}
