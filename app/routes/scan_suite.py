@@ -313,6 +313,28 @@ DEFAULT_JOBS = [
         "form":         {},
         "enabled":      True,
     },
+    {
+        "id":           "ibd_us",
+        "label":        "IBD SmartSelect US",
+        "market":       "US",
+        "post_url":     "/ibd-smartselect-scan",
+        "progress_url": "/ibd-smartselect-scan/progress",
+        "running_key":  "active",
+        "async_scan":   True,
+        "form":         {},
+        "enabled":      True,
+    },
+    {
+        "id":           "us_vol_surge",
+        "label":        "US Volume Surge",
+        "market":       "US",
+        "post_url":     "/us-vol/us-volume-surge-screener",
+        "progress_url": "/us-vol/us-volume-surge-screener/progress",
+        "running_key":  "active",
+        "async_scan":   True,
+        "form":         {},
+        "enabled":      True,
+    },
 ]
 
 DEFAULT_CONFIG = {

@@ -70,8 +70,15 @@ def _get():
 
 def _normalise_df(df: pd.DataFrame, symbol: str) -> pd.DataFrame | None:
     """
-    Flatten MultiIndex columns that us_cache bulk-fetch may return.
-    Memory note: direct df['Close'] on a MultiIndex crashes silently.
+    Flatten MultiIndex columns that bulk-fetch may return, and repair
+    NaN-only High/Low/Open columns by falling back to Close.
+
+    Some cached/fetched rows come back with valid Close but NaN
+    High/Low/Open (seen with certain yfinance response shapes where only
+    the adjusted-close series round-trips correctly). Without this repair,
+    every downstream check that reads df['High'] (52W high, trendline
+    peaks, horizontal resistance) silently computes NaN and the stock is
+    skipped — even though a genuine Close-based signal could still fire.
     """
     if df is None or df.empty:
         return None
@@ -85,16 +92,41 @@ def _normalise_df(df: pd.DataFrame, symbol: str) -> pd.DataFrame | None:
             else:
                 # Flatten by taking first level
                 df = df.droplevel(1, axis=1)
+
+        df = df.copy()
+
+        # Case-normalise column names (handles lowercase 'close' etc.)
+        rename = {}
+        for col in df.columns:
+            cl = str(col).strip().lower()
+            if cl == 'open':   rename[col] = 'Open'
+            elif cl == 'high': rename[col] = 'High'
+            elif cl == 'low':  rename[col] = 'Low'
+            elif cl == 'close':rename[col] = 'Close'
+            elif cl == 'volume': rename[col] = 'Volume'
+        if rename:
+            df = df.rename(columns=rename)
+
         # Ensure expected columns exist
         if 'Close' not in df.columns:
             return None
-        # Fill missing OHLV from Close if needed
+
+        # Fill missing OR all-NaN OHLV columns from Close.
+        # (Missing column and "column exists but every value is NaN" are
+        # treated the same — both mean "we have no real High/Low data".)
         for col in ['Open', 'High', 'Low']:
-            if col not in df.columns:
+            if col not in df.columns or df[col].isna().all():
                 df[col] = df['Close']
-        if 'Volume' not in df.columns:
+            elif df[col].isna().any():
+                # Partial NaN — forward/back fill from Close for just the gaps
+                df[col] = df[col].fillna(df['Close'])
+
+        if 'Volume' not in df.columns or df['Volume'].isna().all():
             df['Volume'] = 0
-        return df.copy()
+        elif df['Volume'].isna().any():
+            df['Volume'] = df['Volume'].fillna(0)
+
+        return df
     except Exception as e:
         print(f"[trendline] _normalise_df error for {symbol}: {e}")
         return None
@@ -181,8 +213,8 @@ def check_52w_breakout(df):
     if lookback < 60:
         return False, 0.0
     hi52 = highs[-lookback:-1].max()
-    # Within 1.5% of the prior high = near or at a new annual high
-    return curr >= hi52 * 0.985, round(hi52, 2)
+    # Within 10% of the prior high = approaching or at annual high zone
+    return curr >= hi52 * 0.90, round(hi52, 2)
 
 
 # ── Per-symbol analysis ────────────────────────────────────────────────────────
@@ -209,19 +241,18 @@ def check_horizontal_breakout(df):
     closes  = df['Close'].values
     volumes = df['Volume'].values
 
-    # Resistance = max close in the 20-60 bar lookback window (before today)
+    # Resistance = max close in the 5-60 bar lookback window before today.
+    # Exclude the last 5 bars so an uptrending stock's own recent high
+    # doesn't become its own resistance (was causing curr > resistance = False).
     window_start = max(0, len(closes) - 61)
-    window_end   = len(closes) - 1   # exclude today
-    if window_end - window_start < 15:
+    window_end   = max(window_start + 1, len(closes) - 5)
+    if window_end - window_start < 10:
         return False, 0.0, 1.0
 
     resistance = float(closes[window_start:window_end].max())
     curr       = float(closes[-1])
     prev       = float(closes[-2])
 
-    # Breakout: today's close exceeded the prior 60-bar high AND moved up today.
-    # We removed the "prev must be near resistance" gate — a stock can be
-    # well below resistance for weeks then gap above it in one session.
     if not (curr > resistance and curr > prev):
         return False, resistance, 1.0
 
@@ -245,14 +276,10 @@ def _analyse(yf_sym: str, df: pd.DataFrame, suffix: str, market: str = "US") -> 
 
     curr_price = float(df['Close'].iloc[-1])
 
-    # Descending trendline breakout — useful for INDIA; for US most stocks are
-    # in uptrends so peaks have positive slope and this check always rejects them.
-    # For US, rely on horizontal breakout and 52W high instead.
+    # Descending trendline breakout — works for both US and INDIA.
+    # detect_trendline_breakout already gates slope > +0.0005×mean_high,
+    # so only flat-to-declining resistance lines pass. No extra US gate needed.
     has_tl, tl_val, tl_slope, vol_ratio, rsi, high_conf = detect_trendline_breakout(df)
-    if market == "US" and has_tl:
-        # Only keep if it's genuinely a downtrend breakout for US
-        if tl_slope > -highs_mean_proxy(df) * 0.0002:
-            has_tl = False  # too flat to count as descending-TL for US
 
     has_52w, past_high = check_52w_breakout(df)
 
@@ -265,19 +292,30 @@ def _analyse(yf_sym: str, df: pd.DataFrame, suffix: str, market: str = "US") -> 
     highs_arr  = df['High'].values
     hi52_all   = float(highs_arr[-252:-1].max()) if len(highs_arr) >= 252 else float(highs_arr[:-1].max())
     curr_c     = float(closes_arr[-1])
-    near_52wh  = (curr_c >= hi52_all * 0.97 and curr_c > float(closes_arr[-2]))
+    near_52wh  = (curr_c >= hi52_all * 0.90)  # within 10% of 52W high — no direction gate
+
+    # Check if stock is above MA200 and making new 20-bar closing high (local breakout)
+    ma200 = float(pd.Series(closes_arr).rolling(200).mean().iloc[-1])             if len(closes_arr) >= 200 else None
+    above_ma200 = (ma200 is not None and
+                   not pd.isna(ma200) and
+                   curr_c > ma200)
+    new_20bar_high = (len(closes_arr) >= 21 and
+                      curr_c == float(np.max(closes_arr[-21:])) and
+                      curr_c > float(closes_arr[-2]))
+
+    local_breakout = above_ma200 and new_20bar_high
 
     # Accept if any breakout type triggers
-    if not has_tl and not has_52w and not has_horiz and not near_52wh:
+    if not has_tl and not has_52w and not has_horiz and not near_52wh and not local_breakout:
         return None
+
+    # Always compute RSI from actual close prices — don't use the 50.0 default
+    rsi = calculate_rsi(df['Close'].values, period=14)
 
     # Use horizontal vol_ratio if descending trendline check didn't fire
     if not has_tl and has_horiz:
         vol_ratio = horiz_vol_ratio
         tl_val    = horiz_level
-    if not rsi:  # rsi defaults to 50 when tl not triggered
-        closes = df['Close'].values
-        rsi = calculate_rsi(closes, period=14)
 
     # Clean symbol display (strip exchange suffix)
     display_sym = yf_sym
@@ -293,7 +331,7 @@ def _analyse(yf_sym: str, df: pd.DataFrame, suffix: str, market: str = "US") -> 
         "volume_ratio":        vol_ratio,
         "rsi":                 rsi,
         "high_confidence":     high_conf,
-        "has_52w_break":       has_52w or near_52wh,
+        "has_52w_break":       has_52w or near_52wh or local_breakout,
         "past_52w_high":       past_high if (has_52w or near_52wh) else (horiz_level if has_horiz else 0.0),
     }
 
@@ -386,6 +424,21 @@ def _run_scan_inner(market: str, source_name: str):
         res = _analyse(yf_sym, raw_df, suffix, market)
         if not res:
             _dbg["no_breakout"] += 1
+            # Debug first 5 failures to diagnose zero-result issues
+            if _dbg["no_breakout"] <= 5:
+                try:
+                    df_dbg = _normalise_df(raw_df, yf_sym)
+                    if df_dbg is not None and len(df_dbg) >= 100:
+                        c = df_dbg['Close'].values
+                        h = df_dbg['High'].values
+                        curr = c[-1]
+                        hi52 = h[-min(252,len(h)-1):-1].max()
+                        print(f"[Trendline/{market}] DBG {yf_sym}: "
+                              f"curr={curr:.2f} hi52={hi52:.2f} "
+                              f"ratio={curr/hi52:.3f} up={curr>c[-2]} "
+                              f"bars={len(df_dbg)}")
+                except Exception:
+                    pass
             continue
         _dbg["passed"] += 1
         if res["has_trendline_break"] and res["has_52w_break"]:
