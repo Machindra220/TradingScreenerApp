@@ -8,7 +8,7 @@ Phase 1: DhanConnectionStatus
 Phase 3: DhanSyncLog, DhanRawTradeRecord
 """
 
-from datetime import datetime, date as date_type
+from datetime import datetime, timezone, date as date_type
 from app.extensions import db
 
 

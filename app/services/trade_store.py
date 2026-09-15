@@ -75,7 +75,7 @@ class TradeExecutionStore:
             existing.traded_at     = execution.traded_at
             existing.trade_date    = execution.trade_date
             existing.product_type  = execution.product_type
-            existing.synced_at     = datetime.utcnow()
+            existing.synced_at     = datetime.now(timezone.utc)
             db.session.flush()
             return False   # updated
 
