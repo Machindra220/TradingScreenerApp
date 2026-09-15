@@ -28,7 +28,7 @@ NOT here:
 """
 
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Optional
 
 from sqlalchemy.exc import IntegrityError

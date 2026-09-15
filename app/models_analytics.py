@@ -284,3 +284,125 @@ class TradeExecution(db.Model):
             "strike_price":       self.strike_price,
             "synced_at":          self.synced_at.strftime("%Y-%m-%d %H:%M:%S") if self.synced_at else None,
         }
+
+
+class OpenLot(db.Model):
+    """
+    Phase 5 — Remaining unmatched BUY quantity after FIFO matching.
+    Represents a position that is still held (not yet sold).
+
+    Re-created on every FIFO run: the table is cleared and rebuilt
+    from the current TradeExecution set each time matching runs.
+    """
+    __bind_key__ = 'analytics'
+    __tablename__ = 'open_lots'
+
+    id               = db.Column(db.Integer, primary_key=True)
+
+    # Instrument
+    symbol           = db.Column(db.String(50),  nullable=False, index=True)
+    exchange         = db.Column(db.String(30),  nullable=True)
+    instrument_type  = db.Column(db.String(20),  nullable=True, default="EQUITY")
+
+    # Position
+    quantity         = db.Column(db.Integer,     nullable=False)
+    buy_price        = db.Column(db.Float,       nullable=False)
+    cost_basis       = db.Column(db.Float,       nullable=False)   # qty × buy_price
+
+    # Timestamps
+    buy_date         = db.Column(db.Date,        nullable=True, index=True)
+    buy_traded_at    = db.Column(db.DateTime,    nullable=True)
+
+    # Traceability back to the original execution
+    buy_trade_id     = db.Column(db.String(80),  nullable=False)
+
+    # Classification
+    product_type     = db.Column(db.String(30),  nullable=True)
+
+    # Run metadata
+    matched_at       = db.Column(db.DateTime,    default=datetime.now, nullable=False)
+    run_id           = db.Column(db.String(40),  nullable=True, index=True)
+
+    def to_dict(self) -> dict:
+        return {
+            "id":             self.id,
+            "symbol":         self.symbol,
+            "exchange":       self.exchange,
+            "instrument_type":self.instrument_type,
+            "quantity":       self.quantity,
+            "buy_price":      self.buy_price,
+            "cost_basis":     self.cost_basis,
+            "buy_date":       self.buy_date.isoformat() if self.buy_date else None,
+            "buy_trade_id":   self.buy_trade_id,
+            "product_type":   self.product_type,
+            "run_id":         self.run_id,
+        }
+
+
+class MatchedTrade(db.Model):
+    """
+    Phase 5 — A FIFO-matched buy→sell lot pair with gross P&L.
+
+    One MatchedTrade = one split of a BUY lot consumed by one SELL execution.
+    gross_pnl = (sell_price - buy_price) × quantity (no charges).
+
+    Re-created on every FIFO run — table is cleared and rebuilt each time.
+    """
+    __bind_key__ = 'analytics'
+    __tablename__ = 'matched_trades'
+
+    id               = db.Column(db.Integer, primary_key=True)
+
+    # Instrument
+    symbol           = db.Column(db.String(50),  nullable=False, index=True)
+    exchange         = db.Column(db.String(30),  nullable=True)
+    instrument_type  = db.Column(db.String(20),  nullable=True, default="EQUITY")
+
+    # Matched quantity
+    quantity         = db.Column(db.Integer,     nullable=False)
+
+    # Buy leg
+    buy_price        = db.Column(db.Float,       nullable=False)
+    buy_value        = db.Column(db.Float,       nullable=False)   # qty × buy_price
+    buy_date         = db.Column(db.Date,        nullable=True, index=True)
+    buy_traded_at    = db.Column(db.DateTime,    nullable=True)
+    buy_trade_id     = db.Column(db.String(80),  nullable=False)
+
+    # Sell leg
+    sell_price       = db.Column(db.Float,       nullable=False)
+    sell_value       = db.Column(db.Float,       nullable=False)   # qty × sell_price
+    sell_date        = db.Column(db.Date,        nullable=True, index=True)
+    sell_traded_at   = db.Column(db.DateTime,    nullable=True)
+    sell_trade_id    = db.Column(db.String(80),  nullable=False)
+
+    # Result
+    gross_pnl        = db.Column(db.Float,       nullable=False)   # sell_value - buy_value
+    holding_days     = db.Column(db.Integer,     nullable=True)
+
+    # Classification
+    product_type     = db.Column(db.String(30),  nullable=True)
+
+    # Run metadata
+    matched_at       = db.Column(db.DateTime,    default=datetime.now, nullable=False)
+    run_id           = db.Column(db.String(40),  nullable=True, index=True)
+
+    def to_dict(self) -> dict:
+        return {
+            "id":             self.id,
+            "symbol":         self.symbol,
+            "exchange":       self.exchange,
+            "instrument_type":self.instrument_type,
+            "quantity":       self.quantity,
+            "buy_price":      self.buy_price,
+            "buy_value":      self.buy_value,
+            "buy_date":       self.buy_date.isoformat()  if self.buy_date  else None,
+            "sell_price":     self.sell_price,
+            "sell_value":     self.sell_value,
+            "sell_date":      self.sell_date.isoformat() if self.sell_date else None,
+            "gross_pnl":      self.gross_pnl,
+            "holding_days":   self.holding_days,
+            "buy_trade_id":   self.buy_trade_id,
+            "sell_trade_id":  self.sell_trade_id,
+            "product_type":   self.product_type,
+            "run_id":         self.run_id,
+        }
