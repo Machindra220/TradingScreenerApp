@@ -4,23 +4,23 @@ from flask_login import current_user, login_required
 from dotenv import load_dotenv
 from flask_wtf.csrf import CSRFProtect, generate_csrf  # ✅ Add this line
 from app.extensions import db, login_manager, csrf, cache, mail  # ✅ Include mail
-from app.models import Resource
+
 from .logging_config import setup_logging   # ✅ import your logging setup
 from prometheus_flask_exporter import PrometheusMetrics
 
 load_dotenv()
 
 def create_app():
-    flask_app = Flask(__name__)
-    flask_app.config.from_object(Config)
+    app = Flask(__name__)
+    app.config.from_object(Config)
 
     # Initialize extensions
-    db.init_app(flask_app)
-    login_manager.init_app(flask_app)
+    db.init_app(app)
+    login_manager.init_app(app)
     login_manager.login_view = 'auth.login'
-    csrf.init_app(flask_app)
-    cache.init_app(flask_app)
-    mail.init_app(flask_app)  # ✅ Initialize Flask-Mail
+    csrf.init_app(app)
+    cache.init_app(app)
+    mail.init_app(app)  # ✅ Initialize Flask-Mail
     # Import analytics models so the analytics DB tables are created
     import app.models_analytics  # noqa: F401
 
@@ -85,79 +85,80 @@ def create_app():
     from app.routes.staircase_screener import staircase_bp
     from app.routes.trading_analytics import trading_analytics_bp
 
-    flask_app.register_blueprint(trading_analytics_bp)
-    flask_app.register_blueprint(staircase_bp)
-    flask_app.register_blueprint(scan_suite_bp)
-    init_scheduler(flask_app)
-    flask_app.register_blueprint(universal_bp)
-    flask_app.register_blueprint(ma_screener_bp)
-    flask_app.register_blueprint(quant_screeners_us_bp)
-    flask_app.register_blueprint(cache_admin_bp)
-    flask_app.register_blueprint(momentum_scan_bp)
-    flask_app.register_blueprint(position_tracker_bp)
-    flask_app.register_blueprint(trade_journal_bp)
-    flask_app.register_blueprint(quant_screeners_bp)
-    flask_app.register_blueprint(us_vol_surge_bp, url_prefix="/us-vol")
-    flask_app.register_blueprint(minervini_bp)
-    flask_app.register_blueprint(ipo_screener_bp)
-    flask_app.register_blueprint(hh_hl_us_bp)
-    flask_app.register_blueprint(ai_engine_bp)
-    flask_app.register_blueprint(chart_multiframe_bp)
-    flask_app.register_blueprint(chart_weinstein_bp)
-    flask_app.register_blueprint(chart_carousel_bp)
-    flask_app.register_blueprint(adaptive_4d_bp)
-    flask_app.register_blueprint(chart_combined_bp)
-    flask_app.register_blueprint(chart_us_bp)
-    flask_app.register_blueprint(ibd_engine_ind_bp)
-    flask_app.register_blueprint(rs_roc_us_bp)
-    flask_app.register_blueprint(rs_roc_bp)
-    flask_app.register_blueprint(earnings_bp)
-    flask_app.register_blueprint(period_performers_bp)
-    flask_app.register_blueprint(vcp_bp, url_prefix="/vcp")
-    flask_app.register_blueprint(eps_bp, url_prefix="/eps")
-    flask_app.register_blueprint(stage2_delivery_bp)
-    flask_app.register_blueprint(momentum_bp)
-    flask_app.register_blueprint(delivery_surge_bp)
-    flask_app.register_blueprint(screener_bp, url_prefix="/screener")
-    flask_app.register_blueprint(risk_bp, url_prefix='/tools')
-    flask_app.register_blueprint(calendar_bp)
-    flask_app.register_blueprint(auth_bp)
-    flask_app.register_blueprint(trades_bp)
-    flask_app.register_blueprint(stats_bp, url_prefix='/stats')
-    flask_app.register_blueprint(export_bp)
-    flask_app.register_blueprint(resources_bp, url_prefix='/resources')    
-    flask_app.register_blueprint(notes_bp)
-    flask_app.register_blueprint(watchlist_bp)
-    flask_app.register_blueprint(performers_bp, url_prefix="/performers")
-    flask_app.register_blueprint(delivery_bp, url_prefix="/delivery")
-    # flask_app.register_blueprint(static_pages)
-    flask_app.register_blueprint(volar_bp)    
-    flask_app.register_blueprint(screener_us_bp)
-    flask_app.register_blueprint(screener_india_bp)
-    flask_app.register_blueprint(hh_hl_bp)
-    flask_app.register_blueprint(ll_lh_bp)
-    flask_app.register_blueprint(volar_us_bp)
-    flask_app.register_blueprint(volar_us_adaptive_bp)
-    flask_app.register_blueprint(volar_ind_adaptive_bp)
-    flask_app.register_blueprint(ai_analyst_bp)
-    flask_app.register_blueprint(chart_bp)
-    flask_app.register_blueprint(gap_vol_bp)
-    flask_app.register_blueprint(gap_vol_india_bp)
-    flask_app.register_blueprint(trendline_bp)
-    flask_app.register_blueprint(ibd_engine_us_bp)
-    flask_app.register_blueprint(stage2_launchpad_bp)
+    app.register_blueprint(trading_analytics_bp)
+    app.register_blueprint(staircase_bp)
+    app.register_blueprint(scan_suite_bp)
+    init_scheduler(app)
+    app.register_blueprint(universal_bp)
+    app.register_blueprint(ma_screener_bp)
+    app.register_blueprint(quant_screeners_us_bp)
+    app.register_blueprint(cache_admin_bp)
+    app.register_blueprint(momentum_scan_bp)
+    app.register_blueprint(position_tracker_bp)
+    app.register_blueprint(trade_journal_bp)
+    app.register_blueprint(quant_screeners_bp)
+    app.register_blueprint(us_vol_surge_bp, url_prefix="/us-vol")
+    app.register_blueprint(minervini_bp)
+    app.register_blueprint(ipo_screener_bp)
+    app.register_blueprint(hh_hl_us_bp)
+    app.register_blueprint(ai_engine_bp)
+    app.register_blueprint(chart_multiframe_bp)
+    app.register_blueprint(chart_weinstein_bp)
+    app.register_blueprint(chart_carousel_bp)
+    app.register_blueprint(adaptive_4d_bp)
+    app.register_blueprint(chart_combined_bp)
+    app.register_blueprint(chart_us_bp)
+    app.register_blueprint(ibd_engine_ind_bp)
+    app.register_blueprint(rs_roc_us_bp)
+    app.register_blueprint(rs_roc_bp)
+    app.register_blueprint(earnings_bp)
+    app.register_blueprint(period_performers_bp)
+    app.register_blueprint(vcp_bp, url_prefix="/vcp")
+    app.register_blueprint(eps_bp, url_prefix="/eps")
+    app.register_blueprint(stage2_delivery_bp)
+    app.register_blueprint(momentum_bp)
+    app.register_blueprint(delivery_surge_bp)
+    app.register_blueprint(screener_bp, url_prefix="/screener")
+    app.register_blueprint(risk_bp, url_prefix='/tools')
+    app.register_blueprint(calendar_bp)
+    app.register_blueprint(auth_bp)
+    app.register_blueprint(trades_bp)
+    app.register_blueprint(stats_bp, url_prefix='/stats')
+    app.register_blueprint(export_bp)
+    app.register_blueprint(resources_bp, url_prefix='/resources')    
+    app.register_blueprint(notes_bp)
+    app.register_blueprint(watchlist_bp)
+    app.register_blueprint(performers_bp, url_prefix="/performers")
+    app.register_blueprint(delivery_bp, url_prefix="/delivery")
+    # app.register_blueprint(static_pages)
+    app.register_blueprint(volar_bp)    
+    app.register_blueprint(screener_us_bp)
+    app.register_blueprint(screener_india_bp)
+    app.register_blueprint(hh_hl_bp)
+    app.register_blueprint(ll_lh_bp)
+    app.register_blueprint(volar_us_bp)
+    app.register_blueprint(volar_us_adaptive_bp)
+    app.register_blueprint(volar_ind_adaptive_bp)
+    app.register_blueprint(ai_analyst_bp)
+    app.register_blueprint(chart_bp)
+    app.register_blueprint(gap_vol_bp)
+    app.register_blueprint(gap_vol_india_bp)
+    app.register_blueprint(trendline_bp)
+    app.register_blueprint(ibd_engine_us_bp)
+    app.register_blueprint(stage2_launchpad_bp)
 
 
     # Home route
-    @flask_app.route('/')
+    @app.route('/')
     @login_required
     def home():
         return render_template('home.html')
 
     # Inject pinned resources for navbar or sidebar
-    @flask_app.context_processor
+    @app.context_processor
     def inject_pinned_resources():
-        if login_manager._login_disabled or not hasattr(flask_app, 'login_manager'):
+        from app.models import Resource
+        if login_manager._login_disabled or not hasattr(app, 'login_manager'):
             return dict(pinned_resources=[])
         if current_user.is_authenticated:
             pinned = Resource.query.filter_by(user_id=current_user.id, pinned=True).order_by(Resource.title).all()
@@ -165,13 +166,13 @@ def create_app():
         return dict(pinned_resources=[])
 
     # ✅ Inject CSRF token globally for manual forms
-    @flask_app.context_processor
+    @app.context_processor
     def inject_csrf_token():
         return dict(csrf_token=generate_csrf())
 
     # ✅ Enable logging
-    setup_logging(flask_app)
-    metrics = PrometheusMetrics(flask_app, path='/metrics', default=True)
+    setup_logging(app)
+    metrics = PrometheusMetrics(app, path='/metrics', default=True)
 
-    return flask_app
+    return app
 #app = create_app()
