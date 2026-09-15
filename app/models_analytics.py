@@ -197,3 +197,90 @@ class DhanRawTradeRecord(db.Model):
             "trade_date":        self.trade_date.isoformat() if self.trade_date else None,
             "create_time":       self.create_time.strftime("%Y-%m-%d %H:%M:%S") if self.create_time else None,
         }
+
+
+class TradeExecution(db.Model):
+    """
+    Phase 4 — Provider-independent internal trade execution model.
+
+    The rest of the application uses ONLY this model — never DhanRawTradeRecord
+    or any Dhan-specific field names. This decouples business logic from the
+    Dhan API contract: if the provider changes (e.g. Zerodha, ICICI), only
+    the normalizer changes, not the consuming code.
+
+    Dedup key: (source, provider_trade_id)
+      - source           = 'dhan' | 'zerodha' | 'manual' etc.
+      - provider_trade_id = the provider's own unique trade ID
+      Together they guarantee no duplicates across repeated syncs or providers.
+    """
+    __bind_key__ = 'analytics'
+    __tablename__ = 'trade_executions'
+
+    id                  = db.Column(db.Integer, primary_key=True)
+
+    # Provider identity — dedup key
+    source              = db.Column(db.String(30),  nullable=False, index=True)
+    provider_trade_id   = db.Column(db.String(80),  nullable=False, index=True)
+    provider_order_id   = db.Column(db.String(80),  nullable=True)
+
+    # Instrument — provider-independent names
+    symbol              = db.Column(db.String(50),  nullable=False, index=True)
+    isin                = db.Column(db.String(20),  nullable=True,  index=True)
+    security_id         = db.Column(db.String(30),  nullable=True)
+    exchange            = db.Column(db.String(30),  nullable=True)
+
+    # Execution
+    side                = db.Column(db.String(5),   nullable=False)   # BUY | SELL
+    quantity            = db.Column(db.Integer,     nullable=False)
+    price               = db.Column(db.Float,       nullable=False)
+    trade_value         = db.Column(db.Float,       nullable=False)   # qty × price
+
+    # Time
+    traded_at           = db.Column(db.DateTime,    nullable=True,  index=True)
+    trade_date          = db.Column(db.Date,        nullable=True,  index=True)
+
+    # Classification
+    product_type        = db.Column(db.String(30),  nullable=True)
+    instrument_type     = db.Column(db.String(20),  nullable=True,
+                                    default="EQUITY")  # EQUITY | FUTURES | OPTIONS
+
+    # Derivatives (None for equity)
+    expiry_date         = db.Column(db.String(20),  nullable=True)
+    option_type         = db.Column(db.String(10),  nullable=True)   # CALL | PUT
+    strike_price        = db.Column(db.Float,       nullable=True)
+
+    # Metadata
+    synced_at           = db.Column(db.DateTime,    default=datetime.utcnow, nullable=False)
+    raw_trade_id        = db.Column(db.Integer,
+                                    db.ForeignKey('dhan_raw_trades.id'),
+                                    nullable=True)   # back-reference to raw record
+
+    # Unique constraint — prevents duplicates on repeated syncs
+    __table_args__ = (
+        db.UniqueConstraint('source', 'provider_trade_id',
+                            name='uq_trade_source_provider_id'),
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id":                 self.id,
+            "source":             self.source,
+            "provider_trade_id":  self.provider_trade_id,
+            "provider_order_id":  self.provider_order_id,
+            "symbol":             self.symbol,
+            "isin":               self.isin,
+            "security_id":        self.security_id,
+            "exchange":           self.exchange,
+            "side":               self.side,
+            "quantity":           self.quantity,
+            "price":              self.price,
+            "trade_value":        self.trade_value,
+            "traded_at":          self.traded_at.strftime("%Y-%m-%d %H:%M:%S") if self.traded_at else None,
+            "trade_date":         self.trade_date.isoformat() if self.trade_date else None,
+            "product_type":       self.product_type,
+            "instrument_type":    self.instrument_type,
+            "expiry_date":        self.expiry_date,
+            "option_type":        self.option_type,
+            "strike_price":       self.strike_price,
+            "synced_at":          self.synced_at.strftime("%Y-%m-%d %H:%M:%S") if self.synced_at else None,
+        }

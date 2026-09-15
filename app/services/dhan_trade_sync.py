@@ -430,32 +430,53 @@ def persist_trades(
     sync_log_id: int | None = None,
 ) -> int:
     """
-    Persist a list of validated, deduped DhanRawTrade DTOs to the DB.
-    Returns count of records written.
-    Raises nothing — errors are logged and skipped.
+    Persist a list of validated, deduped DhanRawTrade DTOs.
+    Phase 3: writes DhanRawTradeRecord (raw, provider-specific).
+    Phase 4: ALSO writes TradeExecution (normalized, provider-independent).
+
+    Returns count of TradeExecution records written (new inserts).
+    Raises nothing — errors are logged and skipped per record.
     """
     try:
         from app.extensions import db
         from app.models_analytics import DhanRawTradeRecord
+        from app.services.trade_normalizer import normalize_dhan_trade
+        from app.services.trade_store import TradeExecutionStore
     except ImportError as e:
-        log.warning("[DhanTradeSync] DB not available: %s", e)
+        log.warning("[DhanTradeSync] DB/services not available: %s", e)
         return 0
 
-    stored = 0
+    store   = TradeExecutionStore()
+    stored  = 0
+    invalid = 0
+
     for dto in trades:
         try:
-            record = DhanRawTradeRecord.from_dto(dto, sync_log_id=sync_log_id)
-            db.session.add(record)
-            stored += 1
-            if stored % 50 == 0:
+            # ── Step 1: persist raw provider record ───────────────────────────
+            raw_record = DhanRawTradeRecord.from_dto(dto, sync_log_id=sync_log_id)
+            db.session.add(raw_record)
+            db.session.flush()   # get raw_record.id for FK
+
+            # ── Step 2: normalize and upsert provider-independent record ──────
+            execution = normalize_dhan_trade(dto, raw_trade_id=raw_record.id)
+            was_new   = store.upsert(execution)
+            if was_new:
+                stored += 1
+
+            if (stored + invalid) % 50 == 0:
                 db.session.flush()
+
         except Exception as e:
+            invalid += 1
             log.error(
                 "[DhanTradeSync] Failed to persist trade %s: %s",
                 dto.exchangeTradeId, e
             )
 
-    if stored:
+    if stored or invalid == 0:
         db.session.commit()
-        log.info("[DhanTradeSync] Persisted %d records", stored)
+        log.info(
+            "[DhanTradeSync] Persisted %d raw records, %d normalized executions",
+            len(trades), stored
+        )
     return stored
