@@ -4,14 +4,17 @@ app/routes/trading_analytics.py
 Phase 1 — Config status + ping (GET).
 Phase 2 — POST test-connection UI action.
 Phase 3 — Historical trade sync routes.
+Phase 7 — Dashboard: /trading-analytics (reads from local DB only).
 
 Routes:
-  GET  /trading-analytics/status            → JSON config validation
-  GET  /trading-analytics/ping              → JSON live connection check
-  POST /trading-analytics/test-connection   → UI test action
-  POST /trading-analytics/sync              → trigger background trade sync
-  GET  /trading-analytics/sync/progress     → poll sync status
-  GET  /trading-analytics/sync/status       → last sync metadata
+  GET  /trading-analytics             → dashboard (reads local DB, never calls Dhan)
+  GET  /trading-analytics/status      → JSON config validation
+  GET  /trading-analytics/ping        → JSON live connection check
+  POST /trading-analytics/test-connection  → UI test action
+  POST /trading-analytics/sync        → trigger background trade sync
+  GET  /trading-analytics/sync/progress   → poll sync status
+  GET  /trading-analytics/sync/status     → last sync metadata
+  POST /trading-analytics/run-fifo    → re-run FIFO matching on stored trades
 """
 
 import logging
@@ -19,7 +22,7 @@ import threading
 import traceback
 from datetime import datetime, date
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, render_template
 from flask_login import login_required
 from sqlalchemy import desc
 
@@ -34,6 +37,133 @@ from app.services.dhan_client import (
 from app.services.dhan_trade_sync import DhanTradeSync, persist_trades
 
 log = logging.getLogger(__name__)
+
+# ── Dashboard helper: load all data from local DB ─────────────────────────────
+
+def _load_dashboard_data() -> dict:
+    """
+    Read all analytics data from local DB.
+    Never calls Dhan API — only reads stored data.
+    Called on every dashboard GET.
+    """
+    try:
+        from app.models_analytics import (
+            DhanSyncLog, TradeExecution, MatchedTrade, OpenLot
+        )
+        from app.services.fifo_store import FifoStore
+        from app.services.trade_analytics import TradeAnalyticsEngine
+        from sqlalchemy import desc
+
+        store  = FifoStore()
+        engine = TradeAnalyticsEngine()
+
+        # Sync metadata
+        last_sync = DhanSyncLog.query.order_by(
+            desc(DhanSyncLog.started_at)).first()
+
+        # Counts
+        n_executions    = TradeExecution.query.count()
+        n_matched       = store.count_matched()
+        n_open          = store.count_open()
+
+        # Analytics (from stored MatchedTrade records)
+        matched_trades  = store.get_all_matched()
+        report          = engine.compute(matched_trades) if matched_trades else None
+
+        # Recent completed trades (last 20 for table)
+        recent          = store.get_all_matched(limit=20)
+
+        # Top winners / losers (by gross_pnl)
+        all_matched     = matched_trades
+        top_winners     = sorted(all_matched, key=lambda m: m.gross_pnl, reverse=True)[:5]
+        top_losers      = sorted(all_matched, key=lambda m: m.gross_pnl)[:5]
+
+        # Open lots
+        open_lots       = store.get_open_lots()
+
+        return {
+            "last_sync":      last_sync.to_dict() if last_sync else None,
+            "n_executions":   n_executions,
+            "n_matched":      n_matched,
+            "n_open":         n_open,
+            "report":         report.to_dict(include_trades=False) if report else None,
+            "recent_trades":  [m.to_dict() for m in recent],
+            "top_winners":    [m.to_dict() for m in top_winners],
+            "top_losers":     [m.to_dict() for m in top_losers],
+            "open_lots":      [o.to_dict() for o in open_lots],
+            "chart_data":     _build_chart_data(matched_trades),
+        }
+    except Exception as e:
+        log.error("[TradingAnalytics] load_dashboard_data error: %s", e)
+        return {
+            "last_sync": None, "n_executions": 0, "n_matched": 0, "n_open": 0,
+            "report": None, "recent_trades": [], "top_winners": [],
+            "top_losers": [], "open_lots": [], "chart_data": {},
+        }
+
+
+def _build_chart_data(matched_trades: list) -> dict:
+    """
+    Build chart-ready data from MatchedTrade DB records.
+    Returns JSON-serializable dicts consumed by Lightweight Charts / inline JS.
+    """
+    if not matched_trades:
+        return {}
+
+    from collections import defaultdict
+    import json
+
+    # Cumulative P&L over time (sorted by sell_date)
+    dated = sorted(
+        [m for m in matched_trades if m.sell_date],
+        key=lambda m: m.sell_date
+    )
+    cumulative, running = [], 0.0
+    for m in dated:
+        running = round(running + m.gross_pnl, 2)
+        cumulative.append({
+            "time":  m.sell_date.isoformat(),
+            "value": running,
+        })
+
+    # Deduplicate same-date points — keep last
+    seen = {}
+    for pt in cumulative:
+        seen[pt["time"]] = pt["value"]
+    pnl_series = [{"time": k, "value": v} for k, v in sorted(seen.items())]
+
+    # Winners vs Losers bar (by month)
+    monthly: dict = defaultdict(lambda: {"wins": 0, "losses": 0, "pnl": 0.0})
+    for m in dated:
+        key = m.sell_date.strftime("%Y-%m")
+        if m.gross_pnl > 0:
+            monthly[key]["wins"]  += 1
+        elif m.gross_pnl < 0:
+            monthly[key]["losses"]+= 1
+        monthly[key]["pnl"] = round(monthly[key]["pnl"] + m.gross_pnl, 2)
+
+    monthly_bars = [
+        {"month": k, "wins": v["wins"], "losses": v["losses"], "pnl": v["pnl"]}
+        for k, v in sorted(monthly.items())
+    ]
+
+    # Holding period buckets
+    buckets = {"0": 0, "1-5": 0, "6-15": 0, "16-30": 0, "31-90": 0, "90+": 0}
+    for m in matched_trades:
+        d = m.holding_days
+        if d is None: continue
+        if d == 0:       buckets["0"]     += 1
+        elif d <= 5:     buckets["1-5"]   += 1
+        elif d <= 15:    buckets["6-15"]  += 1
+        elif d <= 30:    buckets["16-30"] += 1
+        elif d <= 90:    buckets["31-90"] += 1
+        else:            buckets["90+"]   += 1
+
+    return {
+        "pnl_series":    pnl_series,
+        "monthly_bars":  monthly_bars,
+        "holding_buckets": [{"label": k, "count": v} for k, v in buckets.items()],
+    }
 
 trading_analytics_bp = Blueprint("trading_analytics", __name__)
 
@@ -251,3 +381,106 @@ def sync_status():
         }), 200
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
+
+
+# ── Phase 7: Dashboard route ──────────────────────────────────────────────────
+
+@trading_analytics_bp.route("/trading-analytics")
+@trading_analytics_bp.route("/trading-analytics/")
+@login_required
+def dashboard():
+    """
+    Trading Analytics dashboard.
+    Reads exclusively from local DB — never calls Dhan API.
+    Only Sync Now (POST /sync) triggers an API call.
+    """
+    cfg  = validate_dhan_config()
+    data = _load_dashboard_data()
+    prog = _get_prog()
+
+    import json
+    return render_template(
+        "trading_analytics/dashboard.html",
+        creds_configured  = cfg["configured"],
+        has_client_id     = cfg["has_client_id"],
+        has_access_token  = cfg["has_access_token"],
+        last_sync         = data["last_sync"],
+        n_executions      = data["n_executions"],
+        n_matched         = data["n_matched"],
+        n_open            = data["n_open"],
+        report            = data["report"],
+        recent_trades     = data["recent_trades"],
+        top_winners       = data["top_winners"],
+        top_losers        = data["top_losers"],
+        open_lots         = data["open_lots"],
+        chart_data_json   = json.dumps(data["chart_data"]),
+        is_syncing        = prog["active"],
+        sync_stage        = prog["stage"],
+        sync_error        = prog.get("error") if not prog["active"] else None,
+    )
+
+
+@trading_analytics_bp.route("/trading-analytics/run-fifo", methods=["POST"])
+@login_required
+def run_fifo():
+    """
+    POST — re-run FIFO matching on all stored TradeExecution records.
+    CSRF protected. Used after a sync to update MatchedTrade + OpenLot tables.
+    Returns JSON so the dashboard can poll or reload.
+    """
+    try:
+        from app.models_analytics import TradeExecution
+        from app.services.fifo_store import run_and_save
+
+        executions = TradeExecution.query.order_by(
+            TradeExecution.trade_date.asc(),
+            TradeExecution.traded_at.asc(),
+        ).all()
+
+        summary = run_and_save(executions)
+        log.info("[TradingAnalytics] FIFO run complete: %s", summary)
+        return jsonify({"ok": True, **summary}), 200
+    except Exception as e:
+        log.error("[TradingAnalytics] FIFO run error: %s", e)
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+
+
+@trading_analytics_bp.route("/trading-analytics/export")
+@login_required
+def export_trades():
+    """GET — export all MatchedTrade records as CSV."""
+    try:
+        import io
+        import csv
+        from flask import make_response
+        from app.services.fifo_store import FifoStore
+
+        store   = FifoStore()
+        matched = store.get_all_matched()
+
+        si  = io.StringIO()
+        cw  = csv.writer(si)
+        cw.writerow([
+            "Symbol","Exchange","Instrument","Qty",
+            "Buy Date","Buy Price","Buy Value",
+            "Sell Date","Sell Price","Sell Value",
+            "Gross P&L","Holding Days",
+            "Buy Trade ID","Sell Trade ID","Product",
+        ])
+        for m in matched:
+            cw.writerow([
+                m.symbol, m.exchange, m.instrument_type, m.quantity,
+                m.buy_date, m.buy_price, m.buy_value,
+                m.sell_date, m.sell_price, m.sell_value,
+                m.gross_pnl, m.holding_days,
+                m.buy_trade_id, m.sell_trade_id, m.product_type,
+            ])
+
+        from datetime import datetime
+        ts   = datetime.now().strftime("%Y%m%d_%H%M%S")
+        resp = make_response(si.getvalue())
+        resp.headers["Content-Disposition"] = f"attachment; filename=TradingAnalytics_{ts}.csv"
+        resp.headers["Content-type"] = "text/csv"
+        return resp
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
