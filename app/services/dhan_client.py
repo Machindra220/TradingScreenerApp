@@ -2,19 +2,12 @@
 app/services/dhan_client.py
 ────────────────────────────
 Phase 1 — Secure Dhan API configuration foundation.
+Phase 2 — Reusable API client with retry, rate-limit handling, _post().
 
-SCOPE (Phase 1 only):
-  ✅ Credential loading from environment
-  ✅ Configuration validation
-  ✅ Authentication/token structure
-  ✅ Connection health check (ping)
-  ✅ Safe error handling
-
-NOT in this file (future phases):
-  ❌ Trade history fetching
-  ❌ Holdings / positions
-  ❌ Order book
-  ❌ Any data processing
+SCOPE:
+  Phase 1  ✅  Credential loading, validation, ping()
+  Phase 2  ✅  Retry strategy, rate-limit (429), _post(), response validation
+  Phase 3+ ❌  Trade history, holdings, pagination, analytics
 
 SECURITY RULES — enforced here, not optional:
   - Credentials are read from os.getenv() ONLY.
@@ -28,6 +21,8 @@ import os
 import logging
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 log = logging.getLogger(__name__)
 
@@ -35,28 +30,27 @@ log = logging.getLogger(__name__)
 DHAN_API_BASE    = "https://api.dhan.co/v2"
 _REQUEST_TIMEOUT = 15   # seconds per request
 
+# Retry strategy — applied to idempotent requests only (GET).
+# Retries on connection errors and 5xx server errors.
+# Does NOT retry on 401/403/429 — those require human action.
+_RETRY_TOTAL        = 3
+_RETRY_BACKOFF      = 0.5   # exponential: 0.5s, 1s, 2s
+_RETRY_STATUS_CODES = (500, 502, 503, 504)  # 5xx transient server errors only
+
 
 # ── Exceptions ────────────────────────────────────────────────────────────────
 
 class DhanConfigError(Exception):
-    """
-    Raised when Dhan credentials are missing or malformed in .env.
-    Safe to surface to the UI — contains no secret values.
-    """
-
+    """Credentials missing or malformed in .env. Safe to surface to UI."""
 
 class DhanAuthError(Exception):
-    """
-    Raised when the Dhan API rejects credentials (HTTP 401 / 403).
-    Message is safe to log — contains no token values.
-    """
+    """Dhan API rejected credentials (401/403). Message contains no token."""
 
+class DhanRateLimitError(Exception):
+    """Dhan API returned 429 Too Many Requests. Caller should back off."""
 
 class DhanAPIError(Exception):
-    """
-    Raised for non-auth API failures (rate limit, server error, network).
-    Message is safe to log — contains no secret values.
-    """
+    """Non-auth API failure (network, server error). Message contains no secrets."""
 
 
 # ── Configuration validation ──────────────────────────────────────────────────
@@ -137,12 +131,26 @@ class DhanClient:
         self._client_id    = client_id
         self._access_token = access_token
 
-        # Build a persistent session — headers set once, reused for all calls
+        # Build a persistent session with retry strategy.
+        # Retries are applied only to GET (idempotent) on transient 5xx errors.
+        # Auth errors (401/403) and rate limits (429) are NOT retried —
+        # they require human action (regenerate token, back off).
+        retry = Retry(
+            total            = _RETRY_TOTAL,
+            backoff_factor   = _RETRY_BACKOFF,
+            status_forcelist = _RETRY_STATUS_CODES,
+            allowed_methods  = {"GET"},          # POST never retried (non-idempotent)
+            raise_on_status  = False,            # we handle status ourselves
+        )
+        adapter = HTTPAdapter(max_retries=retry)
+
         self._session = requests.Session()
+        self._session.mount("https://", adapter)
+        self._session.mount("http://",  adapter)
         self._session.headers.update({
             "Content-Type": "application/json",
             "Accept":       "application/json",
-            "access-token": self._access_token,    # Dhan auth header
+            "access-token": self._access_token,
             "client-id":    self._client_id,
         })
 
@@ -167,15 +175,42 @@ class DhanClient:
 
     # ── Internal helpers ──────────────────────────────────────────────────────
 
+    def _validate_response(self, resp: requests.Response, path: str) -> dict | list:
+        """
+        Central response validation — maps HTTP status codes to typed exceptions.
+        Called by both _get() and _post().
+        Never logs response body (may contain account data).
+        """
+        if resp.status_code in (401, 403):
+            raise DhanAuthError(
+                "Dhan API rejected the request. "
+                "The access token may have expired — "
+                "generate a new one from the Dhan portal and update "
+                "DHAN_ACCESS_TOKEN in .env."
+            )
+        if resp.status_code == 429:
+            raise DhanRateLimitError(
+                "Dhan API rate limit reached (HTTP 429). "
+                "Wait a few seconds before retrying."
+            )
+        if not resp.ok:
+            raise DhanAPIError(
+                f"Dhan API returned HTTP {resp.status_code} for {path}."
+            )
+        try:
+            return resp.json()
+        except ValueError:
+            raise DhanAPIError(
+                f"Dhan API returned a non-JSON response for {path}."
+            )
+
     def _get(self, path: str, params: dict | None = None) -> dict | list:
         """
-        Make an authenticated GET request.
-        Raises DhanAuthError for 401/403, DhanAPIError for other failures.
-        Never logs the access token.
+        Authenticated GET. Retries automatically on transient 5xx errors
+        (via HTTPAdapter Retry). Never retries on 401/403/429.
         """
         url = f"{DHAN_API_BASE}{path}"
-        log.debug("[DhanClient] GET %s", path)   # path only — no auth headers
-
+        log.debug("[DhanClient] GET %s", path)
         try:
             resp = self._session.get(url, params=params, timeout=_REQUEST_TIMEOUT)
         except requests.exceptions.ConnectionError:
@@ -185,27 +220,29 @@ class DhanClient:
             )
         except requests.exceptions.Timeout:
             raise DhanAPIError(
-                f"Dhan API request timed out after {_REQUEST_TIMEOUT}s."
+                f"Dhan API GET {path} timed out after {_REQUEST_TIMEOUT}s."
             )
+        return self._validate_response(resp, path)
 
-        if resp.status_code in (401, 403):
-            raise DhanAuthError(
-                "Dhan API rejected the request. "
-                "The access token may have expired — "
-                "generate a new one from the Dhan portal and update DHAN_ACCESS_TOKEN in .env."
-            )
-        if not resp.ok:
-            # Include status code but NOT any response body that might echo tokens
-            raise DhanAPIError(
-                f"Dhan API returned HTTP {resp.status_code} for {path}."
-            )
-
+    def _post(self, path: str, payload: dict) -> dict | list:
+        """
+        Authenticated POST. NOT retried (non-idempotent).
+        Used for Dhan endpoints that require a request body.
+        """
+        url = f"{DHAN_API_BASE}{path}"
+        log.debug("[DhanClient] POST %s", path)
         try:
-            return resp.json()
-        except ValueError:
+            resp = self._session.post(url, json=payload, timeout=_REQUEST_TIMEOUT)
+        except requests.exceptions.ConnectionError:
             raise DhanAPIError(
-                f"Dhan API returned a non-JSON response for {path}."
+                "Cannot reach Dhan API (api.dhan.co). "
+                "Check your internet connection."
             )
+        except requests.exceptions.Timeout:
+            raise DhanAPIError(
+                f"Dhan API POST {path} timed out after {_REQUEST_TIMEOUT}s."
+            )
+        return self._validate_response(resp, path)
 
     def _mask_client_id(self) -> str:
         """Returns a masked version of client_id safe for logs and UI."""
