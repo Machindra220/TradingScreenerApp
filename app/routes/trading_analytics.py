@@ -484,3 +484,85 @@ def export_trades():
         return resp
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+# ── Phase 8: Monthly and yearly analytics routes ──────────────────────────────
+
+@trading_analytics_bp.route("/trading-analytics/monthly")
+@login_required
+def monthly_analytics():
+    """
+    GET — monthly trading performance analytics.
+    Reads from local DB, uses cache when run_id unchanged.
+    Never calls Dhan API.
+    """
+    try:
+        from app.services.fifo_store import FifoStore
+        from app.services.period_analytics import PeriodAnalytics
+        from app.services.analytics_cache import AnalyticsCache
+
+        cache = AnalyticsCache()
+        run_id = cache.current_run_id()
+
+        cached = cache.get(run_id)
+        if cached and "monthly" in cached:
+            return jsonify({"ok": True, "monthly": cached["monthly"],
+                            "cached": True, "run_id": run_id}), 200
+
+        # Cache miss — compute
+        matched = FifoStore().get_all_matched()
+        periods = PeriodAnalytics().compute_monthly(matched)
+        data    = [p.to_dict() for p in periods]
+
+        # Store in cache alongside yearly (get_or_compute pattern)
+        existing = cache.get(run_id) or {}
+        existing["monthly"] = data
+        if run_id:
+            cache.set(run_id, {k: v for k, v in existing.items()
+                               if k not in ("run_id", "cached_at")})
+
+        return jsonify({"ok": True, "monthly": data,
+                        "cached": False, "run_id": run_id}), 200
+    except Exception as e:
+        log.error("[TradingAnalytics] monthly_analytics error: %s", e)
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+
+
+@trading_analytics_bp.route("/trading-analytics/yearly")
+@login_required
+def yearly_analytics():
+    """
+    GET — yearly trading performance analytics.
+    Reads from local DB, uses cache when run_id unchanged.
+    Never calls Dhan API.
+    """
+    try:
+        from app.services.fifo_store import FifoStore
+        from app.services.period_analytics import PeriodAnalytics
+        from app.services.analytics_cache import AnalyticsCache
+
+        cache  = AnalyticsCache()
+        run_id = cache.current_run_id()
+
+        cached = cache.get(run_id)
+        if cached and "yearly" in cached:
+            return jsonify({"ok": True, "yearly": cached["yearly"],
+                            "cached": True, "run_id": run_id}), 200
+
+        # Cache miss — compute both so one cache write covers both endpoints
+        matched  = FifoStore().get_all_matched()
+        engine   = PeriodAnalytics()
+        monthly  = engine.compute_monthly(matched)
+        yearly   = engine.compute_yearly(matched, monthly_periods=monthly)
+
+        m_data = [p.to_dict() for p in monthly]
+        y_data = [p.to_dict() for p in yearly]
+
+        if run_id:
+            cache.set(run_id, {"monthly": m_data, "yearly": y_data})
+
+        return jsonify({"ok": True, "yearly": y_data,
+                        "cached": False, "run_id": run_id}), 200
+    except Exception as e:
+        log.error("[TradingAnalytics] yearly_analytics error: %s", e)
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
