@@ -566,3 +566,59 @@ def yearly_analytics():
     except Exception as e:
         log.error("[TradingAnalytics] yearly_analytics error: %s", e)
         return jsonify({"ok": False, "error": str(e)[:200]}), 500
+
+
+# ── Phase 9: Insights route ───────────────────────────────────────────────────
+
+@trading_analytics_bp.route("/trading-analytics/insights")
+@login_required
+def trading_insights():
+    """
+    GET — deterministic trading insights from historical trade data.
+    Reads exclusively from local DB. Uses analytics cache when fresh.
+    Never calls Dhan API, never calls an AI API.
+    """
+    try:
+        from app.services.fifo_store import FifoStore
+        from app.services.trade_analytics import TradeAnalyticsEngine
+        from app.services.period_analytics import PeriodAnalytics
+        from app.services.insights_engine import InsightsEngine
+        from app.services.analytics_cache import AnalyticsCache
+
+        cache  = AnalyticsCache()
+        run_id = cache.current_run_id()
+
+        # Check cache for insights
+        cached = cache.get(run_id)
+        if cached and "insights" in cached:
+            return jsonify({
+                "ok":      True,
+                "insights": cached["insights"],
+                "cached":   True,
+                "run_id":   run_id,
+            }), 200
+
+        # Compute
+        matched      = FifoStore().get_all_matched()
+        analytics_rpt= TradeAnalyticsEngine().compute(matched)
+        monthly      = PeriodAnalytics().compute_monthly(matched)
+        insights_rpt = InsightsEngine().compute(
+            summaries = analytics_rpt.trades,
+            report    = analytics_rpt,
+            monthly   = monthly,
+        )
+        data = insights_rpt.to_dict()
+
+        # Cache alongside monthly/yearly
+        if run_id:
+            existing = cache.get(run_id) or {}
+            existing["insights"] = data
+            cache.set(run_id, {k: v for k, v in existing.items()
+                               if k not in ("run_id", "cached_at")})
+
+        return jsonify({"ok": True, "insights": data,
+                        "cached": False, "run_id": run_id}), 200
+
+    except Exception as e:
+        log.error("[TradingAnalytics] insights error: %s", e)
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
