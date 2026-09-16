@@ -284,7 +284,7 @@
 const PROG_URL  = "{{ url_for('trading_analytics.sync_progress') }}";
 const FIFO_URL  = "{{ url_for('trading_analytics.run_fifo') }}";
 const CSRF_TOK  = "{{ csrf_token }}";
-const CHART_DATA= {{ chart_data_json|safe }};
+const CHART_DATA= {{ chart_data|tojson }};
 
 // ── Sync progress ─────────────────────────────────────────────────────────────
 const syncBtn   = document.getElementById('syncBtn');

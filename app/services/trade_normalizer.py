@@ -4,6 +4,16 @@ app/services/trade_normalizer.py
 Phase 4 — Convert provider-specific DTOs into provider-independent
 TradeExecution model instances.
 
+TIMEZONE POLICY:
+  All timestamps from the Dhan API are in IST (Asia/Kolkata, UTC+5:30).
+  They are stored as NAIVE Python datetimes (no tzinfo) to avoid
+  SQLite TZ-awareness issues and to prevent accidental UTC conversion
+  that would shift trade_date across midnight boundaries.
+  Example: a trade at 23:55 IST on Dec 31 must remain Dec 31,
+  not become Jan 1 UTC. All date comparisons use naive dates.
+  If TZ-aware storage is needed in future, apply tz conversion at the
+  API ingestion layer (dhan_trade_sync.py), not here.
+
 This is the ONLY place in the codebase that knows about Dhan field names.
 All other code (analytics, screeners, future features) uses TradeExecution
 and never imports DhanRawTrade or any Dhan-specific names.

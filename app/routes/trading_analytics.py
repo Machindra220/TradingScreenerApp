@@ -398,7 +398,6 @@ def dashboard():
     data = _load_dashboard_data()
     prog = _get_prog()
 
-    import json
     return render_template(
         "trading_analytics/dashboard.html",
         creds_configured  = cfg["configured"],
@@ -413,7 +412,7 @@ def dashboard():
         top_winners       = data["top_winners"],
         top_losers        = data["top_losers"],
         open_lots         = data["open_lots"],
-        chart_data_json   = json.dumps(data["chart_data"]),
+        chart_data        = data["chart_data"],   # passed as dict; use |tojson in template
         is_syncing        = prog["active"],
         sync_stage        = prog["stage"],
         sync_error        = prog.get("error") if not prog["active"] else None,
