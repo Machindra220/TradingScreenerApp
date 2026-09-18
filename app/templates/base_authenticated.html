@@ -380,5 +380,32 @@
 </div>
 
 <script src="{{ url_for('static', filename='js/sort_table.js') }}"></script>
+<!-- Scroll-to-top button — appears on all pages via base template -->
+<button id="scrollTopBtn"
+        onclick="window.scrollTo({top:0,behavior:'smooth'})"
+        class="fixed bottom-6 right-6 z-50 p-2.5 rounded-xl
+               bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg
+               shadow-indigo-900/40 transition-all duration-300
+               opacity-0 translate-y-4 pointer-events-none"
+        aria-label="Back to top">
+  <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none"
+       viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+    <path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7"/>
+  </svg>
+</button>
+<script>
+  (function(){
+    const btn = document.getElementById('scrollTopBtn');
+    window.addEventListener('scroll', function(){
+      if (window.scrollY > window.innerHeight / 2) {
+        btn.classList.remove('opacity-0','translate-y-4','pointer-events-none');
+        btn.classList.add('opacity-100','translate-y-0');
+      } else {
+        btn.classList.add('opacity-0','translate-y-4','pointer-events-none');
+        btn.classList.remove('opacity-100','translate-y-0');
+      }
+    }, { passive: true });
+  })();
+</script>
 </body>
 </html>
