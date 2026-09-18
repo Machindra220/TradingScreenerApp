@@ -323,6 +323,15 @@ class OpenLot(db.Model):
     matched_at       = db.Column(db.DateTime,    default=datetime.now, nullable=False)
     run_id           = db.Column(db.String(40),  nullable=True, index=True)
 
+    # Source and dedup (Phase 2 — tax report import)
+    source           = db.Column(db.String(30),  nullable=True, index=True,
+                                  default='fifo')   # 'fifo' | 'tax_report'
+    upload_id        = db.Column(db.Integer,
+                                  db.ForeignKey('tax_report_uploads.id'),
+                                  nullable=True)
+    unique_key       = db.Column(db.String(100), nullable=True,
+                                  unique=True, index=True)
+
     def to_dict(self) -> dict:
         return {
             "id":             self.id,
@@ -386,6 +395,15 @@ class MatchedTrade(db.Model):
     matched_at       = db.Column(db.DateTime,    default=datetime.now, nullable=False)
     run_id           = db.Column(db.String(40),  nullable=True, index=True)
 
+    # Source tracking (Phase 3)
+    source           = db.Column(db.String(30),  nullable=True, index=True,
+                                  default='fifo')   # 'fifo' | 'tax_report'
+    upload_id        = db.Column(db.Integer,
+                                  db.ForeignKey('tax_report_uploads.id'),
+                                  nullable=True)
+    unique_key       = db.Column(db.String(100), nullable=True,
+                                  unique=True, index=True)
+
     def to_dict(self) -> dict:
         return {
             "id":             self.id,
@@ -405,4 +423,45 @@ class MatchedTrade(db.Model):
             "sell_trade_id":  self.sell_trade_id,
             "product_type":   self.product_type,
             "run_id":         self.run_id,
+        }
+
+
+class TaxReportUpload(db.Model):
+    """
+    Phase 2 — Import audit log for Dhan Equity Tax Report uploads.
+    One row per upload attempt. Replaces DhanSyncLog for the new import flow.
+
+    The import_key is used for duplicate-report detection (not per-trade dedup).
+    Per-trade dedup uses MatchedTrade.unique_key column.
+    """
+    __bind_key__ = 'analytics'
+    __tablename__ = 'tax_report_uploads'
+
+    id              = db.Column(db.Integer, primary_key=True)
+    uploaded_at     = db.Column(db.DateTime, default=datetime.now, nullable=False)
+    filename        = db.Column(db.String(255), nullable=False)
+    report_period   = db.Column(db.String(50),  nullable=True)   # "2024-04-01 to 2025-03-31"
+    period_from     = db.Column(db.Date,         nullable=True)
+    period_to       = db.Column(db.Date,         nullable=True)
+    status          = db.Column(db.String(20),   nullable=False, default='pending')
+    total_rows      = db.Column(db.Integer,      default=0)
+    imported_rows   = db.Column(db.Integer,      default=0)
+    duplicate_rows  = db.Column(db.Integer,      default=0)
+    rejected_rows   = db.Column(db.Integer,      default=0)
+    error_message   = db.Column(db.Text,         nullable=True)
+
+    def to_dict(self) -> dict:
+        return {
+            "id":             self.id,
+            "uploaded_at":    self.uploaded_at.strftime("%d-%b-%Y %H:%M:%S"),
+            "filename":       self.filename,
+            "report_period":  self.report_period,
+            "period_from":    self.period_from.isoformat()  if self.period_from else None,
+            "period_to":      self.period_to.isoformat()    if self.period_to   else None,
+            "status":         self.status,
+            "total_rows":     self.total_rows,
+            "imported_rows":  self.imported_rows,
+            "duplicate_rows": self.duplicate_rows,
+            "rejected_rows":  self.rejected_rows,
+            "error_message":  self.error_message,
         }

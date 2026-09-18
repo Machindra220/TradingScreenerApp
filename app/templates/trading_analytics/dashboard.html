@@ -3,12 +3,9 @@
 {% block content %}
 <style>
   .tabular-nums { font-variant-numeric: tabular-nums; }
-  .kpi-card { @apply bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm p-5; }
-  #syncBtn  { position:relative; overflow:hidden; }
-  #syncFill { position:absolute;inset:0;width:0%;background:rgba(0,0,0,.15);transition:width .4s; }
-  #syncLabel{ position:relative;z-index:1; }
   .sort-arr { display:inline-block;width:10px;font-size:9px;opacity:.6; }
-  #pnlChart,#holdingChart { width:100%;height:220px; }
+  #pnlChart { width:100%;height:220px;min-height:220px; }
+  #holdingChart { width:100%;height:220px; }
 </style>
 
 <div class="max-w-7xl mx-auto px-4 py-8 space-y-6">
@@ -18,79 +15,63 @@
     <div>
       <h2 class="text-2xl font-black text-indigo-900 dark:text-indigo-300 uppercase tracking-tight">📊 Trading Analytics</h2>
       <p class="text-[10px] font-bold text-gray-400 dark:text-slate-500 uppercase mt-1 tracking-widest">
-        Dhan API · FIFO Matched Trades · Performance
-        {% if last_sync %}
-        · Last sync: <span class="text-blue-500">{{ last_sync.started_at }}</span>
+        Dhan Equity Tax Report · Completed Trades · Performance
+        {% if last_import %}
+        · Last import: <span class="text-blue-500">{{ last_import.uploaded_at }}</span>
         {% endif %}
       </p>
     </div>
     <div class="flex gap-2 items-center shrink-0">
-      {# Run FIFO button #}
-      <button onclick="runFifo(this)"
-              class="px-4 py-2 border border-indigo-300 dark:border-indigo-700 text-indigo-600 dark:text-indigo-300 rounded-xl text-[10px] font-black uppercase hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition">
-        ⚡ Re-run FIFO
-      </button>
-      {# Sync Now #}
-      {% if creds_configured %}
-      <form method="POST" action="{{ url_for('trading_analytics.trigger_sync') }}" id="syncForm">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <input type="hidden" name="from_date" id="syncFrom">
-        <input type="hidden" name="to_date"   id="syncTo">
-        <button id="syncBtn" type="submit"
-                class="px-5 py-2 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-indigo-700 transition shadow-lg shadow-indigo-200 dark:shadow-indigo-950/40">
-          <span id="syncFill"></span>
-          <span id="syncLabel">{% if is_syncing %}⏳ Syncing…{% else %}🔄 Sync Now{% endif %}</span>
-        </button>
-      </form>
-      {% endif %}
+      <a href="{{ url_for('trading_analytics.upload_page') }}"
+         class="px-5 py-2 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-indigo-700 transition shadow-lg shadow-indigo-200 dark:shadow-indigo-950/40">
+        📥 Import Tax Report
+      </a>
     </div>
   </div>
 
-  {% if sync_error %}
-  <div class="px-4 py-3 rounded-xl bg-red-50 dark:bg-red-500/10 border border-red-200 text-[10px] font-bold text-red-600 uppercase">⚠️ {{ sync_error }}</div>
-  {% endif %}
 
-  {# ── Section 1: Sync Status ── #}
+
+  {# ── Section 1: Import Status ── #}
   <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm p-5">
-    <h3 class="text-[10px] font-black uppercase text-gray-400 dark:text-slate-500 tracking-widest mb-4">🔌 Sync Status</h3>
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-      {% for label, val, color in [
-        ('Connection',       '✅ Configured' if creds_configured else '❌ Not set',
-                             'text-emerald-500' if creds_configured else 'text-red-500'),
-        ('Executions',       n_executions,   'text-gray-800 dark:text-slate-100'),
-        ('Completed Trades', n_matched,       'text-indigo-600 dark:text-indigo-300'),
-        ('Open Lots',        n_open,          'text-amber-600 dark:text-amber-300'),
-      ] %}
+    <h3 class="text-[10px] font-black uppercase text-gray-400 dark:text-slate-500 tracking-widest mb-4">📥 Data Source</h3>
+    <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
       <div class="p-3 rounded-xl bg-gray-50 dark:bg-slate-800 border border-gray-100 dark:border-slate-700">
-        <div class="text-[9px] font-black uppercase text-gray-400 dark:text-slate-500 mb-1">{{ label }}</div>
-        <div class="font-black text-lg {{ color }} tabular-nums">{{ val }}</div>
+        <div class="text-[9px] font-black uppercase text-gray-400 dark:text-slate-500 mb-1">Data Source</div>
+        <div class="font-black text-sm text-indigo-600 dark:text-indigo-300">Dhan Equity Tax Report</div>
       </div>
-      {% endfor %}
+      <div class="p-3 rounded-xl bg-gray-50 dark:bg-slate-800 border border-gray-100 dark:border-slate-700">
+        <div class="text-[9px] font-black uppercase text-gray-400 dark:text-slate-500 mb-1">Completed Trades</div>
+        <div class="font-black text-xl text-indigo-600 dark:text-indigo-300 tabular-nums">{{ n_matched }}</div>
+      </div>
+      <div class="p-3 rounded-xl bg-gray-50 dark:bg-slate-800 border border-gray-100 dark:border-slate-700">
+        <div class="text-[9px] font-black uppercase text-gray-400 dark:text-slate-500 mb-1">Open Lots</div>
+        <div class="font-black text-xl text-amber-600 dark:text-amber-300 tabular-nums">{{ n_open }}</div>
+      </div>
     </div>
-    {% if last_sync %}
+
+    {% if last_import %}
     <div class="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[9px] text-gray-400 dark:text-slate-500 font-bold uppercase">
-      <span>Range: {{ last_sync.from_date }} → {{ last_sync.to_date }}</span>
-      <span>Status: <span class="{{ 'text-emerald-500' if last_sync.status == 'success' else 'text-red-400' }}">{{ last_sync.status.upper() }}</span></span>
-      <span>Fetched: {{ last_sync.records_fetched }}</span>
-      <span>Stored: {{ last_sync.records_stored }}</span>
+      <span>Last Import: <span class="text-blue-500">{{ last_import.uploaded_at }}</span></span>
+      <span>Report Period: <span class="text-gray-600 dark:text-slate-300">{{ last_import.report_period or '—' }}</span></span>
+      <span>File: <span class="text-gray-600 dark:text-slate-300 truncate max-w-[200px]">{{ last_import.filename }}</span></span>
+      <span class="font-black {% if last_import.status == 'success' %}text-emerald-500{% else %}text-amber-500{% endif %}">
+        {{ last_import.status.upper() }} · {{ last_import.imported_rows }} imported · {{ last_import.duplicate_rows }} duplicates
+      </span>
+    </div>
+    {% else %}
+    <div class="mt-3 p-3 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-800 text-[10px] text-amber-700 dark:text-amber-300 font-bold">
+      No Tax Report imported yet.
+      <a href="{{ url_for('trading_analytics.upload_page') }}"
+         class="underline hover:text-amber-900 dark:hover:text-amber-100 ml-1">Import your Dhan Equity Tax Report →</a>
     </div>
     {% endif %}
 
-    {# Sync date range pickers #}
-    {% if creds_configured %}
-    <div class="mt-4 flex flex-wrap gap-3 items-end text-[10px]">
-      <div>
-        <div class="font-black uppercase text-gray-400 dark:text-slate-500 mb-1 text-[9px]">From Date</div>
-        <input type="date" id="fromDatePicker"
-               class="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 text-[10px] font-bold focus:outline-none focus:ring-2 focus:ring-indigo-400">
-      </div>
-      <div>
-        <div class="font-black uppercase text-gray-400 dark:text-slate-500 mb-1 text-[9px]">To Date</div>
-        <input type="date" id="toDatePicker"
-               class="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 text-[10px] font-bold focus:outline-none focus:ring-2 focus:ring-indigo-400">
-      </div>
+    <div class="mt-4">
+      <a href="{{ url_for('trading_analytics.upload_page') }}"
+         class="inline-flex items-center gap-2 px-4 py-2 border border-indigo-300 dark:border-indigo-700 text-indigo-600 dark:text-indigo-300 rounded-xl text-[10px] font-black uppercase hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition">
+        📥 Import New Report
+      </a>
     </div>
-    {% endif %}
   </div>
 
   {% if report %}
@@ -142,7 +123,7 @@
     {# Section 3: Cumulative P&L Chart #}
     <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm p-5">
       <h3 class="text-[10px] font-black uppercase text-gray-400 dark:text-slate-500 tracking-widest mb-3">📈 Cumulative P&L</h3>
-      <div id="pnlChart"></div>
+      <div id="pnlChart" style="width:100%;height:220px;min-height:220px;"></div>
     </div>
 
     {# Section 5: Holding Period Distribution #}
@@ -158,6 +139,39 @@
     <h3 class="text-[10px] font-black uppercase text-gray-400 dark:text-slate-500 tracking-widest mb-3">📅 Monthly P&L</h3>
     <div id="monthlyChart" style="width:100%;height:180px;"></div>
   </div>
+
+  {# ── Phase 4: Holding Period Analysis ── #}
+  {% if n_matched > 0 %}
+  <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm p-5 space-y-4">
+    <div class="flex items-center justify-between">
+      <h3 class="text-[10px] font-black uppercase text-gray-400 dark:text-slate-500 tracking-widest">📐 Holding Period Performance</h3>
+      <button id="loadHoldingBtn" onclick="loadHoldingAnalysis(this)"
+              class="px-3 py-1.5 border border-indigo-200 dark:border-indigo-800 text-indigo-500 dark:text-indigo-400 rounded-lg text-[9px] font-black uppercase hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition">
+        Load Analysis
+      </button>
+    </div>
+    <div id="holdingContent" class="hidden space-y-4">
+      <div id="wlComparison" class="grid grid-cols-2 gap-3"></div>
+      <div class="overflow-x-auto rounded-xl border border-gray-100 dark:border-slate-800">
+        <table class="min-w-full text-[10px]">
+          <thead class="bg-gray-50 dark:bg-slate-800/60">
+            <tr>
+              <th class="px-3 py-2 text-left font-black text-[9px] uppercase text-gray-400 dark:text-slate-400 w-20">Range</th>
+              <th class="px-3 py-2 text-right font-black text-[9px] uppercase text-gray-400 dark:text-slate-400">Trades</th>
+              <th class="px-3 py-2 text-right font-black text-[9px] uppercase text-gray-400 dark:text-slate-400">Wins</th>
+              <th class="px-3 py-2 text-right font-black text-[9px] uppercase text-gray-400 dark:text-slate-400">Losses</th>
+              <th class="px-3 py-2 text-right font-black text-[9px] uppercase text-gray-400 dark:text-slate-400">Win %</th>
+              <th class="px-3 py-2 text-right font-black text-[9px] uppercase text-gray-400 dark:text-slate-400">Total P&L</th>
+              <th class="px-3 py-2 text-right font-black text-[9px] uppercase text-gray-400 dark:text-slate-400">Avg P&L</th>
+            </tr>
+          </thead>
+          <tbody id="bucketTbody" class="divide-y divide-gray-50 dark:divide-slate-800"></tbody>
+        </table>
+      </div>
+      <div id="holdingPatterns" class="space-y-2"></div>
+    </div>
+  </div>
+  {% endif %}
 
   {# ── Sections 6 & 7: Top Winners / Losers ── #}
   <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -199,80 +213,28 @@
 
   {% endif %}{# end if report #}
 
-  {# ── Section 8: Recent Completed Trades table ── #}
-  {% if recent_trades %}
-  <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm overflow-x-auto">
-    <div class="px-4 py-2.5 border-b border-gray-50 dark:border-slate-800 flex items-center justify-between">
-      <span class="text-[9px] font-black uppercase text-gray-400 dark:text-slate-500 tracking-widest">🗂 Recent Completed Trades</span>
-      <a href="{{ url_for('trading_analytics.export_trades') }}"
-         class="text-[9px] font-black uppercase text-indigo-500 hover:text-indigo-700 transition">📥 Export CSV</a>
-    </div>
-    <table class="min-w-full text-xs" id="tradesTable">
-      <thead class="bg-gray-50 dark:bg-slate-800/60 sticky top-0">
-        <tr>
-          {% for col, key, align in [
-            ('Symbol',       'symbol',       'left'),
-            ('Buy Date',     'buy_date',     'left'),
-            ('Buy (₹)',      'buy_price',    'right'),
-            ('Sell Date',    'sell_date',    'left'),
-            ('Sell (₹)',     'sell_price',   'right'),
-            ('Qty',          'quantity',     'right'),
-            ('Hold (days)',  'holding_days', 'right'),
-            ('P&L (₹)',      'gross_pnl',    'right'),
-            ('Return %',     'gross_pnl',    'right'),
-          ] %}
-          <th class="px-4 py-3 text-{{ align }} font-bold uppercase text-gray-400 dark:text-slate-400 text-[9px] cursor-pointer select-none hover:text-indigo-500"
-              onclick="sortTable('{{ key }}', '{{ align }}', this)">
-            {{ col }} <span class="sort-arr"></span>
-          </th>
-          {% endfor %}
-        </tr>
-      </thead>
-      <tbody class="divide-y divide-gray-50 dark:divide-slate-800">
-        {% for t in recent_trades %}
-        {% set pnl_color = 'text-emerald-600 dark:text-emerald-400' if t.gross_pnl >= 0 else 'text-red-500' %}
-        {% set ret_pct = ((t.gross_pnl / (t.quantity * t.buy_price)) * 100) if t.quantity and t.buy_price else 0 %}
-        <tr class="hover:bg-gray-50/50 dark:hover:bg-slate-800/30 transition"
-            data-symbol="{{ t.symbol }}"
-            data-buy_date="{{ t.buy_date or '' }}"
-            data-buy_price="{{ t.buy_price }}"
-            data-sell_date="{{ t.sell_date or '' }}"
-            data-sell_price="{{ t.sell_price }}"
-            data-quantity="{{ t.quantity }}"
-            data-holding_days="{{ t.holding_days or 0 }}"
-            data-gross_pnl="{{ t.gross_pnl }}">
-          <td class="px-4 py-3 font-black text-indigo-700 dark:text-indigo-300">{{ t.symbol }}</td>
-          <td class="px-4 py-3 text-gray-500 dark:text-slate-400 tabular-nums">{{ t.buy_date or '—' }}</td>
-          <td class="px-4 py-3 text-right tabular-nums font-bold text-gray-700 dark:text-slate-200">{{ "%.2f"|format(t.buy_price) }}</td>
-          <td class="px-4 py-3 text-gray-500 dark:text-slate-400 tabular-nums">{{ t.sell_date or '—' }}</td>
-          <td class="px-4 py-3 text-right tabular-nums font-bold text-gray-700 dark:text-slate-200">{{ "%.2f"|format(t.sell_price) }}</td>
-          <td class="px-4 py-3 text-right tabular-nums text-gray-700 dark:text-slate-200">{{ t.quantity }}</td>
-          <td class="px-4 py-3 text-right tabular-nums text-gray-500 dark:text-slate-400">{{ t.holding_days or '—' }}</td>
-          <td class="px-4 py-3 text-right tabular-nums font-black {{ pnl_color }}">
-            {% if t.gross_pnl >= 0 %}+{% endif %}{{ "%.2f"|format(t.gross_pnl) }}
-          </td>
-          <td class="px-4 py-3 text-right tabular-nums font-bold {{ pnl_color }}">
-            {% if ret_pct >= 0 %}+{% endif %}{{ "%.2f"|format(ret_pct) }}%
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+  {# ── Section 8: Link to Completed Trades page ── #}
+  {% if n_matched %}
+  <div class="flex items-center justify-between px-1">
+    <span class="text-[10px] text-gray-400 dark:text-slate-500">
+      {{ n_matched }} completed trade{{ 's' if n_matched != 1 else '' }} imported
+    </span>
+    <a href="{{ url_for('trading_analytics.trades_page') }}"
+       class="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-indigo-700 transition shadow shadow-indigo-200 dark:shadow-indigo-950/40">
+      🗂 View All Trades →
+    </a>
   </div>
-  {% elif not report %}
+  {% endif %}
+
+  {% if not report %}
   {# No data yet — setup guide #}
   <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm p-8 text-center space-y-3">
     <div class="text-4xl">📊</div>
     <div class="font-black text-gray-700 dark:text-slate-200">No trade data yet</div>
     <div class="text-[11px] text-gray-400 dark:text-slate-500 max-w-md mx-auto">
-      {% if not creds_configured %}
-      Configure <code class="font-mono bg-gray-100 dark:bg-slate-800 px-1 rounded">DHAN_CLIENT_ID</code>
-      and <code class="font-mono bg-gray-100 dark:bg-slate-800 px-1 rounded">DHAN_ACCESS_TOKEN</code>
-      in your <code class="font-mono">.env</code> file, then restart Flask and click Sync Now.
-      {% else %}
-      Click <strong>Sync Now</strong> to fetch your Dhan trade history,
-      then <strong>Re-run FIFO</strong> to compute matched trades.
-      {% endif %}
+      Import your Dhan Equity Tax Report to see analytics.
+      <a href="{{ url_for('trading_analytics.upload_page') }}"
+         class="text-indigo-500 underline hover:text-indigo-700 font-bold">Import now →</a>
     </div>
   </div>
   {% endif %}
@@ -281,92 +243,7 @@
 
 <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
 <script>
-const PROG_URL  = "{{ url_for('trading_analytics.sync_progress') }}";
-const FIFO_URL  = "{{ url_for('trading_analytics.run_fifo') }}";
-const CSRF_TOK  = "{{ csrf_token }}";
-const CHART_DATA= {{ chart_data|tojson }};
-
-// ── Sync progress ─────────────────────────────────────────────────────────────
-const syncBtn   = document.getElementById('syncBtn');
-const syncFill  = document.getElementById('syncFill');
-const syncLabel = document.getElementById('syncLabel');
-
-function updSync(pct, lbl) {
-  if (syncFill)  syncFill.style.width  = pct + '%';
-  if (syncLabel) syncLabel.textContent = lbl;
-}
-
-function pollSync() {
-  fetch(PROG_URL).then(r => r.json()).then(d => {
-    const stageMap = {
-      idle:       [0,   '🔄 Sync Now'],
-      connecting: [10,  '🔌 Connecting…'],
-      fetching:   [40,  `📥 Fetching ${d.fetched||0} trades…`],
-      storing:    [75,  `💾 Storing ${d.stored||0}…`],
-      done:       [100, '✅ Done'],
-      error:      [0,   '⚠️ Failed'],
-    };
-    const [pct, lbl] = stageMap[d.stage] || [30, d.stage];
-    updSync(pct, lbl);
-    if (!d.active) {
-      if (syncBtn) syncBtn.disabled = false;
-      if (d.stage === 'done')  setTimeout(() => location.reload(), 600);
-      if (d.stage === 'error') setTimeout(() => location.reload(), 1200);
-      return;
-    }
-    if (syncBtn) syncBtn.disabled = true;
-    setTimeout(pollSync, 700);
-  }).catch(() => setTimeout(pollSync, 1500));
-}
-
-{% if is_syncing %}
-if (syncBtn) syncBtn.disabled = true;
-pollSync();
-{% endif %}
-
-// Wire sync form
-document.getElementById('syncForm')?.addEventListener('submit', function(e) {
-  e.preventDefault();
-  const from = document.getElementById('fromDatePicker')?.value;
-  const to   = document.getElementById('toDatePicker')?.value;
-  if (!from || !to) { alert('Please select From and To dates.'); return; }
-  document.getElementById('syncFrom').value = from;
-  document.getElementById('syncTo').value   = to;
-  setTimeout(() => { if (syncBtn) syncBtn.disabled = true; }, 0);
-  updSync(5, '⏳ Starting…');
-  fetch(this.action, { method:'POST', body: new FormData(this) })
-    .then(() => pollSync())
-    .catch(() => pollSync());
-});
-
-// Default date pickers to last 90 days
-(function() {
-  const to   = new Date();
-  const from = new Date(); from.setDate(from.getDate() - 90);
-  const fmt  = d => d.toISOString().slice(0, 10);
-  const fp   = document.getElementById('fromDatePicker');
-  const tp   = document.getElementById('toDatePicker');
-  if (fp) fp.value = fmt(from);
-  if (tp) tp.value = fmt(to);
-})();
-
-// ── Re-run FIFO ───────────────────────────────────────────────────────────────
-function runFifo(btn) {
-  btn.disabled = true;
-  btn.textContent = '⏳ Matching…';
-  fetch(FIFO_URL, {
-    method: 'POST',
-    headers: { 'X-CSRFToken': CSRF_TOK, 'Content-Type': 'application/json' },
-    body: '{}',
-  })
-  .then(r => r.json())
-  .then(d => {
-    btn.disabled = false;
-    btn.textContent = d.ok ? '✅ Done — reloading…' : '⚠️ ' + (d.error || 'Failed');
-    if (d.ok) setTimeout(() => location.reload(), 600);
-  })
-  .catch(() => { btn.disabled = false; btn.textContent = '⚡ Re-run FIFO'; });
-}
+const CSRF_TOK = "{{ csrf_token }}";
 
 // ── Sort table ────────────────────────────────────────────────────────────────
 let _sk = null, _sd = -1;
@@ -385,6 +262,8 @@ function sortTable(key, align, th) {
 }
 
 // ── Charts ────────────────────────────────────────────────────────────────────
+const CHART_DATA = {{ chart_data|tojson }};
+
 function isDark() {
   return document.documentElement.classList.contains('dark') ||
     window.matchMedia('(prefers-color-scheme:dark)').matches;
@@ -401,22 +280,22 @@ const baseOpts  = {
   handleScroll: false, handleScale: false,
 };
 
-// P&L equity curve
-if (CHART_DATA.pnl_series && CHART_DATA.pnl_series.length) {
-  const el = document.getElementById('pnlChart');
-  if (el && typeof LightweightCharts !== 'undefined') {
-    const chart = LightweightCharts.createChart(el, { ...baseOpts, height: 220 });
-    const series = chart.addBaselineSeries({
-      baseValue: { type: 'price', price: 0 },
-      topLineColor:    '#10b981', topFillColor1: 'rgba(16,185,129,.2)', topFillColor2: 'rgba(16,185,129,.02)',
-      bottomLineColor: '#ef4444', bottomFillColor1: 'rgba(239,68,68,.02)', bottomFillColor2: 'rgba(239,68,68,.2)',
-    });
-    series.setData(CHART_DATA.pnl_series);
-    chart.timeScale().fitContent();
+setTimeout(function() {
+  if (CHART_DATA.pnl_series && CHART_DATA.pnl_series.length) {
+    const el = document.getElementById('pnlChart');
+    if (el && typeof LightweightCharts !== 'undefined') {
+      const chart = LightweightCharts.createChart(el, { ...baseOpts, height: 220 });
+      const series = chart.addBaselineSeries({
+        baseValue: { type: 'price', price: 0 },
+        topLineColor:    '#10b981', topFillColor1: 'rgba(16,185,129,.2)', topFillColor2: 'rgba(16,185,129,.02)',
+        bottomLineColor: '#ef4444', bottomFillColor1: 'rgba(239,68,68,.02)', bottomFillColor2: 'rgba(239,68,68,.2)',
+      });
+      series.setData(CHART_DATA.pnl_series);
+      chart.timeScale().fitContent();
+    }
   }
-}
+}, 100);
 
-// Holding period distribution (simple bar chart via canvas)
 if (CHART_DATA.holding_buckets) {
   const el = document.getElementById('holdingChart');
   if (el) {
@@ -433,12 +312,10 @@ if (CHART_DATA.holding_buckets) {
   }
 }
 
-// Monthly P&L bars (inline SVG)
 if (CHART_DATA.monthly_bars && CHART_DATA.monthly_bars.length) {
-  const el     = document.getElementById('monthlyChart');
-  const bars   = CHART_DATA.monthly_bars;
+  const el   = document.getElementById('monthlyChart');
+  const bars = CHART_DATA.monthly_bars;
   const maxAbs = Math.max(...bars.map(b => Math.abs(b.pnl)), 1);
-  const W      = 100 / bars.length;
   if (el) {
     el.innerHTML = `<div class="flex items-end gap-1 h-[160px]">` +
       bars.map(b => {
@@ -453,5 +330,98 @@ if (CHART_DATA.monthly_bars && CHART_DATA.monthly_bars.length) {
       }).join('') + `</div>`;
   }
 }
+
+
+// ── Phase 4: Holding analysis ────────────────────────────────────────────────
+const HOLDING_URL = "{{ url_for('trading_analytics.holding_analysis') }}";
+
+function loadHoldingAnalysis(btn) {
+  if (btn) { btn.disabled = true; btn.textContent = 'Loading…'; }
+  fetch(HOLDING_URL)
+    .then(r => r.json())
+    .then(d => {
+      if (btn) { btn.disabled = false; btn.textContent = '↺ Refresh'; }
+      if (!d.ok || !d.holding_analysis) return;
+      const ha = d.holding_analysis;
+      document.getElementById('holdingContent').classList.remove('hidden');
+
+      // Winner vs loser comparison — keys match HoldingComparison.to_dict()
+      const wl = document.getElementById('wlComparison');
+      if (ha.comparison && wl) {
+        const c = ha.comparison;
+        const fmt = v => (v !== null && v !== undefined) ? `${v}d` : '—';
+        wl.innerHTML = `
+          <div class="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-800">
+            <div class="text-[9px] font-black uppercase text-emerald-600 dark:text-emerald-400 mb-2">✅ Winning Trades (${c.winner_count})</div>
+            <div class="flex gap-4 text-[10px]">
+              <div><span class="text-gray-400 dark:text-slate-500">Avg </span><span class="font-black text-emerald-600 dark:text-emerald-400">${fmt(c.winner_avg)}</span></div>
+              <div><span class="text-gray-400 dark:text-slate-500">Med </span><span class="font-black text-emerald-600 dark:text-emerald-400">${fmt(c.winner_median)}</span></div>
+              <div><span class="text-gray-400 dark:text-slate-500">Min </span><span class="tabular-nums">${fmt(c.winner_min)}</span></div>
+              <div><span class="text-gray-400 dark:text-slate-500">Max </span><span class="tabular-nums">${fmt(c.winner_max)}</span></div>
+            </div>
+          </div>
+          <div class="p-3 rounded-xl bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-800">
+            <div class="text-[9px] font-black uppercase text-red-600 dark:text-red-400 mb-2">❌ Losing Trades (${c.loser_count})</div>
+            <div class="flex gap-4 text-[10px]">
+              <div><span class="text-gray-400 dark:text-slate-500">Avg </span><span class="font-black text-red-500">${fmt(c.loser_avg)}</span></div>
+              <div><span class="text-gray-400 dark:text-slate-500">Med </span><span class="font-black text-red-500">${fmt(c.loser_median)}</span></div>
+              <div><span class="text-gray-400 dark:text-slate-500">Min </span><span class="tabular-nums">${fmt(c.loser_min)}</span></div>
+              <div><span class="text-gray-400 dark:text-slate-500">Max </span><span class="tabular-nums">${fmt(c.loser_max)}</span></div>
+            </div>
+            ${c.observation ? `<div class="mt-2 text-[9px] text-gray-400 dark:text-slate-500 italic">${c.observation}</div>` : ''}
+          </div>`;
+      }
+
+      // Bucket table — keys match HoldingBucket.to_dict()
+      const tb = document.getElementById('bucketTbody');
+      if (tb) {
+        tb.innerHTML = (ha.buckets || []).filter(b => b.count > 0).map(b => {
+          const pnlCol  = (b.total_pnl||0) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500';
+          const apnlCol = (b.avg_pnl||0)   >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500';
+          const wr      = b.win_rate != null ? b.win_rate.toFixed(1) + '%' : '—';
+          const wrCol   = b.win_rate >= 60 ? 'text-emerald-600 dark:text-emerald-400'
+                        : b.win_rate <= 33 ? 'text-red-500' : '';
+          return `<tr class="hover:bg-gray-50/50 dark:hover:bg-slate-800/30">
+            <td class="px-3 py-2 font-black text-gray-700 dark:text-slate-200">${b.label}d</td>
+            <td class="px-3 py-2 text-right tabular-nums">${b.count}</td>
+            <td class="px-3 py-2 text-right tabular-nums text-emerald-600 dark:text-emerald-400">${b.wins}</td>
+            <td class="px-3 py-2 text-right tabular-nums text-red-500">${b.losses}</td>
+            <td class="px-3 py-2 text-right tabular-nums font-black ${wrCol}">${wr}</td>
+            <td class="px-3 py-2 text-right tabular-nums font-black ${pnlCol}">₹${(b.total_pnl||0).toFixed(0)}</td>
+            <td class="px-3 py-2 text-right tabular-nums ${apnlCol}">₹${(b.avg_pnl||0).toFixed(0)}</td>
+          </tr>`;
+        }).join('') || '<tr><td colspan="7" class="px-3 py-3 text-center text-[10px] text-gray-400">No data</td></tr>';
+      }
+
+      // Patterns — HoldingPattern has: category, title, body (no severity field)
+      const pats = document.getElementById('holdingPatterns');
+      if (pats) {
+        const catStyle = {
+          best_bucket:   'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300',
+          worst_bucket:  'bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300',
+          long_loser:    'bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300',
+          short_hold:    'bg-blue-50 dark:bg-blue-500/10 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300',
+          repeated_loss: 'bg-red-50 dark:bg-red-500/10 border-red-200 dark:border-red-800 text-red-600 dark:text-red-400',
+        };
+        pats.innerHTML = (ha.patterns || []).map(p => {
+          const cls = catStyle[p.category] || catStyle.short_hold;
+          return `<div class="p-3 rounded-xl border ${cls}">
+            <div class="font-black text-[10px] mb-1">${p.title}</div>
+            <div class="text-[9px] opacity-80">${p.body}</div>
+          </div>`;
+        }).join('') || '<div class="text-[9px] text-gray-400 dark:text-slate-500 italic">No significant patterns detected with current data.</div>';
+      }
+    })
+    .catch(e => {
+      if (btn) { btn.disabled = false; btn.textContent = 'Load Analysis'; }
+      console.warn('Holding analysis failed:', e);
+    });
+}
+
+// Auto-load on page load if trades exist
+{% if n_matched %}
+loadHoldingAnalysis();
+{% endif %}
+
 </script>
 {% endblock %}

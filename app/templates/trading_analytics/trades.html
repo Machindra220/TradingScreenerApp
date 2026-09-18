@@ -1,0 +1,237 @@
+{% extends "base_authenticated.html" %}
+{% block title %}Completed Trades{% endblock %}
+{% block content %}
+<div class="max-w-7xl mx-auto px-4 py-8 space-y-5">
+
+  {# ── Header ── #}
+  <div class="flex flex-wrap items-center justify-between gap-4">
+    <div>
+      <div class="flex items-center gap-2 mb-1">
+        <a href="{{ url_for('trading_analytics.dashboard') }}"
+           class="text-[9px] font-black uppercase text-indigo-400 hover:text-indigo-600 transition">
+          ← Trading Analytics
+        </a>
+      </div>
+      <h2 class="text-2xl font-black text-indigo-900 dark:text-indigo-300 uppercase tracking-tight">🗂 Completed Trades</h2>
+      <p class="text-[10px] font-bold text-gray-400 dark:text-slate-500 uppercase mt-1 tracking-widest">
+        {{ trades|length }} trades
+        {% if report_period %} · {{ report_period }}{% endif %}
+      </p>
+    </div>
+    <div class="flex gap-2 flex-wrap">
+      <a href="{{ url_for('trading_analytics.export_trades') }}"
+         class="px-4 py-2 border border-indigo-300 dark:border-indigo-700 text-indigo-600 dark:text-indigo-300 rounded-xl text-[10px] font-black uppercase hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition">
+        📥 CSV
+      </a>
+      <a href="{{ url_for('trading_analytics.export_trades_xlsx') }}"
+         class="px-4 py-2 border border-indigo-300 dark:border-indigo-700 text-indigo-600 dark:text-indigo-300 rounded-xl text-[10px] font-black uppercase hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition">
+        📊 XLSX
+      </a>
+      <a href="{{ url_for('trading_analytics.export_report_pdf') }}"
+         class="px-4 py-2 border border-gray-200 dark:border-slate-700 text-gray-600 dark:text-slate-300 rounded-xl text-[10px] font-black uppercase hover:bg-gray-50 dark:hover:bg-slate-800 transition">
+        📄 PDF
+      </a>
+    </div>
+  </div>
+
+  {# ── Summary strip ── #}
+  {% if summary %}
+  <div class="flex flex-wrap gap-3 text-[10px] font-black">
+    {% for label, val, cls in [
+      ('Total Trades',  summary.total_trades,     'text-gray-700 dark:text-slate-200'),
+      ('Winners',       summary.winning_trades,   'text-emerald-600 dark:text-emerald-400'),
+      ('Losers',        summary.losing_trades,    'text-red-500'),
+      ('Win Rate',      (summary.win_rate_pct|string + '%') if summary.win_rate_pct else '—', 'text-indigo-600 dark:text-indigo-300'),
+      ('Gross P&L',     '₹' + '%.2f'|format(summary.total_gross_pnl), 'text-emerald-600 dark:text-emerald-400' if summary.total_gross_pnl >= 0 else 'text-red-500'),
+    ] %}
+    <span class="px-3 py-1.5 rounded-full bg-gray-100 dark:bg-slate-800 {{ cls }}">{{ label }}: {{ val }}</span>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {# ── Filter strip ── #}
+  <div class="flex flex-wrap gap-3 items-center text-[10px]">
+    <span class="font-black uppercase text-gray-400 dark:text-slate-500">Filter:</span>
+    <button onclick="filterType('ALL',this)"
+            class="filter-btn active px-3 py-1.5 rounded-lg border border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-300 font-black uppercase transition">
+      All
+    </button>
+    {% for t in ['INTRADAY','SHORT_TERM','LONG_TERM'] %}
+    <button onclick="filterType('{{ t }}',this)"
+            class="filter-btn px-3 py-1.5 rounded-lg border border-gray-200 dark:border-slate-700 text-gray-500 dark:text-slate-400 font-black uppercase hover:border-indigo-300 dark:hover:border-indigo-700 transition">
+      {{ t.replace('_',' ') }}
+    </button>
+    {% endfor %}
+    <button onclick="filterOutcome('WIN',this)"
+            class="filter-btn px-3 py-1.5 rounded-lg border border-gray-200 dark:border-slate-700 text-gray-500 dark:text-slate-400 font-black uppercase hover:border-emerald-300 transition">
+      Winners only
+    </button>
+    <button onclick="filterOutcome('LOSS',this)"
+            class="filter-btn px-3 py-1.5 rounded-lg border border-gray-200 dark:border-slate-700 text-gray-500 dark:text-slate-400 font-black uppercase hover:border-red-300 transition">
+      Losers only
+    </button>
+    <button onclick="clearFilters()"
+            class="ml-auto text-[9px] text-gray-400 dark:text-slate-500 hover:text-gray-600 uppercase font-black">
+      ✕ Clear
+    </button>
+    <span id="rowCount" class="text-gray-400 dark:text-slate-500"></span>
+  </div>
+
+  {# ── Trades table ── #}
+  {% if trades %}
+  <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm overflow-x-auto">
+    <table class="min-w-full text-xs" id="tradesTable">
+      <thead class="bg-gray-50 dark:bg-slate-800/60 sticky top-0 z-10">
+        <tr>
+          {% for col, key, align in [
+            ('Symbol',       'symbol',       'left'),
+            ('Type',         'product_type', 'left'),
+            ('Buy Date',     'buy_date',     'left'),
+            ('Buy (₹)',      'buy_price',    'right'),
+            ('Sell Date',    'sell_date',    'left'),
+            ('Sell (₹)',     'sell_price',   'right'),
+            ('Qty',          'quantity',     'right'),
+            ('Hold (d)',     'holding_days', 'right'),
+            ('Gross P&L',    'gross_pnl',    'right'),
+            ('Return %',     'return_pct',   'right'),
+          ] %}
+          <th class="px-4 py-3 text-{{ align }} font-bold uppercase text-gray-400 dark:text-slate-400 text-[9px] cursor-pointer select-none hover:text-indigo-500 whitespace-nowrap"
+              onclick="sortTable('{{ key }}','{{ align }}',this)">
+            {{ col }} <span class="sort-arr"></span>
+          </th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-50 dark:divide-slate-800" id="tradesTbody">
+        {% for t in trades %}
+        {% set pnl_color = 'text-emerald-600 dark:text-emerald-400' if t.gross_pnl >= 0 else 'text-red-500' %}
+        {% set ret_pct = ((t.gross_pnl / (t.quantity * t.buy_price)) * 100) if t.quantity and t.buy_price else 0 %}
+        {% set type_badge = {
+          'INTRADAY':   'bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-300',
+          'SHORT_TERM': 'bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-300',
+          'LONG_TERM':  'bg-purple-50 dark:bg-purple-500/10 text-purple-600 dark:text-purple-300',
+        } %}
+        <tr class="hover:bg-gray-50/50 dark:hover:bg-slate-800/30 transition"
+            data-type="{{ t.product_type }}"
+            data-outcome="{% if t.gross_pnl > 0 %}WIN{% elif t.gross_pnl < 0 %}LOSS{% else %}BE{% endif %}"
+            data-symbol="{{ t.symbol }}"
+            data-buy_date="{{ t.buy_date or '' }}"
+            data-buy_price="{{ t.buy_price }}"
+            data-sell_date="{{ t.sell_date or '' }}"
+            data-sell_price="{{ t.sell_price }}"
+            data-quantity="{{ t.quantity }}"
+            data-holding_days="{{ t.holding_days or 0 }}"
+            data-gross_pnl="{{ t.gross_pnl }}"
+            data-return_pct="{{ '%.4f'|format(ret_pct) }}">
+          <td class="px-4 py-3 font-black text-indigo-700 dark:text-indigo-300">{{ t.symbol }}</td>
+          <td class="px-4 py-3">
+            <span class="px-1.5 py-0.5 rounded text-[8px] font-black
+              {{ type_badge.get(t.product_type, 'bg-gray-100 dark:bg-slate-800 text-gray-500') }}">
+              {{ t.product_type.replace('_',' ') if t.product_type else '—' }}
+            </span>
+          </td>
+          <td class="px-4 py-3 text-gray-500 dark:text-slate-400 tabular-nums whitespace-nowrap">{{ t.buy_date or '—' }}</td>
+          <td class="px-4 py-3 text-right tabular-nums font-bold text-gray-700 dark:text-slate-200">{{ "%.2f"|format(t.buy_price) }}</td>
+          <td class="px-4 py-3 text-gray-500 dark:text-slate-400 tabular-nums whitespace-nowrap">{{ t.sell_date or '—' }}</td>
+          <td class="px-4 py-3 text-right tabular-nums font-bold text-gray-700 dark:text-slate-200">{{ "%.2f"|format(t.sell_price) }}</td>
+          <td class="px-4 py-3 text-right tabular-nums text-gray-700 dark:text-slate-200">{{ t.quantity }}</td>
+          <td class="px-4 py-3 text-right tabular-nums text-gray-500 dark:text-slate-400">{{ t.holding_days if t.holding_days is not none else '—' }}</td>
+          <td class="px-4 py-3 text-right tabular-nums font-black {{ pnl_color }}">
+            {% if t.gross_pnl >= 0 %}+{% endif %}{{ "%.2f"|format(t.gross_pnl) }}
+          </td>
+          <td class="px-4 py-3 text-right tabular-nums font-bold {{ pnl_color }}">
+            {% if ret_pct >= 0 %}+{% endif %}{{ "%.2f"|format(ret_pct) }}%
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm p-8 text-center">
+    <div class="text-3xl mb-2">📭</div>
+    <div class="font-black text-gray-700 dark:text-slate-200">No trades imported yet</div>
+    <a href="{{ url_for('trading_analytics.upload_page') }}"
+       class="inline-block mt-3 text-indigo-500 underline text-[10px] font-bold">Import Tax Report →</a>
+  </div>
+  {% endif %}
+
+</div>
+
+<script>
+// ── Sort ──────────────────────────────────────────────────────────────────────
+let _sk = null, _sd = -1;
+function sortTable(key, align, th) {
+  _sd = (_sk === key) ? -_sd : (align === 'right' ? -1 : 1);
+  _sk = key;
+  const tb = document.querySelector('#tradesTable tbody');
+  if (!tb) return;
+  Array.from(tb.querySelectorAll('tr:not([style*="display:none"])'))
+    .sort((a, b) => {
+      let va = a.dataset[key] ?? '', vb = b.dataset[key] ?? '';
+      if (align === 'right') { va = parseFloat(va)||0; vb = parseFloat(vb)||0; }
+      return (va < vb ? -1 : va > vb ? 1 : 0) * _sd;
+    }).forEach(r => tb.appendChild(r));
+  document.querySelectorAll('.sort-arr').forEach(s => s.textContent = '');
+  if (th) th.querySelector('.sort-arr').textContent = _sd === 1 ? '▲' : '▼';
+}
+
+// ── Filter ────────────────────────────────────────────────────────────────────
+let _activeType = 'ALL', _activeOutcome = 'ALL';
+
+function applyFilters() {
+  const rows = document.querySelectorAll('#tradesTbody tr');
+  let visible = 0;
+  rows.forEach(r => {
+    const typeOk    = _activeType    === 'ALL' || r.dataset.type    === _activeType;
+    const outcomeOk = _activeOutcome === 'ALL' || r.dataset.outcome === _activeOutcome;
+    r.style.display = (typeOk && outcomeOk) ? '' : 'none';
+    if (typeOk && outcomeOk) visible++;
+  });
+  const rc = document.getElementById('rowCount');
+  if (rc) rc.textContent = `Showing ${visible} trade${visible !== 1 ? 's' : ''}`;
+}
+
+function filterType(t, btn) {
+  _activeType = t;
+  document.querySelectorAll('.filter-btn').forEach(b => {
+    b.classList.remove('active','bg-indigo-50','dark:bg-indigo-500/10',
+      'border-indigo-300','dark:border-indigo-700','text-indigo-600','dark:text-indigo-300');
+    b.classList.add('border-gray-200','dark:border-slate-700',
+      'text-gray-500','dark:text-slate-400');
+  });
+  if (btn) {
+    btn.classList.add('active','bg-indigo-50','dark:bg-indigo-500/10',
+      'border-indigo-300','dark:border-indigo-700','text-indigo-600','dark:text-indigo-300');
+    btn.classList.remove('border-gray-200','dark:border-slate-700',
+      'text-gray-500','dark:text-slate-400');
+  }
+  applyFilters();
+}
+
+function filterOutcome(o, btn) {
+  _activeOutcome = _activeOutcome === o ? 'ALL' : o;
+  applyFilters();
+}
+
+function clearFilters() {
+  _activeType = 'ALL'; _activeOutcome = 'ALL';
+  document.querySelectorAll('.filter-btn').forEach(b => {
+    b.classList.remove('active','bg-indigo-50','dark:bg-indigo-500/10',
+      'border-indigo-300','dark:border-indigo-700','text-indigo-600','dark:text-indigo-300');
+    b.classList.add('border-gray-200','dark:border-slate-700',
+      'text-gray-500','dark:text-slate-400');
+  });
+  document.querySelectorAll('#tradesTbody tr').forEach(r => r.style.display = '');
+  const rc = document.getElementById('rowCount');
+  if (rc) rc.textContent = '';
+}
+
+// Init count
+document.addEventListener('DOMContentLoaded', () => {
+  const total = document.querySelectorAll('#tradesTbody tr').length;
+  const rc = document.getElementById('rowCount');
+  if (rc && total) rc.textContent = `Showing ${total} trades`;
+});
+</script>
+{% endblock %}

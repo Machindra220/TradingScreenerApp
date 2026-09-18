@@ -25,11 +25,24 @@ class Config:
     MAIL_PASSWORD = os.getenv('MAIL_PASSWORD')
     MAIL_DEFAULT_SENDER = os.getenv('MAIL_DEFAULT_SENDER')
 
+    # # Add inside the Config class, after SQLALCHEMY_DATABASE_URI
+    # ANALYTICS_DB_PATH = os.path.join(
+    #     os.path.dirname(os.path.abspath(__file__)),
+    #     'data', 'trading_analytics', 'trading_analytics.db'
+    # )
+    # SQLALCHEMY_BINDS = {
+    #     'analytics': f"sqlite:///{ANALYTICS_DB_PATH}"
+    # }
+
     # Add inside the Config class, after SQLALCHEMY_DATABASE_URI
-    ANALYTICS_DB_PATH = os.path.join(
+    ANALYTICS_DB_DIR = os.path.join(
         os.path.dirname(os.path.abspath(__file__)),
-        'data', 'trading_analytics', 'trading_analytics.db'
+        'data', 'trading_analytics'
     )
+    os.makedirs(ANALYTICS_DB_DIR, exist_ok=True)
+
+    ANALYTICS_DB_PATH = os.path.join(ANALYTICS_DB_DIR, 'trading_analytics.db').replace('\\', '/')
+    
     SQLALCHEMY_BINDS = {
         'analytics': f"sqlite:///{ANALYTICS_DB_PATH}"
     }

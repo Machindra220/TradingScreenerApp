@@ -1,20 +1,22 @@
 """
 app/routes/trading_analytics.py
 ─────────────────────────────────
-Phase 1 — Config status + ping (GET).
-Phase 2 — POST test-connection UI action.
-Phase 3 — Historical trade sync routes.
-Phase 7 — Dashboard: /trading-analytics (reads from local DB only).
+Trading Analytics — Tax Report based data source.
 
 Routes:
-  GET  /trading-analytics             → dashboard (reads local DB, never calls Dhan)
-  GET  /trading-analytics/status      → JSON config validation
-  GET  /trading-analytics/ping        → JSON live connection check
-  POST /trading-analytics/test-connection  → UI test action
-  POST /trading-analytics/sync        → trigger background trade sync
-  GET  /trading-analytics/sync/progress   → poll sync status
-  GET  /trading-analytics/sync/status     → last sync metadata
-  POST /trading-analytics/run-fifo    → re-run FIFO matching on stored trades
+  GET  /trading-analytics              → dashboard (reads local DB)
+  GET  /trading-analytics/monthly      → JSON monthly analytics
+  GET  /trading-analytics/yearly       → JSON yearly analytics
+  GET  /trading-analytics/insights     → JSON behavioral insights
+  GET  /trading-analytics/holding-analysis → JSON holding period analysis (Phase 4)
+  GET  /trading-analytics/upload       → upload page
+  POST /trading-analytics/upload/validate → validate file
+  POST /trading-analytics/upload/import   → import file
+  GET  /trading-analytics/export           → CSV trades
+  GET  /trading-analytics/export/trades/xlsx
+  GET  /trading-analytics/export/analytics/json
+  GET  /trading-analytics/export/analytics/csv
+  GET  /trading-analytics/export/report/pdf
 """
 
 import logging
@@ -26,15 +28,7 @@ from flask import Blueprint, jsonify, request, render_template
 from flask_login import login_required
 from sqlalchemy import desc
 
-from app.services.dhan_client import (
-    DhanClient,
-    DhanConfigError,
-    DhanAuthError,
-    DhanRateLimitError,
-    DhanAPIError,
-    validate_dhan_config,
-)
-from app.services.dhan_trade_sync import DhanTradeSync, persist_trades
+
 
 log = logging.getLogger(__name__)
 
@@ -42,14 +36,12 @@ log = logging.getLogger(__name__)
 
 def _load_dashboard_data() -> dict:
     """
-    Read all analytics data from local DB.
-    Never calls Dhan API — only reads stored data.
-    Called on every dashboard GET.
+    Load all analytics data from local DB.
+    Phase 3: source of truth is Tax Report imports (MatchedTrade with source='tax_report').
+    Never calls Dhan API. Falls back gracefully when no data imported yet.
     """
     try:
-        from app.models_analytics import (
-            DhanSyncLog, TradeExecution, MatchedTrade, OpenLot
-        )
+        from app.models_analytics import TaxReportUpload, MatchedTrade, OpenLot
         from app.services.fifo_store import FifoStore
         from app.services.trade_analytics import TradeAnalyticsEngine
         from sqlalchemy import desc
@@ -57,46 +49,40 @@ def _load_dashboard_data() -> dict:
         store  = FifoStore()
         engine = TradeAnalyticsEngine()
 
-        # Sync metadata
-        last_sync = DhanSyncLog.query.order_by(
-            desc(DhanSyncLog.started_at)).first()
+        # Last Tax Report import (replaces DhanSyncLog)
+        last_import = TaxReportUpload.query.order_by(
+            desc(TaxReportUpload.uploaded_at)).first()
 
-        # Counts
-        n_executions    = TradeExecution.query.count()
-        n_matched       = store.count_matched()
-        n_open          = store.count_open()
+        # Count trades from tax report source only
+        n_matched = MatchedTrade.query.filter_by(source='tax_report').count()
+        n_open    = OpenLot.query.count()
 
-        # Analytics (from stored MatchedTrade records)
-        matched_trades  = store.get_all_matched()
-        report          = engine.compute(matched_trades) if matched_trades else None
+        # All matched trades from tax report
+        matched_trades = MatchedTrade.query.filter_by(
+            source='tax_report'
+        ).order_by(MatchedTrade.sell_date.desc()).all()
 
-        # Recent completed trades (last 20 for table)
-        recent          = store.get_all_matched(limit=20)
-
-        # Top winners / losers (by gross_pnl)
-        all_matched     = matched_trades
-        top_winners     = sorted(all_matched, key=lambda m: m.gross_pnl, reverse=True)[:5]
-        top_losers      = sorted(all_matched, key=lambda m: m.gross_pnl)[:5]
-
-        # Open lots
-        open_lots       = store.get_open_lots()
+        report   = engine.compute(matched_trades) if matched_trades else None
+        recent   = matched_trades[:20]
+        top_winners = sorted(matched_trades, key=lambda m: m.gross_pnl, reverse=True)[:5]
+        top_losers  = sorted(matched_trades, key=lambda m: m.gross_pnl)[:5]
+        open_lots   = store.get_open_lots()
 
         return {
-            "last_sync":      last_sync.to_dict() if last_sync else None,
-            "n_executions":   n_executions,
-            "n_matched":      n_matched,
-            "n_open":         n_open,
-            "report":         report.to_dict(include_trades=False) if report else None,
-            "recent_trades":  [m.to_dict() for m in recent],
-            "top_winners":    [m.to_dict() for m in top_winners],
-            "top_losers":     [m.to_dict() for m in top_losers],
-            "open_lots":      [o.to_dict() for o in open_lots],
-            "chart_data":     _build_chart_data(matched_trades),
+            "last_import":   last_import.to_dict() if last_import else None,
+            "n_matched":     n_matched,
+            "n_open":        n_open,
+            "report":        report.to_dict(include_trades=False) if report else None,
+            "recent_trades": [m.to_dict() for m in recent],
+            "top_winners":   [m.to_dict() for m in top_winners],
+            "top_losers":    [m.to_dict() for m in top_losers],
+            "open_lots":     [o.to_dict() for o in open_lots],
+            "chart_data":    _build_chart_data(matched_trades),
         }
     except Exception as e:
         log.error("[TradingAnalytics] load_dashboard_data error: %s", e)
         return {
-            "last_sync": None, "n_executions": 0, "n_matched": 0, "n_open": 0,
+            "last_import": None, "n_matched": 0, "n_open": 0,
             "report": None, "recent_trades": [], "top_winners": [],
             "top_losers": [], "open_lots": [], "chart_data": {},
         }
@@ -167,220 +153,6 @@ def _build_chart_data(matched_trades: list) -> dict:
 
 trading_analytics_bp = Blueprint("trading_analytics", __name__)
 
-# ── Sync progress (same pattern as every screener) ────────────────────────────
-_lock     = threading.Lock()
-_SYNC_PROG = {
-    "active":    False,
-    "stage":     "idle",
-    "pages":     0,
-    "stored":    0,
-    "fetched":   0,
-    "error":     None,
-}
-
-def _set(**kw):
-    with _lock: _SYNC_PROG.update(kw)
-
-def _get_prog():
-    with _lock: return dict(_SYNC_PROG)
-
-
-# ── Routes ────────────────────────────────────────────────────────────────────
-
-@trading_analytics_bp.route("/trading-analytics/status")
-@login_required
-def config_status():
-    """
-    Returns Dhan configuration status as JSON.
-    Safe to call from the UI — contains no credential values.
-
-    Response:
-        200 { "configured": true,  "has_client_id": true,
-              "has_access_token": true, "error": null }
-        200 { "configured": false, "has_client_id": false,
-              "has_access_token": false,
-              "error": "DHAN_CLIENT_ID and DHAN_ACCESS_TOKEN are not set..." }
-    """
-    status = validate_dhan_config()
-    return jsonify(status), 200
-
-
-@trading_analytics_bp.route("/trading-analytics/ping")
-@login_required
-def connection_ping():
-    """GET — live Dhan API health check."""
-    try:
-        client = DhanClient.from_env()
-        result = client.ping()
-        log.info("[TradingAnalytics] ping OK — client=%s", result.get("client_id_masked"))
-        return jsonify({"ok": True, **result}), 200
-    except DhanConfigError   as e: return jsonify({"ok": False, "error": str(e), "error_type": "config"}),     503
-    except DhanAuthError     as e: return jsonify({"ok": False, "error": str(e), "error_type": "auth"}),       401
-    except DhanRateLimitError as e:return jsonify({"ok": False, "error": str(e), "error_type": "rate_limit"}), 429
-    except DhanAPIError      as e: return jsonify({"ok": False, "error": str(e), "error_type": "api"}),        502
-
-
-@trading_analytics_bp.route("/trading-analytics/test-connection", methods=["POST"])
-@login_required
-def test_connection():
-    """POST — UI Test Connection action (Phase 2). CSRF protected."""
-    try:
-        client = DhanClient.from_env()
-        result = client.ping()
-        log.info("[TradingAnalytics] test-connection OK — client=%s", result.get("client_id_masked"))
-        return jsonify({"ok": True, **result}), 200
-    except DhanConfigError   as e: return jsonify({"ok": False, "error": str(e), "error_type": "config"}),     503
-    except DhanAuthError     as e: return jsonify({"ok": False, "error": str(e), "error_type": "auth"}),       401
-    except DhanRateLimitError as e:return jsonify({"ok": False, "error": str(e), "error_type": "rate_limit"}), 429
-    except DhanAPIError      as e: return jsonify({"ok": False, "error": str(e), "error_type": "api"}),        502
-
-
-# ── Phase 3: Background sync worker ──────────────────────────────────────────
-
-def _run_sync(from_date: date, to_date: date):
-    """
-    Background thread: fetch trades from Dhan API and persist to analytics DB.
-    Uses DhanTradeSync service — no business logic here.
-    """
-    _set(active=True, stage="connecting", pages=0, stored=0, fetched=0, error=None)
-
-    try:
-        from app.models_analytics import DhanSyncLog
-        from app.extensions import db
-
-        # Create sync log record
-        sync_log = DhanSyncLog(
-            from_date  = from_date,
-            to_date    = to_date,
-            status     = "running",
-            started_at = datetime.utcnow(),
-        )
-        db.session.add(sync_log)
-        db.session.commit()
-
-        # Connect
-        _set(stage="connecting")
-        client = DhanClient.from_env()
-        client.ping()   # fast auth check before fetching
-
-        # Fetch
-        _set(stage="fetching")
-
-        def _progress(page, stored_so_far):
-            _set(pages=page + 1, stored=stored_so_far)
-
-        syncer = DhanTradeSync(client)
-
-        # Use chunked fetch if range > 90 days
-        span = (to_date - from_date).days
-        if span > 90:
-            trades, results = syncer.fetch_range_chunked(
-                from_date, to_date, progress_callback=_progress
-            )
-            total_fetched = sum(r.records_fetched for r in results)
-            total_stored  = sum(r.records_stored  for r in results)
-            total_skipped = sum(r.records_skipped for r in results)
-            total_invalid = sum(r.records_invalid for r in results)
-            total_pages   = sum(r.pages_fetched   for r in results)
-            any_error     = next((r.error for r in results if r.error), None)
-        else:
-            trades, result = syncer.fetch_range(
-                from_date, to_date, progress_callback=_progress
-            )
-            total_fetched = result.records_fetched
-            total_stored  = result.records_stored
-            total_skipped = result.records_skipped
-            total_invalid = result.records_invalid
-            total_pages   = result.pages_fetched
-            any_error     = result.error
-
-        _set(stage="storing", fetched=total_fetched)
-
-        # Persist
-        stored = persist_trades(trades, sync_log_id=sync_log.id)
-
-        # Update sync log
-        sync_log.finished_at      = datetime.utcnow()
-        sync_log.status           = "error" if any_error else "success"
-        sync_log.pages_fetched    = total_pages
-        sync_log.records_fetched  = total_fetched
-        sync_log.records_stored   = stored
-        sync_log.records_skipped  = total_skipped
-        sync_log.records_invalid  = total_invalid
-        sync_log.error_message    = any_error
-        db.session.commit()
-
-        _set(active=False, stage="done", stored=stored, fetched=total_fetched)
-        log.info(
-            "[TradingAnalytics] Sync complete: fetched=%d stored=%d skipped=%d",
-            total_fetched, stored, total_skipped
-        )
-
-    except (DhanAuthError, DhanConfigError) as e:
-        _set(active=False, stage="error", error=str(e))
-        log.error("[TradingAnalytics] Sync auth/config error: %s", e)
-    except Exception as e:
-        traceback.print_exc()
-        _set(active=False, stage="error", error=str(e)[:200])
-        log.error("[TradingAnalytics] Sync unexpected error: %s", e)
-
-
-# ── Phase 3: Sync routes ──────────────────────────────────────────────────────
-
-@trading_analytics_bp.route("/trading-analytics/sync", methods=["POST"])
-@login_required
-def trigger_sync():
-    """
-    POST — trigger background historical trade sync.
-    CSRF protected. Expects form fields: from_date, to_date (YYYY-MM-DD).
-
-    Returns JSON immediately — client polls /sync/progress.
-    """
-    if _get_prog()["active"]:
-        return jsonify({"ok": False, "error": "Sync already in progress."}), 409
-
-    from_str = request.form.get("from_date", "").strip()
-    to_str   = request.form.get("to_date",   "").strip()
-
-    try:
-        from_date = date.fromisoformat(from_str)
-        to_date   = date.fromisoformat(to_str)
-    except ValueError:
-        return jsonify({
-            "ok":    False,
-            "error": f"Invalid date format. Use YYYY-MM-DD. Got: from={from_str!r} to={to_str!r}",
-        }), 400
-
-    try:
-        DhanTradeSync.validate_date_range(from_date, to_date)
-    except ValueError as e:
-        return jsonify({"ok": False, "error": str(e)}), 400
-
-    t = threading.Thread(target=_run_sync, args=(from_date, to_date), daemon=True)
-    t.start()
-    return jsonify({"ok": True, "message": "Sync started.", "from_date": from_str, "to_date": to_str}), 202
-
-
-@trading_analytics_bp.route("/trading-analytics/sync/progress")
-@login_required
-def sync_progress():
-    """GET — poll current sync progress. Safe to call frequently."""
-    return jsonify(_get_prog()), 200
-
-
-@trading_analytics_bp.route("/trading-analytics/sync/status")
-@login_required
-def sync_status():
-    """GET — last completed sync metadata from DB."""
-    try:
-        from app.models_analytics import DhanSyncLog
-        last = DhanSyncLog.query.order_by(desc(DhanSyncLog.started_at)).first()
-        return jsonify({
-            "ok":      True,
-            "last_sync": last.to_dict() if last else None,
-        }), 200
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 # ── Phase 7: Dashboard route ──────────────────────────────────────────────────
@@ -394,54 +166,22 @@ def dashboard():
     Reads exclusively from local DB — never calls Dhan API.
     Only Sync Now (POST /sync) triggers an API call.
     """
-    cfg  = validate_dhan_config()
     data = _load_dashboard_data()
-    prog = _get_prog()
-
     return render_template(
         "trading_analytics/dashboard.html",
-        creds_configured  = cfg["configured"],
-        has_client_id     = cfg["has_client_id"],
-        has_access_token  = cfg["has_access_token"],
-        last_sync         = data["last_sync"],
-        n_executions      = data["n_executions"],
-        n_matched         = data["n_matched"],
-        n_open            = data["n_open"],
-        report            = data["report"],
-        recent_trades     = data["recent_trades"],
-        top_winners       = data["top_winners"],
-        top_losers        = data["top_losers"],
-        open_lots         = data["open_lots"],
-        chart_data        = data["chart_data"],   # passed as dict; use |tojson in template
-        is_syncing        = prog["active"],
-        sync_stage        = prog["stage"],
-        sync_error        = prog.get("error") if not prog["active"] else None,
+        last_import   = data["last_import"],
+        n_matched     = data["n_matched"],
+        n_open        = data["n_open"],
+        report        = data["report"],
+        recent_trades = data["recent_trades"],
+        top_winners   = data["top_winners"],
+        top_losers    = data["top_losers"],
+        open_lots     = data["open_lots"],
+        chart_data    = data["chart_data"],
     )
 
 
-@trading_analytics_bp.route("/trading-analytics/run-fifo", methods=["POST"])
-@login_required
-def run_fifo():
-    """
-    POST — re-run FIFO matching on all stored TradeExecution records.
-    CSRF protected. Used after a sync to update MatchedTrade + OpenLot tables.
-    Returns JSON so the dashboard can poll or reload.
-    """
-    try:
-        from app.models_analytics import TradeExecution
-        from app.services.fifo_store import run_and_save
 
-        executions = TradeExecution.query.order_by(
-            TradeExecution.trade_date.asc(),
-            TradeExecution.traded_at.asc(),
-        ).all()
-
-        summary = run_and_save(executions)
-        log.info("[TradingAnalytics] FIFO run complete: %s", summary)
-        return jsonify({"ok": True, **summary}), 200
-    except Exception as e:
-        log.error("[TradingAnalytics] FIFO run error: %s", e)
-        return jsonify({"ok": False, "error": str(e)[:200]}), 500
 
 
 @trading_analytics_bp.route("/trading-analytics/export")
@@ -1015,3 +755,190 @@ def export_report_pdf():
     except Exception as e:
         log.error("[TradingAnalytics] export_report_pdf error: %s", e)
         return jsonify({"error": str(e)[:200]}), 500
+
+
+# ── Phase 2: Tax Report Upload routes ────────────────────────────────────────
+
+@trading_analytics_bp.route("/trading-analytics/upload", methods=["GET"])
+@login_required
+def upload_page():
+    """GET — show the Tax Report upload page."""
+    try:
+        from app.services.tax_report_store import TaxReportStore
+        history = TaxReportStore().get_upload_history(limit=5)
+        return render_template(
+            "trading_analytics/upload.html",
+            upload_history = [u.to_dict() for u in history],
+        )
+    except Exception as e:
+        return render_template(
+            "trading_analytics/upload.html",
+            upload_history = [],
+        )
+
+
+@trading_analytics_bp.route("/trading-analytics/upload/validate", methods=["POST"])
+@login_required
+def validate_upload():
+    """
+    POST — validate file and return preview JSON (no DB writes).
+    CSRF protected.
+    """
+    file = request.files.get("file")
+    if not file or not file.filename:
+        return jsonify({"ok": False, "error": "No file selected."}), 400
+
+    try:
+        from app.services.tax_report_parser import TaxReportParser
+        file_bytes = file.read()
+        result     = TaxReportParser().parse(file_bytes, file.filename)
+
+        if result.errors:
+            return jsonify({
+                "ok":     False,
+                "errors": result.errors,
+            }), 422
+
+        # Build preview (first 5 rows)
+        preview = []
+        for row in result.rows[:5]:
+            preview.append({
+                "security_name":  row.security_name,
+                "isin":           row.isin,
+                "trade_type":     row.trade_type,
+                "buy_date":       str(row.buy_date),
+                "sell_date":      str(row.sell_date),
+                "buy_qty":        row.buy_qty,
+                "gross_pnl":      row.gross_pnl,
+                "net_pnl":        row.net_pnl,
+                "holding_period": row.holding_period,
+            })
+
+        return jsonify({
+            "ok":            True,
+            "filename":      file.filename,
+            "report_period": result.report_period,
+            "total_rows":    result.total_rows_seen,
+            "valid_rows":    result.valid_rows,
+            "invalid_rows":  result.invalid_rows,
+            "warnings":      result.warnings[:5],
+            "preview":       preview,
+        }), 200
+
+    except Exception as e:
+        log.error("[TradingAnalytics] validate_upload error: %s", e)
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+
+
+@trading_analytics_bp.route("/trading-analytics/upload/import", methods=["POST"])
+@login_required
+def import_upload():
+    """
+    POST — parse file and persist to analytics DB.
+    CSRF protected. After import, caller should trigger Re-run FIFO analytics.
+    """
+    file = request.files.get("file")
+    if not file or not file.filename:
+        return jsonify({"ok": False, "error": "No file selected."}), 400
+
+    try:
+        from app.services.tax_report_parser import TaxReportParser
+        from app.services.tax_report_store  import TaxReportStore
+
+        file_bytes   = file.read()
+        parse_result = TaxReportParser().parse(file_bytes, file.filename)
+
+        if parse_result.errors:
+            return jsonify({
+                "ok":     False,
+                "errors": parse_result.errors,
+            }), 422
+
+        import_result = TaxReportStore().import_rows(parse_result)
+
+        log.info(
+            "[TradingAnalytics] Import complete: %s → "
+            "imported=%d dup=%d rejected=%d",
+            file.filename,
+            import_result.imported,
+            import_result.duplicates,
+            import_result.rejected,
+        )
+
+        return jsonify({
+            "ok":            True,
+            "filename":      file.filename,
+            "report_period": parse_result.report_period,
+            "imported":      import_result.imported,
+            "duplicates":    import_result.duplicates,
+            "rejected":      import_result.rejected,
+            "errors":        import_result.errors[:5],
+        }), 200
+
+    except Exception as e:
+        log.error("[TradingAnalytics] import_upload error: %s", e)
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+
+
+# ── Phase 4: Holding period analysis route ────────────────────────────────────
+
+
+
+# ── Phase 4: Holding period analysis ─────────────────────────────────────────
+
+@trading_analytics_bp.route("/trading-analytics/holding-analysis")
+@login_required
+def holding_analysis():
+    """
+    GET — holding period and trading behavior analysis.
+    Reads MatchedTrade (source='tax_report') from local DB.
+    """
+    try:
+        from app.models_analytics import MatchedTrade
+        from app.services.trade_analytics import TradeAnalyticsEngine
+        from app.services.holding_analyzer import HoldingAnalyzer
+
+        matched = MatchedTrade.query.filter_by(source='tax_report').all()
+        if not matched:
+            return jsonify({"ok": True, "holding_analysis": None,
+                            "message": "No imported trades found."}), 200
+
+        report   = TradeAnalyticsEngine().compute(matched)
+        analysis = HoldingAnalyzer().compute(report.trades)
+        return jsonify({"ok": True, "holding_analysis": analysis.to_dict()}), 200
+
+    except Exception as e:
+        log.error("[TradingAnalytics] holding_analysis error: %s", e)
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+
+# ── Completed Trades page ─────────────────────────────────────────────────────
+
+@trading_analytics_bp.route("/trading-analytics/trades")
+@login_required
+def trades_page():
+    """GET — dedicated completed trades page with filter, sort, export links."""
+    try:
+        from app.models_analytics import MatchedTrade, TaxReportUpload
+        from app.services.trade_analytics import TradeAnalyticsEngine
+        from sqlalchemy import desc
+
+        matched = MatchedTrade.query.filter_by(source='tax_report').order_by(
+            MatchedTrade.sell_date.desc()
+        ).all()
+
+        report      = TradeAnalyticsEngine().compute(matched) if matched else None
+        last_import = TaxReportUpload.query.order_by(
+            desc(TaxReportUpload.uploaded_at)).first()
+
+        return render_template(
+            "trading_analytics/trades.html",
+            trades        = [m.to_dict() for m in matched],
+            summary       = report.to_dict(include_trades=False) if report else None,
+            report_period = last_import.report_period if last_import else None,
+        )
+    except Exception as e:
+        log.error("[TradingAnalytics] trades_page error: %s", e)
+        return render_template(
+            "trading_analytics/trades.html",
+            trades=[], summary=None, report_period=None,
+        )
