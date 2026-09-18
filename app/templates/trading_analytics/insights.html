@@ -1,0 +1,199 @@
+{% extends "base_authenticated.html" %}
+{% block title %}Trading Insights{% endblock %}
+{% block content %}
+<div class="max-w-5xl mx-auto px-4 py-8 space-y-6">
+
+  {# ── Header ── #}
+  <div class="flex flex-wrap items-start justify-between gap-4">
+    <div>
+      <div class="mb-1">
+        <a href="{{ url_for('trading_analytics.dashboard') }}"
+           class="text-[9px] font-black uppercase text-indigo-400 hover:text-indigo-600 transition">
+          ← Trading Analytics
+        </a>
+      </div>
+      <h2 class="text-2xl font-black text-indigo-900 dark:text-indigo-300 uppercase tracking-tight">🧠 Trading Insights</h2>
+      <p class="text-[10px] font-bold text-gray-400 dark:text-slate-500 uppercase mt-1 tracking-widest">
+        Deterministic · Based on historical data only · No AI
+        {% if report_period %} · {{ report_period }}{% endif %}
+      </p>
+    </div>
+    <a href="{{ url_for('trading_analytics.trades_page') }}"
+       class="text-[9px] font-black uppercase text-indigo-400 hover:text-indigo-600 transition self-start mt-6">
+      🗂 View Trades →
+    </a>
+  </div>
+
+  {# ── No data ── #}
+  {% if not insights or insights.insufficient_data %}
+  <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm p-10 text-center space-y-3">
+    <div class="text-4xl">🧠</div>
+    <div class="font-black text-gray-700 dark:text-slate-200">
+      {% if not insights %}
+        No trade data imported yet.
+      {% else %}
+        Not enough trades to generate insights.
+        <span class="text-gray-400 dark:text-slate-500 font-normal">
+          ({{ insights.trade_count }} of {{ insights.min_trades_needed }} needed)
+        </span>
+      {% endif %}
+    </div>
+    <a href="{{ url_for('trading_analytics.upload_page') }}"
+       class="inline-block text-indigo-500 underline text-[10px] font-bold">
+      Import Tax Report →
+    </a>
+  </div>
+
+  {% else %}
+
+  {# ── Summary bar ── #}
+  <div class="flex flex-wrap gap-3 text-[10px] font-black">
+    <span class="px-3 py-1.5 rounded-full bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-slate-300">
+      📊 {{ insights.trade_count }} trades analysed
+    </span>
+    {% if insights.positive_patterns|length %}
+    <span class="px-3 py-1.5 rounded-full bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
+      ✅ {{ insights.positive_patterns|length }} positive pattern{{ 's' if insights.positive_patterns|length != 1 else '' }}
+    </span>
+    {% endif %}
+    {% if insights.potential_issues|length %}
+    <span class="px-3 py-1.5 rounded-full bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400">
+      ⚠️ {{ insights.potential_issues|length }} potential issue{{ 's' if insights.potential_issues|length != 1 else '' }}
+    </span>
+    {% endif %}
+    {% if insights.areas_to_review|length %}
+    <span class="px-3 py-1.5 rounded-full bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300">
+      🔍 {{ insights.areas_to_review|length }} area{{ 's' if insights.areas_to_review|length != 1 else '' }} to review
+    </span>
+    {% endif %}
+    {% if insights.info_observations|length %}
+    <span class="px-3 py-1.5 rounded-full bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-300">
+      ℹ️ {{ insights.info_observations|length }} observation{{ 's' if insights.info_observations|length != 1 else '' }}
+    </span>
+    {% endif %}
+  </div>
+
+  {# ── Disclaimer ── #}
+  <div class="px-4 py-3 rounded-xl bg-gray-50 dark:bg-slate-800/60 border border-gray-100 dark:border-slate-700 text-[9px] text-gray-400 dark:text-slate-500 font-bold uppercase tracking-wide">
+    All insights are based on your historical trade data only. No AI is used. These are factual observations, not financial advice.
+  </div>
+
+  {# ── Macro to render an insight card ── #}
+  {% macro insight_card(ins) %}
+  {% set sev_cfg = {
+    'positive': ('border-emerald-200 dark:border-emerald-800 bg-emerald-50  dark:bg-emerald-500/10',
+                 'text-emerald-700 dark:text-emerald-300', '✅'),
+    'alert':    ('border-red-200    dark:border-red-800    bg-red-50     dark:bg-red-500/10',
+                 'text-red-600    dark:text-red-400',    '⚠️'),
+    'warning':  ('border-amber-200  dark:border-amber-800  bg-amber-50   dark:bg-amber-500/10',
+                 'text-amber-700  dark:text-amber-300',  '🔍'),
+    'info':     ('border-blue-200   dark:border-blue-800   bg-blue-50    dark:bg-blue-500/10',
+                 'text-blue-600   dark:text-blue-300',   'ℹ️'),
+  } %}
+  {% set cfg = sev_cfg.get(ins.severity, sev_cfg.info) %}
+  <div class="rounded-xl border {{ cfg[0] }} p-4 space-y-2">
+    <div class="flex items-start justify-between gap-3">
+      <div class="flex items-center gap-2">
+        <span class="text-base leading-none">{{ cfg[2] }}</span>
+        <span class="font-black text-[11px] {{ cfg[1] }}">{{ ins.title }}</span>
+      </div>
+      {% if ins.metric is not none %}
+      <div class="shrink-0 text-right">
+        <div class="font-black text-lg tabular-nums {{ cfg[1] }}">
+          {{ '%.1f'|format(ins.metric) }}
+        </div>
+        {% if ins.metric_label %}
+        <div class="text-[8px] font-bold uppercase text-gray-400 dark:text-slate-500 whitespace-nowrap">
+          {{ ins.metric_label }}
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+    <p class="text-[10px] text-gray-600 dark:text-slate-300 leading-relaxed">{{ ins.body }}</p>
+    {% if ins.supporting_stat %}
+    <div class="text-[9px] font-bold text-gray-400 dark:text-slate-500 uppercase tracking-wide">
+      {{ ins.supporting_stat }}
+    </div>
+    {% endif %}
+    <div class="text-[8px] font-black uppercase text-gray-300 dark:text-slate-600 tracking-widest">
+      {{ ins.category.replace('_', ' ') }}
+    </div>
+  </div>
+  {% endmacro %}
+
+  {# ── Section: Potential Issues ── #}
+  {% if insights.potential_issues %}
+  <div class="space-y-3">
+    <h3 class="text-[10px] font-black uppercase text-red-500 tracking-widest flex items-center gap-2">
+      <span class="w-2 h-2 rounded-full bg-red-500 inline-block"></span>
+      Potential Issues
+    </h3>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+      {% for ins in insights.potential_issues %}
+        {{ insight_card(ins) }}
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── Section: Areas to Review ── #}
+  {% if insights.areas_to_review %}
+  <div class="space-y-3">
+    <h3 class="text-[10px] font-black uppercase text-amber-500 tracking-widest flex items-center gap-2">
+      <span class="w-2 h-2 rounded-full bg-amber-500 inline-block"></span>
+      Areas to Review
+    </h3>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+      {% for ins in insights.areas_to_review %}
+        {{ insight_card(ins) }}
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── Section: Positive Patterns ── #}
+  {% if insights.positive_patterns %}
+  <div class="space-y-3">
+    <h3 class="text-[10px] font-black uppercase text-emerald-500 tracking-widest flex items-center gap-2">
+      <span class="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
+      Positive Patterns
+    </h3>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+      {% for ins in insights.positive_patterns %}
+        {{ insight_card(ins) }}
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── Section: Observations ── #}
+  {% if insights.info_observations %}
+  <div class="space-y-3">
+    <h3 class="text-[10px] font-black uppercase text-blue-500 tracking-widest flex items-center gap-2">
+      <span class="w-2 h-2 rounded-full bg-blue-500 inline-block"></span>
+      Observations
+    </h3>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+      {% for ins in insights.info_observations %}
+        {{ insight_card(ins) }}
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── No insights at all ── #}
+  {% if insights.total_insights == 0 %}
+  <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm p-8 text-center">
+    <div class="text-3xl mb-2">🔎</div>
+    <div class="font-black text-gray-600 dark:text-slate-300 text-sm">No significant patterns detected</div>
+    <div class="text-[10px] text-gray-400 dark:text-slate-500 mt-1">
+      More trades may reveal patterns over time.
+    </div>
+  </div>
+  {% endif %}
+
+  {% endif %}{# end if insights #}
+
+</div>
+{% endblock %}

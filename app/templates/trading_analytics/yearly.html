@@ -1,0 +1,168 @@
+{% extends "base_authenticated.html" %}
+{% block title %}Yearly Analytics{% endblock %}
+{% block content %}
+<div class="max-w-5xl mx-auto px-4 py-8 space-y-6">
+
+  {# Header #}
+  <div class="flex flex-wrap items-start justify-between gap-4">
+    <div>
+      <div class="mb-1">
+        <a href="{{ url_for('trading_analytics.dashboard') }}"
+           class="text-[9px] font-black uppercase text-indigo-400 hover:text-indigo-600 transition">
+          ← Trading Analytics
+        </a>
+      </div>
+      <h2 class="text-2xl font-black text-indigo-900 dark:text-indigo-300 uppercase tracking-tight">📆 Yearly Analytics</h2>
+      <p class="text-[10px] font-bold text-gray-400 dark:text-slate-500 uppercase mt-1 tracking-widest">
+        {{ yearly_periods|length }} year{{ 's' if yearly_periods|length != 1 else '' }}
+        {% if report_period %} · {{ report_period }}{% endif %}
+        · {{ trade_count }} trades
+      </p>
+    </div>
+    <a href="{{ url_for('trading_analytics.monthly_page') }}"
+       class="self-start mt-6 text-[9px] font-black uppercase text-indigo-400 hover:text-indigo-600 transition">
+      📅 Monthly View →
+    </a>
+  </div>
+
+  {% if not yearly_periods %}
+  <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm p-10 text-center">
+    <div class="text-4xl mb-2">📆</div>
+    <div class="font-black text-gray-600 dark:text-slate-300">No data imported yet.</div>
+    <a href="{{ url_for('trading_analytics.upload_page') }}"
+       class="inline-block mt-3 text-indigo-500 underline text-[10px] font-bold">Import Tax Report →</a>
+  </div>
+  {% else %}
+
+  {# Yearly cards #}
+  {% for y in yearly_periods|sort(attribute='year', reverse=True) %}
+  {% set pnl_pos = y.gross_pnl >= 0 %}
+  {% set pnl_col = 'text-emerald-600 dark:text-emerald-400' if pnl_pos else 'text-red-500' %}
+  <div class="bg-white dark:bg-slate-900 rounded-2xl border {{ 'border-emerald-200 dark:border-emerald-800' if pnl_pos else 'border-red-200 dark:border-red-800' }} shadow-sm p-5 space-y-4
+              {{ 'ring-1 ring-amber-300 dark:ring-amber-700' if not y.is_complete else '' }}">
+
+    {# Year header #}
+    <div class="flex items-start justify-between">
+      <div>
+        <div class="flex items-center gap-2">
+          <span class="font-black text-2xl text-gray-800 dark:text-slate-100">{{ y.year }}</span>
+          {% if not y.is_complete %}
+          <span class="text-[8px] font-black uppercase bg-amber-100 dark:bg-amber-500/15 text-amber-600 dark:text-amber-300 px-2 py-0.5 rounded-full">In progress</span>
+          {% endif %}
+        </div>
+        {% if y.comparison_note and y.pnl_delta is not none %}
+        <div class="text-[9px] text-gray-400 dark:text-slate-500 font-bold mt-1">
+          {{ y.comparison_note }}:
+          <span class="font-black {{ 'text-emerald-600 dark:text-emerald-400' if y.pnl_delta >= 0 else 'text-red-500' }}">
+            {{ '+' if y.pnl_delta >= 0 else '' }}₹{{ '%.0f'|format(y.pnl_delta) }}
+            {% if y.pnl_delta_pct is not none %}
+            ({{ '+' if y.pnl_delta_pct >= 0 else '' }}{{ '%.1f'|format(y.pnl_delta_pct) }}%)
+            {% endif %}
+          </span>
+        </div>
+        {% endif %}
+      </div>
+      <div class="text-right">
+        <div class="font-black text-3xl tabular-nums {{ pnl_col }}">
+          {{ '+' if pnl_pos else '' }}{{ '%.2f'|format(y.gross_pnl) }}
+        </div>
+        <div class="text-[9px] font-bold uppercase text-gray-400 dark:text-slate-500">Gross P&L (₹)</div>
+      </div>
+    </div>
+
+    {# KPI row #}
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+      {% for label, val, col in [
+        ('Trades',     y.total_trades, 'text-gray-700 dark:text-slate-200'),
+        ('Win Rate',   (('%.1f'|format(y.win_rate_pct)) + '%') if y.win_rate_pct else '—',
+                       'text-indigo-600 dark:text-indigo-300'),
+        ('Avg Winner', ('+₹' + '%.0f'|format(y.avg_winner)) if y.avg_winner else '—',
+                       'text-emerald-600 dark:text-emerald-400'),
+        ('Avg Loser',  ('₹' + '%.0f'|format(y.avg_loser)) if y.avg_loser else '—',
+                       'text-red-500'),
+      ] %}
+      <div class="bg-gray-50 dark:bg-slate-800 rounded-xl p-3 text-center">
+        <div class="font-black text-lg tabular-nums {{ col }}">{{ val }}</div>
+        <div class="text-[8px] font-bold uppercase text-gray-400 dark:text-slate-500 mt-0.5">{{ label }}</div>
+      </div>
+      {% endfor %}
+    </div>
+
+    {# More KPIs #}
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+      {% for label, val, col in [
+        ('Largest Win',  ('+₹' + '%.0f'|format(y.largest_winner)) if y.largest_winner else '—',
+                          'text-emerald-600 dark:text-emerald-400'),
+        ('Largest Loss', ('₹' + '%.0f'|format(y.largest_loser)) if y.largest_loser else '—',
+                          'text-red-500'),
+        ('Avg Hold',     (('%.1f'|format(y.avg_holding_days)) + 'd') if y.avg_holding_days else '—',
+                          'text-gray-600 dark:text-slate-300'),
+        ('W/L',          (y.winning_trades|string + ' / ' + y.losing_trades|string),
+                          'text-gray-600 dark:text-slate-300'),
+      ] %}
+      <div class="bg-gray-50 dark:bg-slate-800 rounded-xl p-3 text-center">
+        <div class="font-black text-base tabular-nums {{ col }}">{{ val }}</div>
+        <div class="text-[8px] font-bold uppercase text-gray-400 dark:text-slate-500 mt-0.5">{{ label }}</div>
+      </div>
+      {% endfor %}
+    </div>
+
+    {# Best / worst month + stock #}
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+      {% if y.best_month %}
+      <div class="bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-800 rounded-xl p-3">
+        <div class="text-[8px] font-black uppercase text-emerald-600 dark:text-emerald-400 mb-1">Best Month</div>
+        <div class="font-black text-gray-800 dark:text-slate-200">{{ y.best_month }}</div>
+        <div class="text-[9px] tabular-nums text-emerald-600 dark:text-emerald-400 font-black">+₹{{ '%.0f'|format(y.best_month_pnl) }}</div>
+      </div>
+      {% endif %}
+      {% if y.worst_month %}
+      <div class="bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-800 rounded-xl p-3">
+        <div class="text-[8px] font-black uppercase text-red-500 mb-1">Worst Month</div>
+        <div class="font-black text-gray-800 dark:text-slate-200">{{ y.worst_month }}</div>
+        <div class="text-[9px] tabular-nums text-red-500 font-black">₹{{ '%.0f'|format(y.worst_month_pnl) }}</div>
+      </div>
+      {% endif %}
+      {% if y.best_stock %}
+      <div class="bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-800 rounded-xl p-3">
+        <div class="text-[8px] font-black uppercase text-emerald-600 dark:text-emerald-400 mb-1">Best Stock</div>
+        <div class="font-black text-gray-800 dark:text-slate-200 truncate">{{ y.best_stock }}</div>
+        <div class="text-[9px] tabular-nums text-emerald-600 dark:text-emerald-400 font-black">+₹{{ '%.0f'|format(y.best_stock_pnl) }}</div>
+      </div>
+      {% endif %}
+      {% if y.worst_stock %}
+      <div class="bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-800 rounded-xl p-3">
+        <div class="text-[8px] font-black uppercase text-red-500 mb-1">Worst Stock</div>
+        <div class="font-black text-gray-800 dark:text-slate-200 truncate">{{ y.worst_stock }}</div>
+        <div class="text-[9px] tabular-nums text-red-500 font-black">₹{{ '%.0f'|format(y.worst_stock_pnl) }}</div>
+      </div>
+      {% endif %}
+    </div>
+
+    {# Monthly breakdown for this year #}
+    {% set year_months = monthly_periods|selectattr('year','equalto', y.year)|list %}
+    {% if year_months %}
+    <div class="border-t border-gray-100 dark:border-slate-800 pt-3">
+      <div class="text-[9px] font-black uppercase text-gray-400 dark:text-slate-500 tracking-widest mb-2">Monthly Breakdown</div>
+      <div class="flex flex-wrap gap-2">
+        {% for m in year_months|sort(attribute='period_key') %}
+        {% set mp = m.gross_pnl >= 0 %}
+        <div class="text-center px-3 py-2 rounded-xl {{ 'bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-800' if mp else 'bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-800' }}
+                    {{ 'opacity-70 border-dashed' if not m.is_complete else '' }}">
+          <div class="text-[8px] font-bold uppercase text-gray-400 dark:text-slate-500">{{ m.period_key[5:] }}</div>
+          <div class="font-black text-[10px] tabular-nums {{ 'text-emerald-600 dark:text-emerald-400' if mp else 'text-red-500' }}">
+            {{ '+' if mp else '' }}{{ '%.0f'|format(m.gross_pnl) }}
+          </div>
+          <div class="text-[8px] text-gray-400 dark:text-slate-500">{{ m.total_trades }}t</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+  </div>
+  {% endfor %}
+
+  {% endif %}
+</div>
+{% endblock %}

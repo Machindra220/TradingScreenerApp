@@ -363,6 +363,111 @@ def trading_insights():
         return jsonify({"ok": False, "error": str(e)[:200]}), 500
 
 
+
+
+# ── Period analytics UI pages ─────────────────────────────────────────────────
+
+@trading_analytics_bp.route("/trading-analytics/monthly/view")
+@login_required
+def monthly_page():
+    """GET — Monthly analytics HTML page."""
+    try:
+        from app.models_analytics import MatchedTrade, TaxReportUpload
+        from app.services.period_analytics import PeriodAnalytics
+        from sqlalchemy import desc
+
+        matched     = MatchedTrade.query.filter_by(source='tax_report').all()
+        last_import = TaxReportUpload.query.order_by(
+            desc(TaxReportUpload.uploaded_at)).first()
+        monthly     = PeriodAnalytics().compute_monthly(matched) if matched else []
+
+        return render_template(
+            "trading_analytics/monthly.html",
+            periods       = [m.to_dict() for m in monthly],
+            report_period = last_import.report_period if last_import else None,
+            trade_count   = len(matched),
+        )
+    except Exception as e:
+        log.error("[TradingAnalytics] monthly_page error: %s", e)
+        return render_template("trading_analytics/monthly.html",
+                                periods=[], report_period=None, trade_count=0)
+
+
+@trading_analytics_bp.route("/trading-analytics/yearly/view")
+@login_required
+def yearly_page():
+    """GET — Yearly analytics HTML page."""
+    try:
+        from app.models_analytics import MatchedTrade, TaxReportUpload
+        from app.services.period_analytics import PeriodAnalytics
+        from sqlalchemy import desc
+
+        matched     = MatchedTrade.query.filter_by(source='tax_report').all()
+        last_import = TaxReportUpload.query.order_by(
+            desc(TaxReportUpload.uploaded_at)).first()
+        engine      = PeriodAnalytics()
+        monthly     = engine.compute_monthly(matched) if matched else []
+        yearly      = engine.compute_yearly(matched, monthly_periods=monthly) if matched else []
+
+        return render_template(
+            "trading_analytics/yearly.html",
+            yearly_periods  = [y.to_dict() for y in yearly],
+            monthly_periods = [m.to_dict() for m in monthly],
+            report_period   = last_import.report_period if last_import else None,
+            trade_count     = len(matched),
+        )
+    except Exception as e:
+        log.error("[TradingAnalytics] yearly_page error: %s", e)
+        return render_template("trading_analytics/yearly.html",
+                                yearly_periods=[], monthly_periods=[],
+                                report_period=None, trade_count=0)
+
+# ── Insights UI page ──────────────────────────────────────────────────────────
+
+@trading_analytics_bp.route("/trading-analytics/insights/view")
+@login_required
+def insights_page():
+    """GET — Trading Insights HTML page."""
+    try:
+        from app.models_analytics import MatchedTrade, TaxReportUpload
+        from app.services.trade_analytics import TradeAnalyticsEngine
+        from app.services.period_analytics import PeriodAnalytics
+        from app.services.insights_engine import InsightsEngine
+        from sqlalchemy import desc
+
+        matched = MatchedTrade.query.filter_by(source='tax_report').all()
+        last_import = TaxReportUpload.query.order_by(
+            desc(TaxReportUpload.uploaded_at)).first()
+
+        if not matched:
+            return render_template(
+                "trading_analytics/insights.html",
+                insights=None,
+                trade_count=0,
+                report_period=last_import.report_period if last_import else None,
+            )
+
+        report   = TradeAnalyticsEngine().compute(matched)
+        monthly  = PeriodAnalytics().compute_monthly(matched)
+        insights = InsightsEngine().compute(
+            summaries=report.trades,
+            report=report,
+            monthly=monthly,
+        )
+
+        return render_template(
+            "trading_analytics/insights.html",
+            insights=insights.to_dict(),
+            trade_count=len(matched),
+            report_period=last_import.report_period if last_import else None,
+        )
+    except Exception as e:
+        log.error("[TradingAnalytics] insights_page error: %s", e)
+        return render_template(
+            "trading_analytics/insights.html",
+            insights=None, trade_count=0, report_period=None,
+        )
+
 # ── Phase 11: Export routes ───────────────────────────────────────────────────
 
 @trading_analytics_bp.route("/trading-analytics/export/trades/xlsx")
