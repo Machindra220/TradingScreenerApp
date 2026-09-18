@@ -130,6 +130,9 @@ def get_chart_telemetry_ind(symbol):
 
         combined['div_strength'] = combined.apply(assign_divergence_strength, axis=1)
 
+        # Volume 20-bar SMA — for dry-up detection in the frontend
+        combined['vol_sma20'] = combined['volume'].rolling(window=20).mean()
+
         # RS 3-day rising flag — computed BEFORE slicing to avoid KeyError
         combined['rs_inc']   = combined['rs_ratio'] > combined['rs_ratio'].shift(1)
         combined['rs_up_3d'] = (
@@ -167,13 +170,14 @@ def get_chart_telemetry_ind(symbol):
             date_str = idx.strftime("%Y-%m-%d")
 
             series_data["candles"].append({
-                "time": date_str,
-                "open":   round(float(row['open']),   2),
-                "high":   round(float(row['high']),   2),
-                "low":    round(float(row['low']),    2),
-                "close":  round(float(row['stock']),  2),
-                "volume": int(row['volume']),
-                "rs_pct": int(cached_rs_pct),
+                "time":      date_str,
+                "open":      round(float(row['open']),   2),
+                "high":      round(float(row['high']),   2),
+                "low":       round(float(row['low']),    2),
+                "close":     round(float(row['stock']),  2),
+                "volume":    int(row['volume']),
+                "vol_sma20": round(float(row['vol_sma20']), 0) if not pd.isna(row['vol_sma20']) else 0,
+                "rs_pct":    int(cached_rs_pct),
             })
 
             for key in ["ema10", "ema20", "ema50", "ema100", "ema200"]:

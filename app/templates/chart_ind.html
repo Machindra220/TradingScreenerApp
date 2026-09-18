@@ -125,6 +125,8 @@
         <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 bg-[#3B82F6]/15 rounded-sm inline-block border border-[#3B82F6]/40"></span>Price-pane shading: True Alpha</span>
         <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 bg-[#B91C1C]/15 rounded-sm inline-block border border-[#B91C1C]/40"></span>Price-pane shading: Flushing</span>
         <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-[#22C55E] inline-block"></span>RS Rising 3 Days</span>
+        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm inline-block" style="background:rgba(251,191,36,0.75)"></span>Vol Dry-up ↓</span>
+        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm inline-block" style="background:rgba(168,85,247,0.75)"></span>Vol Climax ↑</span>
     </div>
 
     <!-- BUY-CASE SIGNAL PANEL : generated client-side from the fetched series, see buildSignalPanel() -->
@@ -161,7 +163,7 @@
 
 </div>
 
-<script src="https://unpkg.com/lightweight-charts@3.3.0/dist/lightweight-charts.standalone.production.js"></script>
+<script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
 <script>
 let chart1 = null, chart2 = null, chart3 = null, chart4 = null;
 let candleSeries, volSeries, rsLineS, rsSma10S, rsEma21S, rsSma50S, spxSeries, divSeries;
@@ -173,11 +175,25 @@ let currentSymbol = '{{ default_stock }}';
 let currentRange = '6M';
 
 const CONFIG = {
-    layout: { background: { type: 'solid', color: '#030712' }, textColor: '#9CA3AF', fontFamily: 'Inter, sans-serif', fontSize: 12 },
-    grid: { vertLines: { color: '#111827' }, horzLines: { color: '#111827' } },
-    crosshair: { mode: LightweightCharts.CrosshairMode.Normal, vertLine: { color: '#4B5563', labelBackgroundColor: '#1F2937' }, horzLine: { color: '#4B5563', labelBackgroundColor: '#1F2937' } },
-    rightPriceScale: { borderColor: '#1F2937' },
-    timeScale: { borderColor: '#1F2937', timeVisible: false }
+    layout: {
+        background:  { type: 'solid', color: '#030712' },
+        textColor:   '#6B7280',
+        fontFamily:  'Inter, system-ui, sans-serif',
+        fontSize:    11,
+    },
+    grid: {
+        vertLines: { color: 'rgba(255,255,255,0.03)' },
+        horzLines: { color: 'rgba(255,255,255,0.03)' },
+    },
+    crosshair: {
+        mode: LightweightCharts.CrosshairMode.Normal,
+        vertLine: { color: 'rgba(99,102,241,0.6)', labelBackgroundColor: '#1e1b4b', width: 1, style: 0 },
+        horzLine: { color: 'rgba(99,102,241,0.4)', labelBackgroundColor: '#1e1b4b', width: 1, style: 3 },
+    },
+    rightPriceScale: { borderColor: 'rgba(255,255,255,0.06)', textColor: '#6B7280' },
+    timeScale:       { borderColor: 'rgba(255,255,255,0.06)', timeVisible: false },
+    handleScroll:    true,
+    handleScale:     true,
 };
 
 // Legend definitions per pane — rendered as a fixed top-left HTML overlay
@@ -498,46 +514,47 @@ function loadINDChartTelemetry(symbol, range) {
     hideError();
 
     document.getElementById('chart-spinner').classList.remove('hidden');
-    initINDCharts();
 
-    // Setup chart elements (titles intentionally omitted — Lightweight Charts
-    // anchors series titles to the right/price-axis side, which was covering
-    // the RS line; names now live in the left-aligned legend overlay instead)
-    rsLineS  = chart1.addLineSeries({ color: '#22C55E', lineWidth: 3, priceLineVisible: false, lastValueVisible: false });
-    rsSma10S = chart1.addLineSeries({ color: '#3B82F6', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
-    rsEma21S = chart1.addLineSeries({ color: '#A78BFA', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
-    rsSma50S = chart1.addLineSeries({ color: '#F59E0B', lineWidth: 2, priceLineVisible: false, lastValueVisible: false });
+    // Init charts and series only on first load — range changes reuse existing series
+    if (!chart1) {
+        initINDCharts();
 
-    spxSeries = chart2.addLineSeries({ color: '#94A3B8', lineWidth: 2, priceLineVisible: false, lastValueVisible: false });
-    divSeries = chart3.addHistogramSeries({ base: 0, priceLineVisible: false });
+        // Series created ONCE — range changes only call setData(), never recreate
+        // Titles omitted: LW Charts anchors them to the right axis side which
+        // covered the RS line; custom left-aligned legend overlay is used instead.
+        rsLineS  = chart1.addLineSeries({ color: '#22C55E', lineWidth: 2, priceLineVisible: false, lastValueVisible: false });
+        rsSma10S = chart1.addLineSeries({ color: '#3B82F6', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+        rsEma21S = chart1.addLineSeries({ color: '#A78BFA', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+        rsSma50S = chart1.addLineSeries({ color: '#F59E0B', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false });
 
-    // 👈 ADD THIS NEW INNER INITIALIZATION BLOCK RIGHT BELOW THEM: RS Diversion with SPX
-    rsOverlaySeries = chart2.addLineSeries({
-        color: '#22C55E',         // Vibrant emerald green matching the TraderLion reference layout
-        lineWidth: 1.5,
-        priceScaleId: 'left',     // 🛡️ CRITICAL: Isolate to the left scale to prevent axis distortion
-        priceLineVisible: false,
-        lastValueVisible: false
-    });
+        spxSeries = chart2.addLineSeries({ color: '#64748B', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false });
+        divSeries = chart3.addHistogramSeries({ base: 0, priceLineVisible: false });
 
-    // Configure Chart 2 to explicitly display the left-side scale axis
-    // chart2.applyOptions({
-    //     leftPriceScale: {
-    //         visible: true,
-    //         borderColor: '#1F2937'
-    //     }
-    // });
+        // RS Overlay on benchmark pane (left axis — CRITICAL: prevents axis distortion)
+        rsOverlaySeries = chart2.addLineSeries({
+            color: '#22C55E',
+            lineWidth: 1,
+            priceScaleId: 'left',
+            priceLineVisible: false,
+            lastValueVisible: false,
+        });
 
-    candleSeries = chart4.addCandlestickSeries({
-        upColor: '#22C55E', downColor: '#EF4444', borderUpColor: '#22C55E', borderDownColor: '#EF4444',
-        wickUpColor: '#22C55E', wickDownColor: '#EF4444'
-    });
-    ema10S  = chart4.addLineSeries({ color: '#FACC15', lineWidth: 1,   priceLineVisible: false, lastValueVisible: false });
-    ema20S  = chart4.addLineSeries({ color: '#F97316', lineWidth: 1,   priceLineVisible: false, lastValueVisible: false });
-    ema50S  = chart4.addLineSeries({ color: '#EC4899', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false });
-    ema100S = chart4.addLineSeries({ color: '#22D3EE', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false });
-    ema200S = chart4.addLineSeries({ color: '#A3A3A3', lineWidth: 2,   priceLineVisible: false, lastValueVisible: false });
-    volSeries = chart4.addHistogramSeries({ priceFormat: { type: 'volume' }, priceScaleId: '', scaleMargins: { top: 0.78, bottom: 0 } });
+        candleSeries = chart4.addCandlestickSeries({
+            upColor: '#26a69a', downColor: '#ef5350',
+            borderUpColor: '#26a69a', borderDownColor: '#ef5350',
+            wickUpColor: '#26a69a', wickDownColor: '#ef5350',
+        });
+        ema10S  = chart4.addLineSeries({ color: '#FACC15', lineWidth: 1,   priceLineVisible: false, lastValueVisible: false });
+        ema20S  = chart4.addLineSeries({ color: '#F97316', lineWidth: 1,   priceLineVisible: false, lastValueVisible: false });
+        ema50S  = chart4.addLineSeries({ color: '#EC4899', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false });
+        ema100S = chart4.addLineSeries({ color: '#22D3EE', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false });
+        ema200S = chart4.addLineSeries({ color: '#52525B', lineWidth: 2,   priceLineVisible: false, lastValueVisible: false });
+        volSeries = chart4.addHistogramSeries({
+            priceFormat:  { type: 'volume' },
+            priceScaleId: '',
+            scaleMargins: { top: 0.80, bottom: 0 },
+        });
+    }
 
     fetch(`/api/v1/chart-telemetry-ind/${symbol}?range=${range}`)
         .then(r => r.json())
@@ -596,7 +613,30 @@ function loadINDChartTelemetry(symbol, range) {
 
             // Populate data streams across tracking panels
             candleSeries.setData(data.series.candles.map(c => ({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close })));
-            volSeries.setData(data.series.candles.map(c => ({ time: c.time, value: c.volume, color: c.close >= c.open ? 'rgba(34,197,94,0.35)' : 'rgba(239,68,68,0.35)' })));
+            // ── Volume with dry-up detection ─────────────────────────────
+            // Dry-up = volume contracting (below 20-bar avg) after a price run-up.
+            // Amber bars signal participation is waning — not necessarily bearish,
+            // but worth watching. All values come from the API response.
+            const candles = data.series.candles;
+            const n = candles.length;
+            // Find recent price run: close has risen >5% from 10 bars ago
+            const volData = candles.map((c, i) => {
+                const isUp    = c.close >= c.open;
+                const avg20   = c.vol_sma20 || 0;
+                // Price run: stock has risen meaningfully over the last 10 bars
+                const priceRunStart = i >= 10 ? candles[i - 10].close : c.close;
+                const inRun   = priceRunStart > 0 && (c.close / priceRunStart - 1) > 0.05;
+                // Dry-up: volume is below 70% of its 20-bar average during a price run
+                const isDryUp = avg20 > 0 && c.volume < avg20 * 0.70 && inRun;
+                // Climax: volume is > 2× average — possible exhaustion bar
+                const isClimax = avg20 > 0 && c.volume > avg20 * 2.0;
+                const color = isDryUp   ? 'rgba(251,191,36,0.55)'   // amber  — dry-up
+                            : isClimax  ? 'rgba(168,85,247,0.55)'    // purple — climax/exhaustion
+                            : isUp      ? 'rgba(38,166,154,0.45)'    // teal   — up day
+                            :             'rgba(239,83,80,0.45)';    // red    — down day
+                return { time: c.time, value: c.volume, color };
+            });
+            volSeries.setData(volData);
 
             ema10S.setData(data.series.ema10);
             ema20S.setData(data.series.ema20);
