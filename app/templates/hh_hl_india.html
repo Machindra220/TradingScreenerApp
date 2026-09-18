@@ -186,7 +186,7 @@
 
             <td class="px-4 py-4 font-black text-blue-400 text-sm whitespace-nowrap">
               <div class="flex items-center gap-1.5 flex-wrap">
-                {{ stock.symbol }}
+                <a target="_blank" href="/analytics-chart-ind?symbol={{ stock.symbol }}" class="hover:underline">{{ stock.symbol }}</a>
                 {% if stock.hh_confirmed %}
                 <span class="px-1.5 py-0.5 text-[8px] font-black uppercase bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded" title="Higher High confirmed">✅ HH</span>
                 {% endif %}

@@ -84,7 +84,9 @@ def create_app():
     from app.routes.scan_suite import scan_suite_bp, init_scheduler
     from app.routes.staircase_screener import staircase_bp
     from app.routes.trading_analytics import trading_analytics_bp
+    from app.routes.chart_ind import chart_ind_bp
 
+    flask_app.register_blueprint(chart_ind_bp)
     flask_app.register_blueprint(trading_analytics_bp)
     flask_app.register_blueprint(staircase_bp)
     flask_app.register_blueprint(scan_suite_bp)

@@ -212,7 +212,8 @@
                     <td data-sort="{{ stock.symbol_clean if stock.symbol_clean else stock.symbol }}" class="px-6 py-4 font-black text-indigo-700 dark:text-indigo-300">
                         <div class="flex items-center justify-between">
                             <div class="flex items-center gap-1.5">
-                                <span>{{ stock.symbol_clean if stock.symbol_clean else stock.symbol }}</span>
+                                <span><a target="_blank" href="/analytics-chart-us?symbol={{ stock.symbol_clean if stock.symbol_clean else stock.symbol }}" class="hover:underline">{{ stock.symbol_clean if stock.symbol_clean else stock.symbol }}</a></span>
+                                <!-- <span>{{ stock.symbol_clean if stock.symbol_clean else stock.symbol }}</span> -->
                                 <!-- Silent copy: brief green pulse, no alert/toast -->
                                 <button type="button" onclick="copyTicker(this, '{{ stock.symbol_clean if stock.symbol_clean else stock.symbol }}')"
                                         class="copy-ticker-btn p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded transition-colors" title="Copy Ticker">

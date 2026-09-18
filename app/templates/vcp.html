@@ -122,7 +122,7 @@
 
                     <td class="px-4 py-3">
                         <div class="flex items-center gap-1.5 group/sym">
-                            <span class="font-black text-indigo-700 dark:text-indigo-300 text-sm">{{ s.symbol }}</span>
+                            <span class="font-black text-indigo-700 dark:text-indigo-300 text-sm"><a target="_blank" href="/analytics-chart-{{ 'ind' if market == 'IND' else 'us' }}?symbol={{ s.symbol }}" class="font-black text-indigo-700 dark:text-indigo-300 hover:underline">{{ s.symbol }}</a></span>
                             <button onclick="copySymbol(this,'{{ s.symbol }}')"
                                     class="p-1 text-slate-400 hover:text-indigo-600 rounded transition opacity-0 group-hover/sym:opacity-100 focus:opacity-100"
                                     title="Copy {{ s.symbol }}">
