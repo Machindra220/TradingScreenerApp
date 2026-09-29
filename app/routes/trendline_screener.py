@@ -194,8 +194,10 @@ def detect_trendline_breakout(df):
     avg_20d_vol  = max(avg_20d_vol, 1.0)
     peak_vol_avg = volumes[recent_peaks].mean() if len(recent_peaks) else avg_20d_vol
 
-    vol_confirmed     = (today_vol > avg_20d_vol * 1.5 and
-                         today_vol >= peak_vol_avg * 0.9)
+    # US stocks in established uptrends often break out on moderate volume.
+    # 1.2× average is sufficient confirmation — 1.5× was filtering too many valid signals.
+    vol_confirmed     = (today_vol > avg_20d_vol * 1.2 and
+                         today_vol >= peak_vol_avg * 0.8)
     vol_ratio         = round(today_vol / avg_20d_vol, 2)
     rsi               = calculate_rsi(closes, period=14)
     momentum_ok       = 55 <= rsi <= 72
@@ -305,8 +307,13 @@ def _analyse(yf_sym: str, df: pd.DataFrame, suffix: str, market: str = "US") -> 
 
     local_breakout = above_ma200 and new_20bar_high
 
+    # Explicit new 52W high: close TODAY is >= max high of prior 252 bars
+    # Catches US stocks printing fresh annual highs (strongest Section 1/Section 3 signal)
+    new_52w_high = (len(highs_arr) >= 252 and
+                    curr_c >= float(highs_arr[-252:-1].max()))
+
     # Accept if any breakout type triggers
-    if not has_tl and not has_52w and not has_horiz and not near_52wh and not local_breakout:
+    if not has_tl and not has_52w and not has_horiz and not near_52wh and not local_breakout and not new_52w_high:
         return None
 
     # Always compute RSI from actual close prices — don't use the 50.0 default
@@ -331,8 +338,148 @@ def _analyse(yf_sym: str, df: pd.DataFrame, suffix: str, market: str = "US") -> 
         "volume_ratio":        vol_ratio,
         "rsi":                 rsi,
         "high_confidence":     high_conf,
-        "has_52w_break":       has_52w or near_52wh or local_breakout,
+        "has_52w_break":       has_52w or near_52wh or local_breakout or new_52w_high,
         "past_52w_high":       past_high if (has_52w or near_52wh) else (horiz_level if has_horiz else 0.0),
+    }
+
+
+# ── Weekly timeframe helpers ───────────────────────────────────────────────────
+
+def _resample_weekly(df: pd.DataFrame) -> pd.DataFrame | None:
+    """
+    Resample daily OHLCV DataFrame to weekly bars (week ending Friday).
+    Requires at least 52 weekly bars (~1 year of daily data).
+    """
+    try:
+        df = df.copy()
+        if getattr(df.index, 'tz', None) is not None:
+            df.index = df.index.tz_localize(None)
+        weekly = df.resample('W-FRI').agg({
+            'Open':   'first',
+            'High':   'max',
+            'Low':    'min',
+            'Close':  'last',
+            'Volume': 'sum',
+        }).dropna(subset=['Close'])
+        return weekly if len(weekly) >= 52 else None
+    except Exception as e:
+        print(f"[Trendline] _resample_weekly error: {e}")
+        return None
+
+
+def detect_weekly_downtrend_break(df_weekly: pd.DataFrame) -> tuple[bool, float, float]:
+    """
+    Detect weekly downtrend line breakout.
+    Same logic as daily detect_trendline_breakout but on weekly bars.
+    Returns (is_breakout, trendline_value, slope).
+    """
+    if len(df_weekly) < 26:
+        return False, 0.0, 0.0
+
+    highs   = df_weekly['High'].values
+    closes  = df_weekly['Close'].values
+    x_ticks = np.arange(len(df_weekly))
+
+    peaks, _ = find_peaks(highs, distance=4, prominence=highs.mean() * 0.01)
+    recent_peaks = [p for p in peaks if (len(df_weekly) - p) <= 52]
+    if len(recent_peaks) < 2:
+        return False, 0.0, 0.0
+
+    peak_x = x_ticks[recent_peaks]
+    peak_y = highs[recent_peaks]
+    slope, intercept = np.polyfit(peak_x, peak_y, 1)
+
+    # Only declining/flat resistance lines
+    if slope > highs.mean() * 0.001:
+        return False, 0.0, 0.0
+
+    today_idx     = len(df_weekly) - 1
+    yesterday_idx = len(df_weekly) - 2
+    tl_today      = slope * today_idx + intercept
+    tl_yesterday  = slope * yesterday_idx + intercept
+
+    is_breakout = (closes[yesterday_idx] <= tl_yesterday and
+                   closes[today_idx] > tl_today)
+
+    return is_breakout, round(tl_today, 2), round(slope, 4)
+
+
+def detect_weekly_reversal(df_weekly: pd.DataFrame) -> tuple[bool, str]:
+    """
+    Detect weekly trendline reversal patterns:
+    - Higher Low on weekly: last low > prior low AND close > prior week close
+    - Weekly close above 10-week EMA after being below it (momentum flip)
+    Returns (is_reversal, pattern_label).
+    """
+    if len(df_weekly) < 12:
+        return False, ""
+
+    closes = df_weekly['Close'].values
+    lows   = df_weekly['Low'].values
+
+    # Pattern 1: Higher Low + Close improving (2-week comparison)
+    higher_low = (lows[-1] > lows[-2] and
+                  lows[-2] < lows[-3] and     # prior week was a swing low
+                  closes[-1] > closes[-2])
+
+    # Pattern 2: EMA10 cross from below (weekly momentum flip)
+    ema10_s = pd.Series(closes).ewm(span=10, adjust=False).mean()
+    ema_cross = (closes[-2] <= ema10_s.iloc[-2] and
+                 closes[-1] > ema10_s.iloc[-1])
+
+    if higher_low and ema_cross:
+        return True, "Higher Low + EMA10 Cross"
+    elif ema_cross:
+        return True, "Weekly EMA10 Cross"
+    elif higher_low:
+        return True, "Weekly Higher Low"
+
+    return False, ""
+
+
+def _analyse_weekly(yf_sym: str, raw_df: pd.DataFrame,
+                    suffix: str, market: str) -> dict | None:
+    """Run weekly trendline break + reversal checks on one symbol."""
+    df_daily = _normalise_df(raw_df, yf_sym)
+    if df_daily is None or len(df_daily) < 200:
+        return None
+
+    df_weekly = _resample_weekly(df_daily)
+    if df_weekly is None:
+        return None
+
+    # Weekly downtrend break
+    has_dtbreak, tl_val, slope = detect_weekly_downtrend_break(df_weekly)
+
+    # Weekly reversal pattern
+    has_reversal, rev_pattern = detect_weekly_reversal(df_weekly)
+
+    if not has_dtbreak and not has_reversal:
+        return None
+
+    curr_price = float(df_weekly['Close'].iloc[-1])
+    rsi        = calculate_rsi(df_weekly['Close'].values, period=14)
+
+    # Volume ratio on weekly
+    vols       = df_weekly['Volume'].values
+    avg_vol10  = vols[-11:-1].mean() if len(vols) >= 11 else vols.mean()
+    vol_ratio  = round(float(vols[-1]) / max(avg_vol10, 1), 2)
+
+    display_sym = yf_sym
+    if suffix and display_sym.endswith(suffix):
+        display_sym = display_sym[:-len(suffix)]
+
+    return {
+        "symbol":           display_sym,
+        "price":            round(curr_price, 2),
+        "rsi":              rsi,
+        "volume_ratio":     vol_ratio,
+        "trendline_value":  tl_val,
+        "trendline_slope":  slope,
+        "has_dtbreak":      has_dtbreak,
+        "has_reversal":     has_reversal,
+        "reversal_pattern": rev_pattern,
+        "high_confidence":  (has_dtbreak and has_reversal),
     }
 
 
@@ -363,6 +510,16 @@ def _load_symbols(market: str) -> list[str]:
         return []
 
 
+def _format_section_weekly(rows: list) -> list:
+    if not rows: return []
+    df = pd.DataFrame(rows)
+    df.sort_values(["high_confidence", "volume_ratio"],
+                   ascending=[False, False], inplace=True)
+    df.reset_index(drop=True, inplace=True)
+    df["rank"] = df.index + 1
+    return df.to_dict(orient="records")
+
+
 def _format_section(rows: list) -> list:
     if not rows: return []
     df = pd.DataFrame(rows)
@@ -372,9 +529,20 @@ def _format_section(rows: list) -> list:
     return df.to_dict(orient="records")
 
 
-def run_scan(market: str, source_name: str):
+def run_scan(market: str, source_name: str, app=None):
+    """
+    Entry point for the background scan thread.
+    `app` must be passed from the route (captured before the thread starts)
+    so that ind_cache / us_cache (SQLAlchemy) can run DB queries without a
+    request context.  Passing None falls back to current_app (dev-server
+    convenience only — may warn if the request context has already torn down).
+    """
     try:
-        _run_scan_inner(market, source_name)
+        if app is None:
+            from flask import current_app
+            app = current_app._get_current_object()
+        with app.app_context():
+            _run_scan_inner(market, source_name)
     except Exception as e:
         import traceback
         print(f"[Trendline/{market}] FATAL THREAD ERROR: {e}")
@@ -448,16 +616,46 @@ def _run_scan_inner(market: str, source_name: str):
         else:
             hi52_only.append(res)
 
+    total_sym = len(yf_symbols)
     print(f"[Trendline/{market}] Screening debug: "
-          f"none_from_cache={_dbg['none_from_cache']} "
+          f"total={total_sym} "
+          f"none_from_cache={_dbg['none_from_cache']} ({100*_dbg['none_from_cache']//max(total_sym,1)}%) "
           f"too_short={_dbg['too_short']} "
           f"no_breakout={_dbg['no_breakout']} "
-          f"passed={_dbg['passed']}")
+          f"passed={_dbg['passed']} "
+          f"→ both={len(both)} tl_only={len(tl_only)} hi52={len(hi52_only)}")
+    if _dbg['none_from_cache'] > total_sym * 0.5:
+        print(f"[Trendline/{market}] WARNING: >{50}% symbols missing from cache. "
+              f"Run a different US screener first to warm up market_data_us.db, "
+              f"or wait for yfinance fetch to complete.")
+
+    # ── Weekly timeframe pass (reuses already-fetched price_data) ────────────
+    _set(stage="weekly_screening", processed=0)
+    weekly_dtbreak, weekly_reversal = [], []
+
+    for i, yf_sym in enumerate(yf_symbols):
+        _set(processed=i)
+        raw_df = price_data.get(yf_sym)
+        if raw_df is None:
+            continue
+        res = _analyse_weekly(yf_sym, raw_df, suffix, market)
+        if not res:
+            continue
+        if res["has_dtbreak"]:
+            weekly_dtbreak.append(res)
+        if res["has_reversal"] and not res["has_dtbreak"]:
+            weekly_reversal.append(res)
+
+    print(f"[Trendline/{market}] Weekly: "
+          f"downtrend_breaks={len(weekly_dtbreak)} "
+          f"reversals={len(weekly_reversal)}")
 
     sections = {
-        "both":         _format_section(both),
-        "tl_only":      _format_section(tl_only),
+        "both":          _format_section(both),
+        "tl_only":       _format_section(tl_only),
         "high_52w_only": _format_section(hi52_only),
+        "weekly_dtbreak":   _format_section_weekly(weekly_dtbreak),
+        "weekly_reversal":  _format_section_weekly(weekly_reversal),
     }
     last_time = datetime.now().strftime("%d-%b-%Y %H:%M:%S")
     snap_file = f"trendline_{market.lower()}_{uuid.uuid4().hex}.json"
@@ -468,7 +666,7 @@ def _run_scan_inner(market: str, source_name: str):
         "market":          market,
         "source":          source_name,
         "scanned_count":   len(yf_symbols),
-        "passed_count":    len(both) + len(tl_only) + len(hi52_only),
+        "passed_count":    len(both) + len(tl_only) + len(hi52_only) + len(weekly_dtbreak) + len(weekly_reversal),
         "price_data_asof": price_data_asof,
         "cache_hits":      _ch,
         "yf_fetches":      _yf,
@@ -532,35 +730,43 @@ def trendline_scan_process():
         source_name = MARKET_CFG[market]["default_label"]
         prog        = _get()
         if not prog["active"]:
-            t = threading.Thread(target=run_scan, args=(market, source_name), daemon=True)
+            from flask import current_app
+            _app = current_app._get_current_object()  # capture before thread starts
+            t = threading.Thread(target=run_scan,
+                                 args=(market, source_name, _app), daemon=True)
             t.start()
         return redirect(url_for("trendline_screener.trendline_scan_process",
                                 market=market, scanning=1))
 
     data     = _load_results(market)
-    sections = data.get("sections", {"both": [], "tl_only": [], "high_52w_only": []})
+    sections = data.get("sections", {
+        "both": [], "tl_only": [], "high_52w_only": [],
+        "weekly_dtbreak": [], "weekly_reversal": [],
+    })
     history  = _load_history(market)
     prog     = _get()
     is_scan  = prog["active"] and prog["market"] == market
 
     return render_template(
         "trendline_screener.html",
-        both_stocks       = sections.get("both", []),
-        tl_stocks         = sections.get("tl_only", []),
-        high_52w_stocks   = sections.get("high_52w_only", []),
+        both_stocks         = sections.get("both", []),
+        tl_stocks           = sections.get("tl_only", []),
+        high_52w_stocks     = sections.get("high_52w_only", []),
+        weekly_dtbreak      = sections.get("weekly_dtbreak", []),
+        weekly_reversal     = sections.get("weekly_reversal", []),
         last_processed_time = data.get("time"),
-        source_name       = data.get("source", ""),
-        scanned_count     = data.get("scanned_count", 0),
-        passed_count      = data.get("passed_count", 0),
-        price_data_asof   = data.get("price_data_asof"),
-        cache_hits        = data.get("cache_hits", 0),
-        yf_fetches        = data.get("yf_fetches", 0),
-        market            = market,
-        history           = history,
-        is_scanning       = is_scan,
-        scan_error        = prog.get("error") if not prog["active"] else None,
-        restored          = request.args.get("restored") == "1",
-        currency          = MARKET_CFG[market]["currency"],
+        source_name         = data.get("source", ""),
+        scanned_count       = data.get("scanned_count", 0),
+        passed_count        = data.get("passed_count", 0),
+        price_data_asof     = data.get("price_data_asof"),
+        cache_hits          = data.get("cache_hits", 0),
+        yf_fetches          = data.get("yf_fetches", 0),
+        market              = market,
+        history             = history,
+        is_scanning         = is_scan,
+        scan_error          = prog.get("error") if not prog["active"] else None,
+        restored            = request.args.get("restored") == "1",
+        currency            = MARKET_CFG[market]["currency"],
     )
 
 

@@ -1,4 +1,4 @@
-from flask import Flask, render_template
+from flask import Flask, render_template, request, g
 from config import Config
 from flask_login import current_user, login_required
 from dotenv import load_dotenv
@@ -6,7 +6,11 @@ from flask_wtf.csrf import CSRFProtect, generate_csrf  # ✅ Add this line
 from app.extensions import db, login_manager, csrf, cache, mail  # ✅ Include mail
 from app.models import Resource
 from .logging_config import setup_logging   # ✅ import your logging setup
-from prometheus_flask_exporter import PrometheusMetrics
+from prometheus_client import REGISTRY
+from prometheus_flask_exporter import PrometheusMetrics, NO_PREFIX
+import time
+import pytz
+from datetime import datetime
 
 load_dotenv()
 
@@ -171,9 +175,38 @@ def create_app():
     def inject_csrf_token():
         return dict(csrf_token=generate_csrf())
 
-    # ✅ Enable logging
+        # ✅ Enable logging
     setup_logging(flask_app)
-    metrics = PrometheusMetrics(flask_app, path='/metrics', default=True)
+    metrics = PrometheusMetrics(
+    flask_app,
+    path='/metrics',
+    default=True,
+    default_labels={'app': 'trading_screener'},
+    group_by='endpoint',
+    )
+
+    # ✅ Request timing with IST timestamps
+    IST = pytz.timezone('Asia/Kolkata')
+
+    @flask_app.before_request
+    def _before():
+        g.t0 = time.perf_counter()
+
+    @flask_app.after_request
+    def _after(response):
+        try:
+            ms      = round((time.perf_counter() - g.t0) * 1000, 2)
+            ist     = datetime.now(IST).strftime('%d-%b-%Y %H:%M:%S IST')
+            status  = response.status_code
+            method  = request.method
+            path    = request.path
+            # Skip noisy endpoints from logs (keep metrics clean)
+            if path not in ('/metrics', '/static', '/favicon.ico'):
+                level = flask_app.logger.warning if status >= 400 else flask_app.logger.info
+                level(f"{ist} | {method} {path} | {status} | {ms}ms")
+        except Exception:
+            pass
+        return response
 
     return flask_app
 #app = create_app()

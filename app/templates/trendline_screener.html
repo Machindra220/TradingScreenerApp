@@ -53,7 +53,7 @@
         </form>
     </div>
 
-    {% macro render_breakout_table(table_id, stock_list, section_title, line_badge_color) %}
+    {% macro render_breakout_table(table_id, stock_list, section_title, line_badge_color, market="US") %}
     <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm dark:shadow-none overflow-hidden mb-12">
         <div class="px-6 py-4 bg-gray-50 dark:bg-slate-800/60 border-b border-gray-100 dark:border-slate-800 flex justify-between items-center">
             <h3 class="text-xs font-black uppercase tracking-wider text-gray-700 dark:text-slate-300 flex items-center gap-2">
@@ -79,7 +79,7 @@
                     <td class="px-6 py-4 font-bold text-gray-300 dark:text-slate-600">#{{ stock.rank }}</td>
                     <td class="px-6 py-4 font-black text-indigo-700 dark:text-indigo-300">
                         <div class="flex items-center gap-2">
-                            <span><a target="_blank" href="/analytics-chart-{{ 'ind' if market == 'INDIA' else 'us' }}?symbol={{ s.symbol }}" class="font-black text-indigo-700 dark:text-indigo-300 hover:underline">{{ s.symbol }}</a></span>
+                            <span><a target="_blank" href="/analytics-chart-{{ 'ind' if market == 'INDIA' else 'us' }}?symbol={{ stock.symbol }}" class="font-black text-indigo-700 dark:text-indigo-300 hover:underline">{{ stock.symbol }}</a></span>
                             <button onclick="navigator.clipboard.writeText('{{ stock.symbol }}')" class="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded opacity-40 group-hover:opacity-100 transition-opacity focus:opacity-100" title="Copy Ticker">
                                 <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0A2.25 2.25 0 0113.5 4.5h-3a2.25 2.25 0 01-2.166-1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.75c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 011.927-.184"></path></svg>
                             </button>
@@ -129,10 +129,99 @@
     </div>
     {% endmacro %}
 
-    {{ render_breakout_table('tableBoth', both_stocks, 'Section 1: High Alpha Convergence (Downtrend Line Breakout + 52W High Cross)', 'bg-rose-500') }}
-    {{ render_breakout_table('tableTL', tl_stocks, 'Section 2: High Confidence Trendline Reversals', 'bg-emerald-500') }}
-    {{ render_breakout_table('table52w', high_52w_stocks, 'Section 3: Standard Momentum Continuations (52W Breakouts)', 'bg-blue-500') }}
+    {{ render_breakout_table('tableBoth', both_stocks, 'Section 1: High Alpha Convergence (Downtrend Line Breakout + 52W High Cross)', 'bg-rose-500', market) }}
+    {{ render_breakout_table('tableTL', tl_stocks, 'Section 2: High Confidence Trendline Reversals', 'bg-emerald-500', market) }}
+    {{ render_breakout_table('table52w', high_52w_stocks, 'Section 3: Standard Momentum Continuations (52W Breakouts)', 'bg-blue-500', market) }}
 
+
+    {# ── Weekly Timeframe Tables ── #}
+    {% macro render_weekly_table(table_id, stock_list, section_title, badge_color) %}
+    {% if stock_list %}
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm dark:shadow-none overflow-hidden mb-8">
+        <div class="px-6 py-4 bg-gray-50 dark:bg-slate-800/60 border-b border-gray-100 dark:border-slate-800 flex justify-between items-center">
+            <h3 class="text-xs font-black uppercase tracking-widest text-gray-700 dark:text-slate-200 flex items-center gap-2">
+                <span class="w-2.5 h-2.5 rounded-full {{ badge_color }} inline-block"></span>
+                {{ section_title }}
+                <span class="ml-2 text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-violet-100 dark:bg-violet-500/15 text-violet-700 dark:text-violet-300">Weekly TF</span>
+            </h3>
+            <span class="text-[10px] font-black text-gray-400 dark:text-slate-500">{{ stock_list|length }} stocks</span>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="min-w-full text-xs" id="{{ table_id }}">
+                <thead class="bg-gray-50 dark:bg-slate-800/60">
+                    <tr>
+                        <th class="px-4 py-2.5 text-left text-[9px] font-black uppercase text-gray-400 dark:text-slate-400">#</th>
+                        <th class="px-4 py-2.5 text-left text-[9px] font-black uppercase text-gray-400 dark:text-slate-400">Symbol</th>
+                        <th class="px-4 py-2.5 text-right text-[9px] font-black uppercase text-gray-400 dark:text-slate-400">Price</th>
+                        <th class="px-4 py-2.5 text-right text-[9px] font-black uppercase text-gray-400 dark:text-slate-400">RSI (W)</th>
+                        <th class="px-4 py-2.5 text-right text-[9px] font-black uppercase text-gray-400 dark:text-slate-400">Vol Ratio</th>
+                        <th class="px-4 py-2.5 text-left text-[9px] font-black uppercase text-gray-400 dark:text-slate-400">Pattern</th>
+                        <th class="px-4 py-2.5 text-center text-[9px] font-black uppercase text-gray-400 dark:text-slate-400">Confidence</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-50 dark:divide-slate-800">
+                    {% for s in stock_list %}
+                    <tr class="hover:bg-gray-50/50 dark:hover:bg-slate-800/30 transition-colors">
+                        <td class="px-4 py-2.5 text-gray-400 dark:text-slate-500 tabular-nums">{{ s.rank }}</td>
+                        <td class="px-4 py-2.5">
+                            <a target="_blank"
+                               href="/analytics-chart-{{ 'ind' if market == 'INDIA' else 'us' }}?symbol={{ s.symbol }}"
+                               class="font-black text-indigo-700 dark:text-indigo-300 hover:underline">{{ s.symbol }}</a>
+                        </td>
+                        <td class="px-4 py-2.5 text-right font-black tabular-nums text-gray-700 dark:text-slate-200">
+                            {% if market == 'INDIA' %}₹{{ "{:,.2f}".format(s.price) }}{% else %}${{ s.price }}{% endif %}
+                        </td>
+                        <td class="px-4 py-2.5 text-right tabular-nums
+                            {% if s.rsi >= 60 %}text-emerald-600 dark:text-emerald-400 font-black
+                            {% elif s.rsi <= 40 %}text-red-500 font-black
+                            {% else %}text-gray-600 dark:text-slate-300{% endif %}">
+                            {{ s.rsi }}
+                        </td>
+                        <td class="px-4 py-2.5 text-right tabular-nums
+                            {% if s.volume_ratio >= 2.0 %}text-emerald-600 dark:text-emerald-400 font-black
+                            {% elif s.volume_ratio >= 1.5 %}text-amber-500 font-bold
+                            {% else %}text-gray-500 dark:text-slate-400{% endif %}">
+                            {{ s.volume_ratio }}×
+                        </td>
+                        <td class="px-4 py-2.5">
+                            {% if s.has_dtbreak %}
+                            <span class="px-2 py-0.5 rounded-full text-[9px] font-black bg-violet-100 dark:bg-violet-500/15 text-violet-700 dark:text-violet-300">↗ Downtrend Break</span>
+                            {% endif %}
+                            {% if s.has_reversal %}
+                            <span class="px-2 py-0.5 rounded-full text-[9px] font-black bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 ml-1">{{ s.reversal_pattern }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-4 py-2.5 text-center">
+                            {% if s.high_confidence %}
+                            <span class="px-2 py-0.5 rounded-full text-[9px] font-black bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">⭐ High</span>
+                            {% else %}
+                            <span class="px-2 py-0.5 rounded-full text-[9px] font-black bg-gray-100 dark:bg-slate-700 text-gray-500 dark:text-slate-400">—</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+    {% endmacro %}
+
+    {# Divider #}
+    {% if weekly_dtbreak or weekly_reversal %}
+    <div class="flex items-center gap-4 mb-6 mt-4">
+        <div class="flex-1 h-px bg-gray-200 dark:bg-slate-700"></div>
+        <span class="text-[10px] font-black uppercase tracking-widest text-violet-500 dark:text-violet-400 px-3 py-1 rounded-full border border-violet-200 dark:border-violet-800 bg-violet-50 dark:bg-violet-500/10">
+            📅 Weekly Timeframe Signals
+        </span>
+        <div class="flex-1 h-px bg-gray-200 dark:bg-slate-700"></div>
+    </div>
+    {% endif %}
+
+    {{ render_weekly_table('weeklyDTBreak', weekly_dtbreak,
+        'Weekly Downtrend Line Breakouts', 'bg-violet-500') }}
+    {{ render_weekly_table('weeklyReversal', weekly_reversal,
+        'Weekly Trendline Reversals', 'bg-amber-500') }}
 
     <!-- Scan History -->
     <div class="bg-white dark:bg-slate-900 rounded-xl border border-gray-100 dark:border-slate-800 shadow-sm mt-8">
