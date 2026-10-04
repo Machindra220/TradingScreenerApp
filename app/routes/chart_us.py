@@ -142,6 +142,9 @@ def get_chart_telemetry_us(symbol):
                             break
                 except Exception: pass
 
+        # Volume 20-bar SMA — for dry-up detection in the frontend
+        combined['vol_sma20'] = combined['volume'].rolling(window=20).mean()
+
         # RS rising 3-day flag: True when RS has increased for 3 consecutive sessions.
         # Must be computed on the FULL combined DataFrame BEFORE slicing to display
         # range — otherwise the 'display' view won't have the column and row['rs_up_3d']
@@ -167,9 +170,14 @@ def get_chart_telemetry_us(symbol):
             date_str = idx.strftime("%Y-%m-%d")
 
             series_data["candles"].append({
-                "time": date_str, "open": round(float(row['open']), 2), "high": round(float(row['high']), 2),
-                "low": round(float(row['low']), 2), "close": round(float(row['stock']), 2),
-                "volume": int(row['volume']), "rs_pct": int(cached_rs_pct)
+                "time":      date_str,
+                "open":      round(float(row['open']),   2),
+                "high":      round(float(row['high']),   2),
+                "low":       round(float(row['low']),    2),
+                "close":     round(float(row['stock']),  2),
+                "volume":    int(row['volume']),
+                "vol_sma20": round(float(row['vol_sma20']), 0) if not pd.isna(row['vol_sma20']) else 0,
+                "rs_pct":    int(cached_rs_pct),
             })
 
             # Append core trend metrics

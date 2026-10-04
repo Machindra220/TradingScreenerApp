@@ -19,19 +19,39 @@ def chart_dashboard():
     return render_template("chart.html", default_stock=default_stock)
 
 
+RANGE_OPTIONS = {
+    # (download_period, yf_interval, display_bars)
+    "1D":  {"period": "5d",   "interval": "1h",  "display_bars": 390},   # intraday hourly
+    "1W":  {"period": "1mo",  "interval": "1h",  "display_bars": 168},   # 1 week hourly
+    "1M":  {"period": "3mo",  "interval": "1d",  "display_bars": 22},    # 1 month daily
+    "3M":  {"period": "1y",   "interval": "1d",  "display_bars": 66},
+    "6M":  {"period": "2y",   "interval": "1d",  "display_bars": 132},
+    "1Y":  {"period": "2y",   "interval": "1d",  "display_bars": 252},
+    "2Y":  {"period": "3y",   "interval": "1d",  "display_bars": 504},
+    "1W_TF": {"period": "5y", "interval": "1wk", "display_bars": 52},    # weekly candles 1Y
+    "2W_TF": {"period": "5y", "interval": "1wk", "display_bars": 104},   # weekly candles 2Y
+}
+
+
 @chart_bp.route("/api/v1/chart-telemetry/<symbol>")
 def get_chart_telemetry(symbol):
     try:
         symbol_clean    = symbol.strip().upper().replace(".NS", "")
         formatted_stock = f"{symbol_clean}.NS"
 
+        range_key = request.args.get("range", "1Y").strip().upper()
+        if range_key not in RANGE_OPTIONS:
+            range_key = "1Y"
+        cfg      = RANGE_OPTIONS[range_key]
+        interval = cfg["interval"]
+
         # ------------------------------------------------------------------
-        # 1. Download price + volume data (2y so EMA200 has enough warmup)
+        # 1. Download price + volume data
         # ------------------------------------------------------------------
         data = yf.download(
             [formatted_stock, BENCHMARK_SYMBOL],
-            period="2y",
-            interval="1d",
+            period=cfg["period"],
+            interval=interval,
             auto_adjust=True,
             progress=False
         )
@@ -125,12 +145,14 @@ def get_chart_telemetry(symbol):
                 except Exception:
                     pass
 
+        # Volume 20-bar SMA — for dry-up detection in frontend
+        combined['vol_sma20'] = combined['volume'].rolling(window=20).mean()
+
         # ------------------------------------------------------------------
-        # 7. Serialise — only last 1 year to keep payload tight
-        #    (we fetched 2y for EMA200 warmup; now trim to 1y for display)
+        # 7. Serialise — trim to requested display_bars
         # ------------------------------------------------------------------
-        one_year_ago = combined.index[-1] - pd.DateOffset(years=1)
-        display      = combined[combined.index >= one_year_ago]
+        display_bars = cfg["display_bars"]
+        display      = combined.iloc[-display_bars:] if len(combined) > display_bars else combined
 
         candles         = []
         ema20_line      = []
@@ -145,14 +167,15 @@ def get_chart_telemetry(symbol):
             rs_val   = round(float(row['rs_raw']), 6)
 
             candles.append({
-                "time":   date_str,
-                "open":   round(float(row['open']),   2),
-                "high":   round(float(row['high']),   2),
-                "low":    round(float(row['low']),    2),
-                "close":  round(float(row['stock']),  2),
-                "volume": int(row['volume']),
-                "rs_pct": int(cached_rs_pct),
-                "rs_val": rs_val
+                "time":      date_str,
+                "open":      round(float(row['open']),   2),
+                "high":      round(float(row['high']),   2),
+                "low":       round(float(row['low']),    2),
+                "close":     round(float(row['stock']),  2),
+                "volume":    int(row['volume']),
+                "vol_sma20": round(float(row['vol_sma20']), 0) if not pd.isna(row['vol_sma20']) else 0,
+                "rs_pct":    int(cached_rs_pct),
+                "rs_val":    rs_val,
             })
 
             ema20_line.append( {"time": date_str, "value": round(float(row['ema20']),  2)})
@@ -166,8 +189,10 @@ def get_chart_telemetry(symbol):
                 rs_up_markers.append({"time": date_str, "price": round(float(row['low']), 2)})
 
         return jsonify({
-            "status":       "success",
-            "symbol":       symbol_clean,
+            "status":        "success",
+            "symbol":        symbol_clean,
+            "range":         range_key,
+            "interval":      interval,
             "rs_percentile": cached_rs_pct,
             "series": {
                 "candles":    candles,

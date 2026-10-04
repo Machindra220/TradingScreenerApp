@@ -1,4 +1,5 @@
 {% extends 'base_authenticated.html' %}
+{% block title %}US RS Chart — {{ default_stock }}{% endblock %}
 {% block content %}
 <div id="rs-workspace-root" class="max-w-7xl mx-auto px-4 py-4 space-y-3">
 
@@ -125,6 +126,8 @@
         <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 bg-[#3B82F6]/15 rounded-sm inline-block border border-[#3B82F6]/40"></span>Price-pane shading: True Alpha</span>
         <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 bg-[#B91C1C]/15 rounded-sm inline-block border border-[#B91C1C]/40"></span>Price-pane shading: Flushing</span>
         <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-[#22C55E] inline-block"></span>RS Rising 3 Days</span>
+        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm inline-block" style="background:rgba(251,191,36,0.75)"></span>Vol Dry-up ↓</span>
+        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm inline-block" style="background:rgba(168,85,247,0.75)"></span>Vol Climax ↑</span>
     </div>
 
     <!-- BUY-CASE SIGNAL PANEL : generated client-side from the fetched series, see buildSignalPanel() -->
@@ -151,17 +154,16 @@
     <div class="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
         <h4 class="text-[11px] font-black text-gray-300 uppercase tracking-wider mb-2">📋 What Each Pane Is Showing</h4>
         <ul class="space-y-1.5 text-[12px] text-gray-400 list-none">
-            <li><span class="text-gray-200 font-bold">RS Ratio Matrix —</span> Stock price ÷ S&amp;P 500 price. A rising line means the stock is gaining ground on the broad market regardless of whether the stock itself is up or down that day. The 10 SMA / 21 EMA / 50 SMA are smoothing speeds — short, medium, long — used to confirm the trend isn't just noise.</li>
-            <li><span class="text-gray-200 font-bold">Benchmark Curve —</span> The raw S&amp;P 500 index level, plotted so you can read the overall market regime (risk-on / risk-off) alongside the stock's relative strength, without it being distorted by the stock's own price scale.</li>
-            <li><span class="text-gray-200 font-bold">RS Divergence Phase —</span> A four-state histogram comparing the 5-day slope of the RS ratio against the 5-day slope of the S&amp;P. Blue bars = stock rising while the market falls (strongest signal); light blue = both rising but the stock faster; light red = stock lagging a rising market; dark red = both falling together.</li>
-            <li><span class="text-gray-200 font-bold">Price + EMAs + Volume —</span> Daily OHLC candles with five exponential moving averages (10/20/50/100/200) to read short-, medium-, and long-term trend, plus a volume histogram colored by up/down day to confirm whether moves are backed by participation.</li>
-        </ul>
-    </div>
+            <li><span class="text-gray-200 font-bold">Pane 1 — RS Ratio Matrix —</span> Stock price ÷ S&amp;P 500. A rising line means the stock is outperforming the broad market regardless of direction. Three smoothing lines — SMA10 (blue), EMA21 (purple), SMA50 (amber) — show short, medium, and long-term RS trend direction. Line colour shifts green when RS is rising, red when falling, amber when neutral.</li>
+            <li><span class="text-gray-200 font-bold">Pane 2 — S&amp;P 500 Benchmark + RS Overlay —</span> The raw S&amp;P 500 index level (slate line, right axis) plotted alongside the RS Ratio overlaid in green (left axis). When the green RS line rises while the index is flat or falling, the stock is showing true alpha divergence — the strongest signal.</li>
+            <li><span class="text-gray-200 font-bold">Pane 3 — RS Divergence Phase Histogram —</span> A four-state histogram comparing the 5-day slope of the RS ratio against the 5-day slope of the S&amp;P 500. Blue bars = stock rising while the index falls (true alpha — strongest signal); light blue = both rising but the stock faster (outperformance); light red = stock lagging a rising index (relative weakness); dark red = both falling together (flushing phase).</li>
+            <li><span class="text-gray-200 font-bold">Pane 4 — Price + EMAs + Volume —</span> Daily OHLC candles (teal = up day, red = down day) with five EMAs (10/20/50/100/200). Volume histogram uses four colour states: teal = up day normal volume, red = down day, amber = volume dry-up (below 70% of 20-bar average during a price run &gt;5% — participation waning), purple = volume climax (above 2× average — possible exhaustion). Green dot markers below bars indicate RS has risen three consecutive sessions.</li>
+        </ul>    </div>
 
 
 </div>
 
-<script src="https://unpkg.com/lightweight-charts@3.3.0/dist/lightweight-charts.standalone.production.js"></script>
+<script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
 <script>
 let chart1 = null, chart2 = null, chart3 = null, chart4 = null;
 let candleSeries, volSeries, rsLineS, rsSma10S, rsEma21S, rsSma50S, spxSeries, divSeries;
@@ -173,11 +175,25 @@ let currentSymbol = '{{ default_stock }}';
 let currentRange = '6M';
 
 const CONFIG = {
-    layout: { background: { type: 'solid', color: '#030712' }, textColor: '#9CA3AF', fontFamily: 'Inter, sans-serif', fontSize: 12 },
-    grid: { vertLines: { color: '#111827' }, horzLines: { color: '#111827' } },
-    crosshair: { mode: LightweightCharts.CrosshairMode.Normal, vertLine: { color: '#4B5563', labelBackgroundColor: '#1F2937' }, horzLine: { color: '#4B5563', labelBackgroundColor: '#1F2937' } },
-    rightPriceScale: { borderColor: '#1F2937' },
-    timeScale: { borderColor: '#1F2937', timeVisible: false }
+    layout: {
+        background:  { type: 'solid', color: '#030712' },
+        textColor:   '#6B7280',
+        fontFamily:  'Inter, system-ui, sans-serif',
+        fontSize:    11,
+    },
+    grid: {
+        vertLines: { color: 'rgba(255,255,255,0.03)' },
+        horzLines: { color: 'rgba(255,255,255,0.03)' },
+    },
+    crosshair: {
+        mode: LightweightCharts.CrosshairMode.Normal,
+        vertLine: { color: 'rgba(99,102,241,0.6)', labelBackgroundColor: '#1e1b4b', width: 1, style: 0 },
+        horzLine: { color: 'rgba(99,102,241,0.4)', labelBackgroundColor: '#1e1b4b', width: 1, style: 3 },
+    },
+    rightPriceScale: { borderColor: 'rgba(255,255,255,0.06)', textColor: '#6B7280' },
+    timeScale:       { borderColor: 'rgba(255,255,255,0.06)', timeVisible: false },
+    handleScroll:    true,
+    handleScale:     true,
 };
 
 // Legend definitions per pane — rendered as a fixed top-left HTML overlay
@@ -318,7 +334,7 @@ function updateOHLCVTooltip(c) {
     document.getElementById('tip-high').innerText  = c.high.toFixed(2);
     document.getElementById('tip-low').innerText   = c.low.toFixed(2);
     document.getElementById('tip-close').innerText = c.close.toFixed(2);
-    document.getElementById('tip-vol').innerText   = c.volume >= 1e6 ? (c.volume/1e6).toFixed(2)+'M' : c.volume;
+    document.getElementById('tip-vol').innerText   = c.volume >= 1e9 ? (c.volume/1e9).toFixed(2)+'B' : c.volume >= 1e6 ? (c.volume/1e6).toFixed(1)+'M' : c.volume >= 1e3 ? (c.volume/1e3).toFixed(0)+'K' : c.volume;
     document.getElementById('tip-rspct').innerText = c.rs_pct !== undefined ? c.rs_pct : '—';
     document.getElementById('ohlcv-bar').classList.remove('hidden');
 }
@@ -498,46 +514,44 @@ function loadUSChartTelemetry(symbol, range) {
     hideError();
 
     document.getElementById('chart-spinner').classList.remove('hidden');
-    initUSCharts();
 
-    // Setup chart elements (titles intentionally omitted — Lightweight Charts
-    // anchors series titles to the right/price-axis side, which was covering
-    // the RS line; names now live in the left-aligned legend overlay instead)
-    rsLineS  = chart1.addLineSeries({ color: '#22C55E', lineWidth: 3, priceLineVisible: false, lastValueVisible: false });
-    rsSma10S = chart1.addLineSeries({ color: '#3B82F6', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
-    rsEma21S = chart1.addLineSeries({ color: '#A78BFA', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
-    rsSma50S = chart1.addLineSeries({ color: '#F59E0B', lineWidth: 2, priceLineVisible: false, lastValueVisible: false });
+    // Series created ONCE on first load — range changes only call setData()
+    if (!chart1) {
+        initUSCharts();
 
-    spxSeries = chart2.addLineSeries({ color: '#94A3B8', lineWidth: 2, priceLineVisible: false, lastValueVisible: false });
-    divSeries = chart3.addHistogramSeries({ base: 0, priceLineVisible: false });
+        rsLineS  = chart1.addLineSeries({ color: '#22C55E', lineWidth: 2, priceLineVisible: false, lastValueVisible: false });
+        rsSma10S = chart1.addLineSeries({ color: '#3B82F6', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+        rsEma21S = chart1.addLineSeries({ color: '#A78BFA', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+        rsSma50S = chart1.addLineSeries({ color: '#F59E0B', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false });
 
-    // 👈 ADD THIS NEW INNER INITIALIZATION BLOCK RIGHT BELOW THEM: RS Diversion with SPX
-    rsOverlaySeries = chart2.addLineSeries({
-        color: '#22C55E',         // Vibrant emerald green matching the TraderLion reference layout
-        lineWidth: 1.5,
-        priceScaleId: 'left',     // 🛡️ CRITICAL: Isolate to the left scale to prevent axis distortion
-        priceLineVisible: false,
-        lastValueVisible: false
-    });
+        spxSeries = chart2.addLineSeries({ color: '#64748B', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false });
+        divSeries = chart3.addHistogramSeries({ base: 0, priceLineVisible: false });
 
-    // Configure Chart 2 to explicitly display the left-side scale axis
-    // chart2.applyOptions({
-    //     leftPriceScale: {
-    //         visible: true,
-    //         borderColor: '#1F2937'
-    //     }
-    // });
+        // RS Overlay on S&P pane — CRITICAL: left axis prevents scale distortion
+        rsOverlaySeries = chart2.addLineSeries({
+            color: '#22C55E',
+            lineWidth: 1,
+            priceScaleId: 'left',
+            priceLineVisible: false,
+            lastValueVisible: false,
+        });
 
-    candleSeries = chart4.addCandlestickSeries({
-        upColor: '#22C55E', downColor: '#EF4444', borderUpColor: '#22C55E', borderDownColor: '#EF4444',
-        wickUpColor: '#22C55E', wickDownColor: '#EF4444'
-    });
-    ema10S  = chart4.addLineSeries({ color: '#FACC15', lineWidth: 1,   priceLineVisible: false, lastValueVisible: false });
-    ema20S  = chart4.addLineSeries({ color: '#F97316', lineWidth: 1,   priceLineVisible: false, lastValueVisible: false });
-    ema50S  = chart4.addLineSeries({ color: '#EC4899', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false });
-    ema100S = chart4.addLineSeries({ color: '#22D3EE', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false });
-    ema200S = chart4.addLineSeries({ color: '#A3A3A3', lineWidth: 2,   priceLineVisible: false, lastValueVisible: false });
-    volSeries = chart4.addHistogramSeries({ priceFormat: { type: 'volume' }, priceScaleId: '', scaleMargins: { top: 0.78, bottom: 0 } });
+        candleSeries = chart4.addCandlestickSeries({
+            upColor: '#26a69a', downColor: '#ef5350',
+            borderUpColor: '#26a69a', borderDownColor: '#ef5350',
+            wickUpColor: '#26a69a', wickDownColor: '#ef5350',
+        });
+        ema10S  = chart4.addLineSeries({ color: '#FACC15', lineWidth: 1,   priceLineVisible: false, lastValueVisible: false });
+        ema20S  = chart4.addLineSeries({ color: '#F97316', lineWidth: 1,   priceLineVisible: false, lastValueVisible: false });
+        ema50S  = chart4.addLineSeries({ color: '#EC4899', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false });
+        ema100S = chart4.addLineSeries({ color: '#22D3EE', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false });
+        ema200S = chart4.addLineSeries({ color: '#52525B', lineWidth: 2,   priceLineVisible: false, lastValueVisible: false });
+        volSeries = chart4.addHistogramSeries({
+            priceFormat:  { type: 'volume' },
+            priceScaleId: '',
+            scaleMargins: { top: 0.80, bottom: 0 },
+        });
+    }
 
     fetch(`/api/v1/chart-telemetry-us/${symbol}?range=${range}`)
         .then(r => r.json())
@@ -596,7 +610,28 @@ function loadUSChartTelemetry(symbol, range) {
 
             // Populate data streams across tracking panels
             candleSeries.setData(data.series.candles.map(c => ({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close })));
-            volSeries.setData(data.series.candles.map(c => ({ time: c.time, value: c.volume, color: c.close >= c.open ? 'rgba(34,197,94,0.35)' : 'rgba(239,68,68,0.35)' })));
+            // ── Volume with dry-up detection (US market) ─────────────────
+            // Dry-up = volume contracting below 20-bar avg during a price run.
+            // US volumes are in units (not crores) — display as M (millions).
+            // Amber bars = participation waning after a run (worth watching).
+            // Purple bars = climax/exhaustion (above 2× average).
+            const volData = data.series.candles.map((c, i, arr) => {
+                const isUp     = c.close >= c.open;
+                const avg20    = c.vol_sma20 || 0;
+                // Price run: stock up >5% from 10 bars ago
+                const ref      = i >= 10 ? arr[i - 10].close : c.close;
+                const inRun    = ref > 0 && (c.close / ref - 1) > 0.05;
+                // Dry-up: volume < 70% of 20-bar avg during a price run
+                const isDryUp  = avg20 > 0 && c.volume < avg20 * 0.70 && inRun;
+                // Climax: volume > 2× average — possible exhaustion
+                const isClimax = avg20 > 0 && c.volume > avg20 * 2.0;
+                const color = isDryUp   ? 'rgba(251,191,36,0.55)'   // amber  — dry-up
+                            : isClimax  ? 'rgba(168,85,247,0.55)'    // purple — climax
+                            : isUp      ? 'rgba(38,166,154,0.45)'    // teal   — up day
+                            :             'rgba(239,83,80,0.45)';    // red    — down day
+                return { time: c.time, value: c.volume, color };
+            });
+            volSeries.setData(volData);
 
             ema10S.setData(data.series.ema10);
             ema20S.setData(data.series.ema20);
